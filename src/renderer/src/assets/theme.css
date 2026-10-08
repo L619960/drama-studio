@@ -1,0 +1,66 @@
+/**
+ * 主题变量系统。
+ * 默认（深色）值与原硬编码色完全一致，视觉零变化；
+ * html.theme-light 下覆盖为浅色值。
+ * 品牌色（Element Plus 绿/红/蓝/橙）两套主题通用，不参与变量化。
+ */
+:root {
+  --bg-page: #141414;
+  --bg-sidebar: #0a0a0a;
+  --bg-card: #1a1a1a;
+  --bg-input: #252525;
+  --border-weak: #222;
+  --border: #333;
+  --border-strong: #3a3a3a;
+  --text-primary: #e0e0e0;
+  --text-secondary: #999;
+  --text-muted: #666;
+}
+
+html.theme-light {
+  --bg-page: #f5f7fa;
+  --bg-sidebar: #e8ebf0;
+  --bg-card: #ffffff;
+  --bg-input: #ffffff;
+  --border-weak: #e4e7ed;
+  --border: #dcdfe6;
+  --border-strong: #c0c4cc;
+  --text-primary: #303133;
+  --text-secondary: #606266;
+  --text-muted: #909399;
+}
+
+html.theme-light body {
+  background: var(--bg-page);
+}
+
+/* 全局 Element Plus 深色/浅色适配（由 CSS 变量驱动，替换原各视图 :deep() 硬编码） */
+.el-table {
+  background: var(--bg-card);
+  --el-table-border-color: var(--border);
+  --el-table-header-bg-color: var(--bg-card);
+  --el-table-header-text-color: var(--text-secondary);
+  --el-table-text-color: var(--text-primary);
+  --el-table-row-hover-bg-color: var(--bg-input);
+  --el-table-current-row-bg-color: var(--bg-input);
+  --el-table-tr-bg-color: var(--bg-card);
+}
+.el-table th, .el-table tr {
+  background: var(--bg-card);
+  color: var(--text-primary);
+}
+.el-table td {
+  border-bottom: 1px solid var(--border-weak);
+}
+.el-input__inner, .el-textarea__inner {
+  background: var(--bg-input);
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+.el-input-number {
+  background: var(--bg-input);
+}
+.el-input-number .el-input__inner {
+  background: var(--bg-input);
+  color: var(--text-primary);
+}

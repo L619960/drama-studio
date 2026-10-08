@@ -1,0 +1,49 @@
+{
+  "1": {
+    "class_type": "VHS_LoadVideoPath",
+    "_meta": { "title": "加载待对口型视频" },
+    "inputs": {
+      "video": "$VIDEO_PATH$",
+      "force_rate": 0,
+      "custom_width": 0,
+      "custom_height": 0,
+      "frame_load_cap": 0,
+      "skip_first_frames": 0,
+      "select_every_nth": 1
+    }
+  },
+  "2": {
+    "class_type": "VHS_LoadAudio",
+    "_meta": { "title": "加载 TTS 语音" },
+    "inputs": {
+      "audio_file": "$AUDIO_PATH$",
+      "seek_seconds": 0,
+      "duration": 0
+    }
+  },
+  "3": {
+    "class_type": "LatentSyncNode",
+    "_meta": { "title": "LatentSync 1.6 口型同步" },
+    "inputs": {
+      "images": ["1", 0],
+      "audio": ["2", 0],
+      "seed": $SEED$,
+      "lips_expression": $EXPRESSION$,
+      "inference_steps": $STEPS$
+    }
+  },
+  "4": {
+    "class_type": "VHS_VideoCombine",
+    "_meta": { "title": "导出同步后视频" },
+    "inputs": {
+      "images": ["3", 0],
+      "audio": ["3", 1],
+      "frame_rate": 25,
+      "loop_count": 0,
+      "filename_prefix": "latentsync",
+      "format": "video/h264-mp4",
+      "pingpong": false,
+      "save_output": true
+    }
+  }
+}

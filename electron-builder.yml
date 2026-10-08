@@ -1,0 +1,48 @@
+appId: com.dramastudio.app
+productName: 本地AI短剧工坊
+copyright: Copyright © 2026
+
+directories:
+  output: release
+  buildResources: build
+
+# 应用图标（build/icon.png）
+icon: build/icon.png
+
+# 应用包内容：electron-vite 构建产物 + 生产依赖
+files:
+  - out/**
+  - package.json
+
+# ffmpeg/ffprobe 二进制在 asar 内不可执行，必须解包到 app.asar.unpacked
+# （ffmpegService.unpackedPath 已做 app.asar -> app.asar.unpacked 路径映射）
+asarUnpack:
+  - node_modules/ffmpeg-static/**
+  - node_modules/ffprobe-static/**
+
+# 工作流 JSON 随 resources 分发
+# （main/index.ts: app.isPackaged 时读取 process.resourcesPath/workflows）
+extraResources:
+  - from: workflows
+    to: workflows
+    filter:
+      - "**/*.json"
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  artifactName: ${productName}-${version}-setup.${ext}
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: 本地AI短剧工坊
+
+# 生产依赖未打包进 asar 时 electron-builder 会自动处理；
+# 以下为主进程运行时必需的外部原生/二进制相关包
+npmRebuild: false

@@ -1,0 +1,114 @@
+{
+  "_comment": "MiniMax H3 本地参考生视频（REF2VA，参考图保身份 + 参考音频(TTS)驱动台词口型与音色，原生立体声）。占位符：$PROMPT$ $SEED$ $REF_IMAGE$ $AUDIO$ $WIDTH$ $HEIGHT$ $LENGTH$ $PREFIX$。prompt 内用 <Picture 1> 引用图、<Audio 1> 引用音频。",
+  "10": {
+    "inputs": { "image": "$REF_IMAGE$" },
+    "class_type": "LoadImage"
+  },
+  "11": {
+    "inputs": { "audio": "$AUDIO$" },
+    "class_type": "LoadAudio"
+  },
+  "20": {
+    "inputs": {
+      "unet_name": "minimax_h3_ref2va_pruned_int8_convrot.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader"
+  },
+  "21": {
+    "inputs": {
+      "clip_name": "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+      "type": "minimax",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader"
+  },
+  "22": {
+    "inputs": { "vae_name": "minimax_h3_video_vae_int8_convrot.safetensors" },
+    "class_type": "VAELoader"
+  },
+  "23": {
+    "inputs": { "vae_name": "minimax_h3_audio_vae_fp32.safetensors" },
+    "class_type": "VAELoader"
+  },
+  "30": {
+    "inputs": {
+      "clip": ["21", 0],
+      "vae": ["22", 0],
+      "audio_vae": ["23", 0],
+      "prompt": "$PROMPT$",
+      "width": "$WIDTH$",
+      "height": "$HEIGHT$",
+      "length": "$LENGTH$",
+      "ref_image_size": "match",
+      "ref_images": { "ref_image_1": ["10", 0] },
+      "ref_audios": { "ref_audio_1": ["11", 0] }
+    },
+    "class_type": "MiniMaxH3ReferenceToVideo"
+  },
+  "40": {
+    "inputs": { "noise_seed": "$SEED$" },
+    "class_type": "RandomNoise"
+  },
+  "41": {
+    "inputs": { "sampler_name": "res_multistep" },
+    "class_type": "KSamplerSelect"
+  },
+  "42": {
+    "inputs": {
+      "model": ["20", 0],
+      "scheduler": "simple",
+      "steps": 20,
+      "denoise": 1
+    },
+    "class_type": "BasicScheduler"
+  },
+  "43": {
+    "inputs": {
+      "model": ["20", 0],
+      "conditioning": ["30", 0]
+    },
+    "class_type": "BasicGuider"
+  },
+  "44": {
+    "inputs": {
+      "noise": ["40", 0],
+      "guider": ["43", 0],
+      "sampler": ["41", 0],
+      "sigmas": ["42", 0],
+      "latent_image": ["30", 1]
+    },
+    "class_type": "SamplerCustomAdvanced"
+  },
+  "50": {
+    "inputs": {
+      "samples": ["44", 0],
+      "vae": ["22", 0]
+    },
+    "class_type": "VAEDecode"
+  },
+  "51": {
+    "inputs": {
+      "samples": ["44", 0],
+      "vae": ["23", 0]
+    },
+    "class_type": "VAEDecodeAudio"
+  },
+  "52": {
+    "inputs": {
+      "images": ["50", 0],
+      "fps": 24,
+      "audio": ["51", 0]
+    },
+    "class_type": "CreateVideo"
+  },
+  "60": {
+    "inputs": {
+      "video": ["52", 0],
+      "filename_prefix": "$PREFIX$",
+      "format": "auto",
+      "codec": "auto"
+    },
+    "class_type": "SaveVideo"
+  }
+}
