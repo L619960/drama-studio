@@ -73,7 +73,7 @@
     <div class="chat-input">
       <el-input
         :model-value="inputText"
-        @update="onInputChange"
+        @update:model-value="onInputChange"
         type="textarea"
         :autosize="{ minRows: 1, maxRows: 4 }"
         placeholder="给导演下达指令，Enter 发送 / Shift+Enter 换行"

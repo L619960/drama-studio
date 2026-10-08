@@ -46,7 +46,7 @@
       <div class="comfy-card-title">节点健康探测</div>
       <el-input
         :model-value="nodeQuery"
-        @update="onQueryChange"
+        @update:model-value="onQueryChange"
         size="small"
         placeholder="输入节点类名关键字，如 Wan / LatentSync / VAE"
         clearable
@@ -109,7 +109,7 @@
       <div class="comfy-card-title">工作流模板与参数</div>
       <el-collapse
         :model-value="expandedWorkflows"
-        @update="onWfExpand"
+        @update:model-value="onWfExpand"
         class="wf-collapse"
       >
         <el-collapse-item v-for="w in workflows" :key="w.name" :name="w.name">

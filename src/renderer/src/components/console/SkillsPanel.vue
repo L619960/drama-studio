@@ -32,7 +32,7 @@
   <!-- 自定义技能编辑弹窗 -->
   <el-dialog
     :model-value="skillDialog.visible"
-    @update="onVisibleChange"
+    @update:model-value="onVisibleChange"
     :title="editingSkill ? '编辑技能' : '新建技能'"
     width="560px"
     :close-on-click-modal="false"

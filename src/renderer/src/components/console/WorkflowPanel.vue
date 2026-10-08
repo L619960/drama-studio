@@ -75,7 +75,7 @@
         <el-collapse
           v-if="logsByStage.length"
           :model-value="expandedStages"
-          @update="onStagesUpdate"
+          @update:model-value="onStagesUpdate"
           class="log-collapse"
         >
           <el-collapse-item
@@ -103,7 +103,7 @@
     <!-- 开拍需求确认弹窗 -->
     <el-dialog
       :model-value="startDialogVisible"
-      @update="emit('update:startDialogVisible', $event)"
+      @update:model-value="emit('update:startDialogVisible', $event)"
       title="开拍需求确认"
       width="640px"
       :close-on-click-modal="false"

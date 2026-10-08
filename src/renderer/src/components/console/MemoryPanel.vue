@@ -10,7 +10,7 @@
     </p>
     <el-tabs
       :model-value="memoryKind"
-      @update="onKindChange"
+      @update:model-value="onKindChange"
       class="memory-tabs"
     >
       <el-tab-pane v-for="k in memoryKindOptions" :key="k.value" :name="k.value">
@@ -38,7 +38,7 @@
   <!-- 记忆编辑弹窗 -->
   <el-dialog
     :model-value="memoryDialog.visible"
-    @update="onVisibleChange"
+    @update:model-value="onVisibleChange"
     :title="editingMemory ? '编辑记忆' : '新增记忆'"
     width="560px"
     :close-on-click-modal="false"
