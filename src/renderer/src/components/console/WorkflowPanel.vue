@@ -73,6 +73,7 @@
       </div>
       <div ref="logBoxRef" class="log-box">
         <el-collapse
+          v-if="logsByStage.length"
           :model-value="expandedStages"
           @update="onStagesUpdate"
           class="log-collapse"
