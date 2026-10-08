@@ -1,11 +1,11 @@
-﻿﻿﻿﻿﻿﻿<template>
+<template>
   <div class="storyboard">
     <div class="header">
       <h1>分镜编辑</h1>
       <div class="actions">
         <el-button @click="$router.push(`/project/${projectId}/characters`)">角色库</el-button>
         <el-button type="primary" @click="addShot" :disabled="isRendering">添加分镜</el-button>
-        <el-button @click="openSplitDialog" :disabled="isRendering">
+        <el-button @click="splitDialogRef?.open()" :disabled="isRendering">
           <el-icon><MagicStick /></el-icon> AI 拆分镜
         </el-button>
         <el-button type="success" @click="startRender" :disabled="!hasPendingShots || isRendering" :loading="rendering">
@@ -122,143 +122,53 @@
       </div>
     </teleport>
 
-    <!-- 编辑对话框 -->
-    <el-dialog v-model="showEditDialog" :title="editingIndex === -1 ? '添加分镜' : '编辑分镜'" width="650px">
-      <el-form :model="editForm" label-width="100px">
-        <el-form-item label="场景">
-          <el-input v-model="editForm.scene" placeholder="如：雨夜天台" />
-        </el-form-item>
-        <el-form-item label="动作提示词" required>
-          <div class="prompt-row">
-            <el-input
-              v-model="editForm.action"
-              type="textarea"
-              :rows="2"
-              placeholder="英文动作描述，如：slowly turns head, gentle smile, cinematic lighting"
-              style="flex:1"
-            />
-            <el-button :loading="optimizing" @click="optimizePrompt" size="small" style="margin-left:8px;align-self:flex-start">
-              <el-icon><MagicStick /></el-icon> AI 优化
-            </el-button>
-          </div>
-          <div class="form-tip">建议使用英文，逗号分隔多个动作；AI 优化可把中文描述转成专业英文提示词</div>
-        </el-form-item>
-        <el-form-item label="台词">
-          <el-input v-model="editForm.dialogue" type="textarea" :rows="2" placeholder="中文台词，用于 TTS" />
-        </el-form-item>
-        <el-form-item label="类型">
-          <el-radio-group v-model="editForm.type">
-            <el-radio value="i2v">人物镜头(I2V)</el-radio>
-            <el-radio value="t2v">空镜(T2V)</el-radio>
-          </el-radio-group>
-          <div v-if="editForm.type === 't2v'" class="form-tip" style="color:#e6a23c">空镜需上传场景参考图，否则无法渲染</div>
-        </el-form-item>
-        <el-form-item label="场景图" v-if="editForm.type === 't2v'">
-          <div class="scene-image">
-            <img v-if="editForm.sceneImagePath && urlCache[editForm.sceneImagePath]" :src="urlCache[editForm.sceneImagePath]" class="scene-thumb" />
-            <div v-else class="scene-thumb empty">未选择场景图</div>
-            <el-button size="small" @click="importSceneImage">
-              <el-icon><Upload /></el-icon> {{ editForm.sceneImagePath ? '更换' : '导入' }}
-            </el-button>
-            <el-button size="small" :loading="generatingSceneImage" @click="generateSceneImage">
-              <el-icon><MagicStick /></el-icon>AI 生成
-            </el-button>
-          </div>
-        </el-form-item>
-        <el-form-item label="角色" v-if="editForm.type === 'i2v'">
-          <el-select v-model="editForm.characterIds" multiple placeholder="选择角色" style="width: 100%">
-            <el-option v-for="c in characters" :key="c.id" :label="c.name" :value="c.id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="时长">
-          <el-input-number v-model="editForm.frames" :min="33" :max="120" :step="16" style="width: 120px" />
-          <span class="form-tip" style="margin-left: 12px">
-            {{ editForm.frames }}帧 ≈ {{ ((editForm.frames - 1) / 16).toFixed(0) }}秒
-          </span>
-        </el-form-item>
-        <el-form-item label="Seed">
-          <el-input-number v-model="editForm.seed" :min="0" style="width: 150px" />
-          <el-button size="small" style="margin-left: 8px" @click="randomizeSeed">随机</el-button>
-        </el-form-item>
-        <el-form-item label="工作流">
-          <el-select v-model="editForm.workflow" placeholder="使用默认工作流" clearable style="width: 240px">
-            <el-option
-              v-for="w in workflows"
-              :key="w.name"
-              :label="w.name"
-              :value="w.name"
-            >
-              <span>{{ w.name }}</span>
-              <el-tag size="small" style="margin-left: 8px">{{ w.hasImageInput ? 'I2V' : 'T2V' }}</el-tag>
-            </el-option>
-          </el-select>
-          <span class="form-tip" style="margin-left: 12px">留空使用项目/全局默认</span>
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="showEditDialog = false">取消</el-button>
-        <el-button type="primary" @click="saveShot">保存</el-button>
-      </template>
-    </el-dialog>
+    <!-- 分镜编辑对话框（独立组件） -->
+    <ShotEditDialog
+      ref="editDialogRef"
+      :project-id="projectId"
+      :project-genre="project?.genre || ''"
+      :characters="characters"
+      :workflows="workflows"
+      :default-frames="defaultFrames"
+      @save="onSaveShot"
+    />
 
-    <!-- AI 拆分镜对话框 -->
-    <el-dialog v-model="splitDialog.visible" title="AI 拆分镜" width="700px">
-      <el-input
-        v-model="splitDialog.script"
-        type="textarea"
-        :rows="12"
-        placeholder="粘贴剧本内容（支持中文），AI 将自动拆分为分镜列表，包含场景名、英文动作提示词、台词和镜头类型（人物/空镜）"
-      />
-      <template #footer>
-        <el-button @click="splitDialog.visible = false">取消</el-button>
-        <el-button type="primary" :loading="splitDialog.loading" @click="doSplitScript">
-          {{ splitDialog.loading ? '拆分中...' : '开始拆分' }}
-        </el-button>
-      </template>
-    </el-dialog>
+    <!-- AI 拆分镜对话框（独立组件） -->
+    <SplitScriptDialog
+      ref="splitDialogRef"
+      :project-genre="project?.genre || ''"
+      @split="onSplitScript"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useHotkeys } from '../composables/useHotkeys'
-import { clearFileUrlCache, useFileUrl } from '../composables/useFileUrl'
-const { urlCache, ensureFileUrl } = useFileUrl()
+import { clearFileUrlCache } from '../composables/useFileUrl'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  VideoPlay, CopyDocument, DocumentCopy, Top, Bottom, Edit, RefreshLeft, Delete, MagicStick, Upload
+  VideoPlay, CopyDocument, DocumentCopy, Top, Bottom, Edit, RefreshLeft, Delete, MagicStick
 } from '@element-plus/icons-vue'
-import type { Project, Shot, WorkflowMeta } from '../../../shared/ipcTypes'
+import type { Project, Shot, WorkflowMeta, GeneratedShot } from '../../../shared/ipcTypes'
 import { snapshot } from '../utils/snapshot'
+import ShotEditDialog, { type ShotDraft } from '../components/storyboard/ShotEditDialog.vue'
+import SplitScriptDialog from '../components/storyboard/SplitScriptDialog.vue'
 
 const route = useRoute()
 const projectId = route.params.id as string
 
 const project = ref<Project | null>(null)
 const workflows = ref<WorkflowMeta[]>([])
-const showEditDialog = ref(false)
 const editingIndex = ref(-1)
 const rendering = ref(false)
 // 渲染默认帧数（从设置加载，新建分镜时使用）
 const defaultFrames = ref(81)
-const editForm = ref({
-  scene: '',
-  action: '',
-  dialogue: '',
-  type: 'i2v' as 'i2v' | 't2v',
-  characterIds: [] as string[],
-  frames: 81,
-  seed: 42,
-  workflow: '',
-  sceneImagePath: ''
-})
 
-// AI 拆分镜对话框
-const splitDialog = ref({ visible: false, loading: false, script: '' })
-const optimizing = ref(false)
-// AI 生成场景图
-const generatingSceneImage = ref(false)
+// 对话框组件
+const editDialogRef = ref<InstanceType<typeof ShotEditDialog> | null>(null)
+const splitDialogRef = ref<InstanceType<typeof SplitScriptDialog> | null>(null)
 
 const shots = computed(() => project.value?.shots || [])
 const characters = computed(() => project.value?.characters || [])
@@ -338,8 +248,7 @@ async function loadProject() {
 
 function addShot() {
   editingIndex.value = -1
-  editForm.value = { scene: '', action: '', dialogue: '', type: 'i2v', characterIds: [], frames: defaultFrames.value, seed: Math.floor(Math.random() * 1000000), workflow: '', sceneImagePath: '' }
-  showEditDialog.value = true
+  editDialogRef.value?.open(null)
 }
 
 // Ctrl+N 新建分镜（渲染中或编辑框已打开时忽略）
@@ -347,7 +256,7 @@ useHotkeys([
   {
     keys: 'ctrl+n',
     handler: () => {
-      if (isRendering.value || showEditDialog.value) return
+      if (isRendering.value || editDialogRef.value?.isVisible) return
       addShot()
     }
   }
@@ -355,159 +264,56 @@ useHotkeys([
 
 function editShot(index: number) {
   editingIndex.value = index
-  const shot = shots.value[index]
-  editForm.value = {
-    scene: shot.scene,
-    action: shot.action,
-    dialogue: shot.dialogue,
-    type: shot.type,
-    characterIds: [...shot.characterIds],
-    frames: shot.frames,
-    seed: shot.seed,
-    workflow: shot.workflow || '',
-    sceneImagePath: shot.sceneImagePath || ''
-  }
-  if (shot.sceneImagePath) {
-    ensureFileUrl(shot.sceneImagePath)
-  }
-  showEditDialog.value = true
+  editDialogRef.value?.open(shots.value[index])
   contextMenu.value.visible = false
 }
 
-// AI 优化提示词（支持中英混合输入）
-async function optimizePrompt() {
+/** 编辑对话框保存：按 editingIndex 组装完整 Shot 并持久化 */
+async function onSaveShot(draft: ShotDraft) {
   if (!project.value) return
-  if (!editForm.value.action.trim()) {
-    ElMessage.warning('请先输入动作描述')
-    return
-  }
-  optimizing.value = true
-  try {
-    const result = await window.api.llm.translatePrompt({
-      scene: editForm.value.scene,
-      action: editForm.value.action,
-      dialogue: editForm.value.dialogue,
-      genre: project.value.genre
-    })
-    editForm.value.action = result
-    ElMessage.success('提示词已优化')
-  } catch (e) {
-    ElMessage.error((e as Error).message || 'AI 优化失败')
-  } finally {
-    optimizing.value = false
-  }
-}
-
-// 打开 AI 拆分镜对话框
-function openSplitDialog() {
-  splitDialog.value = { visible: true, loading: false, script: '' }
-}
-
-// 执行 AI 拆分镜并追加到分镜列表
-async function doSplitScript() {
-  if (!project.value) return
-  if (!splitDialog.value.script.trim()) {
-    ElMessage.warning('请输入剧本内容')
-    return
-  }
-  splitDialog.value.loading = true
-  try {
-    const generated = await window.api.llm.splitScript(splitDialog.value.script, project.value.genre)
-    if (generated.length === 0) throw new Error('未拆分出有效分镜')
-    // 追加分镜
-    const startIndex = project.value.shots.length
-    const newShots: Shot[] = generated.map((s, i) => ({
-      id: `shot_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 6)}`,
-      index: startIndex + i + 1,
-      scene: s.scene,
-      action: s.action,
-      dialogue: s.dialogue,
-      type: s.type,
-      characterIds: [],
-      width: 720,
-      height: 480,
-      frames: defaultFrames.value,
-      seed: Math.floor(Math.random() * 1000000),
-      status: 'pending'
-    }))
-    project.value.shots.push(...newShots)
-    await window.api.project.save(snapshot(project.value))
-    splitDialog.value.visible = false
-    ElMessage.success(`AI 拆分完成，新增 ${newShots.length} 个分镜`)
-  } catch (e) {
-    ElMessage.error((e as Error).message || '拆分失败')
-  } finally {
-    splitDialog.value.loading = false
-  }
-}
-
-// 导入场景参考图
-async function importSceneImage() {
-  try {
-    const relPath = await window.api.shot.importSceneImage(projectId)
-    editForm.value.sceneImagePath = relPath
-    await ensureFileUrl(relPath)
-  } catch {
-    // 用户取消
-  }
-}
-
-/** AI 生成场景图：用场景描述构建提示词 */
-async function generateSceneImage() {
-  const scene = editForm.value.scene || 'cinematic scene'
-  generatingSceneImage.value = true
-  try {
-    const prompt = `cinematic scene, ${scene}, wide angle, detailed environment, atmospheric lighting, high quality, 8k`
-    const shotId = editingIndex.value >= 0 ? project.value!.shots[editingIndex.value].id : `new_${Date.now()}`
-    const rel = `projects/${projectId}/shots/${shotId}_scene.png`
-    await window.api.image.generate(prompt, rel)
-    editForm.value.sceneImagePath = rel
-    await ensureFileUrl(rel)
-    ElMessage.success('场景图生成成功')
-  } catch (e) {
-    ElMessage.error(`生成失败: ${e instanceof Error ? e.message : String(e)}`)
-  } finally {
-    generatingSceneImage.value = false
-  }
-}
-
-async function saveShot() {
-  if (!project.value) return
-  if (!editForm.value.action.trim()) {
-    ElMessage.warning('请输入动作提示词')
-    return
-  }
-
+  const isNew = editingIndex.value === -1
   const shot: Shot = {
-    id: editingIndex.value === -1 ? `shot_${Date.now()}` : shots.value[editingIndex.value].id,
-    index: editingIndex.value === -1 ? shots.value.length + 1 : shots.value[editingIndex.value].index,
-    scene: editForm.value.scene,
-    action: editForm.value.action,
-    dialogue: editForm.value.dialogue,
-    type: editForm.value.type,
-    characterIds: editForm.value.type === 't2v' ? [] : editForm.value.characterIds,
-    width: 720,
-    height: 480,
-    frames: editForm.value.frames,
-    seed: editForm.value.seed,
-    workflow: editForm.value.workflow || undefined,
-    sceneImagePath: editForm.value.type === 't2v' ? editForm.value.sceneImagePath || undefined : undefined,
+    ...draft,
+    id: isNew ? `shot_${Date.now()}` : shots.value[editingIndex.value].id,
+    index: isNew ? shots.value.length + 1 : shots.value[editingIndex.value].index,
     status: 'pending'
   }
 
   // 作废旧产物与整集成片（编辑/新增均会改变成片内容）
-  const oldShot = editingIndex.value === -1 ? undefined : shots.value[editingIndex.value]
+  const oldShot = isNew ? undefined : shots.value[editingIndex.value]
   await invalidateArtifacts(oldShot)
 
-  if (editingIndex.value === -1) {
+  if (isNew) {
     project.value.shots.push(shot)
   } else {
     project.value.shots[editingIndex.value] = shot
   }
 
   await window.api.project.save(snapshot(project.value))
-  showEditDialog.value = false
   ElMessage.success('保存成功')
+}
+
+/** AI 拆分镜完成：追加到分镜列表并持久化 */
+async function onSplitScript(generated: GeneratedShot[]) {
+  if (!project.value) return
+  const startIndex = project.value.shots.length
+  const newShots: Shot[] = generated.map((s, i) => ({
+    id: `shot_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 6)}`,
+    index: startIndex + i + 1,
+    scene: s.scene,
+    action: s.action,
+    dialogue: s.dialogue,
+    type: s.type,
+    characterIds: [],
+    width: 720,
+    height: 480,
+    frames: defaultFrames.value,
+    seed: Math.floor(Math.random() * 1000000),
+    status: 'pending'
+  }))
+  project.value.shots.push(...newShots)
+  await window.api.project.save(snapshot(project.value))
+  ElMessage.success(`AI 拆分完成，新增 ${newShots.length} 个分镜`)
 }
 
 async function deleteShot(index: number) {
@@ -624,12 +430,7 @@ function insertShot(index: number, position: 'above' | 'below') {
   window.api.project.save(snapshot(project.value))
   // 直接打开编辑框编辑这个新分镜
   editingIndex.value = insertAt
-  editForm.value = {
-    scene: shot.scene, action: shot.action, dialogue: shot.dialogue,
-    type: shot.type, characterIds: [...shot.characterIds],
-    frames: shot.frames, seed: shot.seed, workflow: '', sceneImagePath: ''
-  }
-  showEditDialog.value = true
+  editDialogRef.value?.open(shot)
   contextMenu.value.visible = false
 }
 
@@ -654,10 +455,6 @@ async function resetShot(shot: Shot) {
   contextMenu.value.visible = false
 }
 
-function randomizeSeed() {
-  editForm.value.seed = Math.floor(Math.random() * 1000000)
-}
-
 function getCharacterName(id: string) {
   return characters.value.find(c => c.id === id)?.name || '未知'
 }
@@ -680,17 +477,6 @@ function statusText(status: string) {
 .actions { display: flex; gap: 10px; }
 
 .prompt-text { font-family: monospace; font-size: 12px; color: var(--text-secondary); }
-.prompt-row { display: flex; width: 100%; }
-.scene-image { display: flex; align-items: center; gap: 12px; }
-.scene-thumb {
-  width: 160px; height: 90px; object-fit: cover; border-radius: 6px;
-  border: 1px solid var(--border-strong); background: var(--bg-input);
-}
-.scene-thumb.empty {
-  display: flex; align-items: center; justify-content: center;
-  color: var(--text-muted); font-size: 12px;
-}
-.form-tip { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
 .wf-tag { font-family: monospace; font-size: 12px; color: #e6a23c; }
 .wf-default { font-size: 12px; color: var(--text-muted); }
 .drag-handle {
