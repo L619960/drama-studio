@@ -51,7 +51,7 @@
           placeholder="告诉导演什么时候该用这个技能"
         />
       </el-form-item>
-      <el-form-item label="提示词模板">
+      <el-form-item label="提示词模板" required>
         <el-input
           v-model="skillDialog.promptTemplate"
           type="textarea"

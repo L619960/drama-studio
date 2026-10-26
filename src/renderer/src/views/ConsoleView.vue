@@ -1,7 +1,7 @@
 <template>
-  <div class="console">
+  <div class="console page">
     <!-- ===== 左栏：模块导航 + 项目概览 ===== -->
-    <aside class="console-aside">
+    <aside class="console-aside glass-panel">
       <div class="aside-title">导演控制台</div>
       <el-menu :default-active="activeModule" class="aside-menu" @select="onModuleSelect">
         <el-menu-item index="workflow">
@@ -15,6 +15,12 @@
         </el-menu-item>
         <el-menu-item index="comfyui">
           <el-icon><Cpu /></el-icon><span>ComfyUI</span>
+        </el-menu-item>
+        <el-menu-item index="selfcheck">
+          <el-icon><Odometer /></el-icon><span>系统自检</span>
+          <el-tag v-if="selfBadCount" size="small" type="danger" effect="plain" class="selfcheck-badge">
+            {{ selfBadCount }}
+          </el-tag>
         </el-menu-item>
       </el-menu>
 
@@ -31,7 +37,12 @@
         </div>
         <div v-if="state.reviewIssues?.length" class="review-issues">
           <div class="aside-subtitle">复审问题</div>
-          <div v-for="(iss, i) in state.reviewIssues.slice(0, 5)" :key="i" class="issue-item">{{ iss }}</div>
+          <div v-for="(iss, i) in (reviewExpanded ? state.reviewIssues : state.reviewIssues.slice(0, 5))" :key="i" class="issue-item">{{ iss }}</div>
+          <div v-if="state.reviewIssues.length > 5" class="review-more">
+            <el-button link type="danger" size="small" @click="reviewExpanded = !reviewExpanded">
+              {{ reviewExpanded ? '收起' : `查看更多（共 ${state.reviewIssues.length} 条问题）` }}
+            </el-button>
+          </div>
         </div>
         <div v-if="state.finalPath" class="final-path">
           <el-button size="small" @click="openFinalFolder">
@@ -41,8 +52,8 @@
       </div>
     </aside>
 
-    <!-- ===== 中栏：按 activeModule 切换的 4 个面板 ===== -->
-    <section class="console-main">
+    <!-- ===== 中栏：按 activeModule 切换的面板 ===== -->
+    <section class="console-main glass-panel">
       <WorkflowPanel
         v-if="activeModule === 'workflow'"
         :state="state"
@@ -53,10 +64,21 @@
         :paused="paused"
         :start-dialog-visible="startDialogVisible"
         :starting="starting"
+        :project="project"
+        :asset-urls="assetUrls"
+        :rerendering-shot-id="rerenderingShotId"
         @pause="onPause"
         @resume="onResume"
         @cancel="onCancel"
+        @clear="onClearTask"
         @open-final-folder="openFinalFolder"
+        @resume-from="onResumeFrom"
+        @retry-failed="retryFailedShots"
+        @retry-pending="retryPendingShots"
+        @rerender-shot="onRerenderShot"
+        @rerender-shots="onRerenderShots"
+        @regenerate-asset="onAssetRegenerate"
+        @asset-refreshed="() => loadProjectData(project?.id)"
         @update:expanded-stages="val => expandedStages = val"
         @update:start-dialog-visible="val => startDialogVisible = val"
         @start="confirmStart"
@@ -101,16 +123,24 @@
         :validate-loading="validateLoading"
         :validate-run="validateRun"
         :validate-bad-count="validateBadCount"
+        :models-dir="modelsDir"
         @refresh="refreshComfy"
         @wf-expand="onWfExpand"
         @update-param="updateWfParam"
         @run-validate="runValidate"
+        @open-models-dir="openModelsDir"
         @update:node-query="val => nodeQuery = val"
+      />
+      <SelfCheckPanel
+        v-else-if="activeModule === 'selfcheck'"
+        :items="selfItems"
+        :loading="selfLoading"
+        @rerun="runSelfcheck"
       />
     </section>
 
     <!-- ===== 右栏：导演真实对话 ===== -->
-    <aside class="console-right">
+    <aside class="console-right glass-panel">
       <DirectorChat
         :messages="messages"
         :input-text="inputText"
@@ -119,12 +149,20 @@
         :quick-prompts="quickPrompts"
         :scroll-tick="scrollTick"
         :render-md="renderMd"
+        :task-running="running"
+        :task-paused="paused"
         @toggle-tool="toggleTool"
         @use-quick="useQuick"
         @copy-msg="copyMsg"
         @resend-msg="resendMsg"
-        @send="sendMessage"
-        @clear="clearChat"
+        @rollback-msg="rollbackMsg"
+        @regenerate="regenerateMsg"
+        @send="sendMessage()"
+        @stop="stopSend"
+        @upload="uploadAndSend"
+        @self-learn="selfLearn"
+        @clear="clearChatGuarded"
+        @cancel-task="onCancel"
         @update:input-text="val => inputText = val"
       />
     </aside>
@@ -134,19 +172,22 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
-import { DataLine, MagicStick, Collection, Cpu, FolderOpened } from '@element-plus/icons-vue'
-import type { DirectorStage } from '../../../shared/ipcTypes'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { DataLine, MagicStick, Collection, Cpu, FolderOpened, Odometer } from '@element-plus/icons-vue'
+import type { DirectorStage, Project, SelfCheckItem, Shot, AssetRegenerateInput } from '../../../shared/ipcTypes'
 import { useDirectorState } from '../composables/useDirectorState'
 import { useDirectorChat } from '../composables/useDirectorChat'
 import { useSkillsManager } from '../composables/useSkillsManager'
 import { useMemoryManager } from '../composables/useMemoryManager'
 import { useComfyPanel } from '../composables/useComfyPanel'
+import { useFileUrl } from '../composables/useFileUrl'
+import { snapshot } from '../utils/snapshot'
 import WorkflowPanel from '../components/console/WorkflowPanel.vue'
 import SkillsPanel from '../components/console/SkillsPanel.vue'
 import MemoryPanel from '../components/console/MemoryPanel.vue'
 import ComfyPanel from '../components/console/ComfyPanel.vue'
 import DirectorChat from '../components/console/DirectorChat.vue'
+import SelfCheckPanel from '../components/console/SelfCheckPanel.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -160,14 +201,15 @@ const activeModule = ref('workflow')
 const {
   state, localLogs, expandedStages, gateOptions,
   running, paused,
-  hydrate, subscribe, unsubscribeAll, resetForRouteSwitch,
-  onPause, onResume, onCancel, openFinalFolder
+  hydrate, hydrateLatest, subscribe, unsubscribeAll, resetForRouteSwitch,
+  onPause, onResume, onCancel, onClearTask, openFinalFolder,
+  onResumeFrom, retryFailedShots
 } = useDirectorState(projectId)
 
 const {
   messages, inputText, sending, expandedTools, scrollTick, quickPrompts,
   loadChat, toggleTool, useQuick, renderMd, copyMsg, resendMsg,
-  sendMessage, clearChat,
+  sendMessage, stopSend, rollbackMsg, regenerateMsg, uploadAndSend, selfLearn, clearChat,
   subscribe: subscribeChat, unsubscribeAll: unsubscribeChat
 } = useDirectorChat(chatScope, state)
 
@@ -185,15 +227,110 @@ const {
   comfyStats, nodeNames, nodeQuery, comfyLoading, comfyLoaded,
   workflows, workflowParams, expandedWorkflows, matchedNodes,
   validateReports, validateLoading, validateRun, validateBadCount,
+  modelsDir, openModelsDir,
   runValidate, refreshComfy, onWfExpand, updateWfParam
 } = useComfyPanel(activeModule)
+
+// ===== 项目产物数据（工作流面板实时预览用） =====
+const { urlCache: assetUrls, ensureFileUrls } = useFileUrl()
+const project = ref<Project | null>(null)
+
+/** 加载项目快照并预取全部产物 URL（角色图/三视图/场景板/首尾帧/分段视频/成片） */
+async function loadProjectData(pid: string | undefined): Promise<void> {
+  project.value = null
+  if (!pid) return
+  try {
+    const p = await window.api.project.get(pid)
+    if (!p) return
+    project.value = p
+    const paths = [
+      ...(p.characters || []).flatMap(c => [c.faceImagePath, c.refImagePath, c.bodySheetPath]),
+      ...(p.sceneBoards || []).map(b => b.emptyPlatePath),
+      ...(p.shots || []).flatMap(s => [s.firstFramePath, s.lastFramePath, s.sceneImagePath, s.rawVideoPath, s.segmentPath])
+    ].filter(Boolean) as string[]
+    await ensureFileUrls(paths)
+  } catch {
+    // 产物预览不可用时面板显示空态提示，不阻塞控制台其余功能
+  }
+}
+
+/** 复审问题列表：默认折叠为 5 条，超出可展开查看全部 / 收起 */
+const reviewExpanded = ref(false)
+
+/** 渲染阶段「改提示词/工作流重渲此镜」：更新分镜并作废旧产物 → 重新入队 */
+const rerenderingShotId = ref('')
+type RerenderPayload = { shotId: string; prompt: string; dialogue: string; negative: string; workflow: string }
+async function rerenderOneShot(payload: RerenderPayload): Promise<void> {
+  const p = project.value
+  if (!p) return
+  const shot = p.shots.find(s => s.id === payload.shotId)
+  if (!shot) return
+  // 工作台编辑的是渲染实际使用的 promptEn（留空则渲染时回退 action 模板）；
+  // 不覆盖 shot.action——它还承担分镜动作/首帧 cue，避免工作台改动污染分镜数据
+  shot.promptEn = payload.prompt || undefined
+  shot.dialogue = payload.dialogue
+  shot.negativeEn = payload.negative || undefined
+  shot.workflow = payload.workflow || undefined
+  shot.status = 'pending'
+  shot.reviewed = undefined
+  shot.error = undefined
+  shot.audioPath = undefined
+  shot.rawVideoPath = undefined
+  shot.segmentPath = undefined
+  shot.renderProfile = undefined
+  shot.consistencyScore = undefined
+  await window.api.project.save(snapshot(p))
+  const res = await window.api.render.start(p.id, [shot.id], false)
+  if (res.warnedShots.length > 0) {
+    ElMessage.warning(`第 ${shot.index} 镜已按「告警放行」重新入队渲染（内容已改，渲染前建议先核对分镜图）`)
+  }
+}
+async function onRerenderShot(payload: RerenderPayload): Promise<void> {
+  if (rerenderingShotId.value) return
+  rerenderingShotId.value = payload.shotId
+  try {
+    await rerenderOneShot(payload)
+    ElMessage.success(`第 ${payload.shotId} 镜已重新入队渲染`)
+  } catch (e) {
+    ElMessage.error(`重渲失败：${e instanceof Error ? e.message : String(e)}`)
+  } finally {
+    rerenderingShotId.value = ''
+  }
+}
+/** 批量重渲：逐镜串行入队（render.start 内部已有队列/去重） */
+async function onRerenderShots(payloads: RerenderPayload[]): Promise<void> {
+  if (rerenderingShotId.value) return
+  rerenderingShotId.value = payloads[0]?.shotId || 'batch'
+  try {
+    for (const pl of payloads) {
+      try { await rerenderOneShot(pl) } catch (e) { ElMessage.error(`镜 ${pl.shotId} 重渲失败：${e instanceof Error ? e.message : String(e)}`) }
+    }
+    ElMessage.success(`${payloads.length} 镜已重新入队渲染`)
+  } finally {
+    rerenderingShotId.value = ''
+  }
+}
+
+/** 工作台产物「编辑提示词/工作流后重新生成」：主进程落盘新产物 → 刷新快照与预览 URL */
+async function onAssetRegenerate(payload: AssetRegenerateInput): Promise<void> {
+  const p = project.value
+  if (!p) return
+  try {
+    const r = await window.api.asset.regenerate(payload)
+    ElMessage.success('产物已重新生成')
+    await loadProjectData(p.id)
+    if (r?.path) await ensureFileUrls([r.path])
+  } catch (e) {
+    ElMessage.error(`重新生成失败：${e instanceof Error ? e.message : String(e)}`)
+  }
+}
 
 // ===== 开拍弹窗（壳持有：confirmStart 需要路由切换 + hydrate） =====
 const startDialogVisible = ref(false)
 const starting = ref(false)
 
 async function confirmStart(input: {
-  title: string; genre: string; script: string; gateStages: DirectorStage[]
+  title: string; genre: string; script: string; gateStages?: DirectorStage[]; bgmAbsolutePath?: string
 }): Promise<void> {
   starting.value = true
   try {
@@ -213,12 +350,59 @@ async function confirmStart(input: {
   }
 }
 
+/** 续渲全部待渲染镜头（残留任务提示的入口）：入队后由影子任务同步进度 */
+async function retryPendingShots(): Promise<void> {
+  const p = project.value
+  if (!p) return
+  const pendingIds = p.shots.filter(s => s.status === 'pending').map(s => s.id)
+  if (!pendingIds.length) return
+  try {
+    await window.api.render.start(p.id, pendingIds, false)
+    ElMessage.success(`已重新入队 ${pendingIds.length} 个待渲染镜头，进度在下方实时更新`)
+  } catch (e) {
+    ElMessage.error(`续渲失败：${e instanceof Error ? e.message : String(e)}`)
+  }
+}
+
+// ===== 系统自检：启动即跑一次，异常数显示在侧栏徽标 =====
+const selfItems = ref<SelfCheckItem[]>([])
+const selfLoading = ref(false)
+const selfBadCount = computed(() => selfItems.value.filter(i => !i.ok).length)
+
+async function runSelfcheck(): Promise<void> {
+  if (selfLoading.value) return
+  selfLoading.value = true
+  try {
+    selfItems.value = await window.api.system.selfcheck()
+    if (selfItems.value.some(i => !i.ok)) {
+      ElMessage.warning('系统自检发现异常项，请查看「系统自检」面板')
+    }
+  } catch (e) {
+    ElMessage.error(`自检失败：${e instanceof Error ? e.message : String(e)}`)
+  } finally {
+    selfLoading.value = false
+  }
+}
+
 // ===== 生命周期：装配订阅与并行加载 =====
 onMounted(async () => {
-  if (projectId.value) await hydrate(projectId.value)
-  await Promise.all([loadSkills(), loadMemories(), loadChat()])
+  // R-8：先建立订阅再异步加载——hydrate 期间主进程发出的 progress/log 不再丢失；
+  // 各加载步骤独立 catch（loadSkills/loadMemories/loadChat 自兜底），任一失败不连坐其余初始化。
+  // 冷启动优化（UXA-P2-03）：hydrate 与 loadSkills/loadMemories/loadChat 互相独立，
+  // 改为并行 await，缩短首次进入控制台的阻塞时间（此前串行总耗时 ≈ 三者相加）。
   subscribe()
   subscribeChat()
+  const hydrateTask = (async () => {
+    try {
+      if (projectId.value) await hydrate(projectId.value)
+      else await hydrateLatest()
+    } catch (e) {
+      ElMessage.error(`加载导演状态失败：${e instanceof Error ? e.message : String(e)}`)
+    }
+  })()
+  await Promise.all([hydrateTask, loadSkills(), loadMemories(), loadChat()])
+  void loadProjectData(projectId.value)
+  void runSelfcheck()
 })
 
 onUnmounted(() => {
@@ -229,47 +413,106 @@ onUnmounted(() => {
 // 路由项目切换：同一组件复用时重新装载
 watch(projectId, async (id, old) => {
   if (id === old) return
+  // R-9：加载失败不再产生 unhandled rejection，且后续 loadChat 不被连坐跳过
   resetForRouteSwitch()
-  if (id) await hydrate(id)
-  await loadChat()
+  const hydrateTask = (async () => {
+    try {
+      if (id) await hydrate(id)
+      else await hydrateLatest()
+    } catch (e) {
+      ElMessage.error(`加载项目状态失败：${e instanceof Error ? e.message : String(e)}`)
+    }
+  })()
+  await Promise.all([hydrateTask, loadChat()])
+  void loadProjectData(id)
 })
 
 function onModuleSelect(index: string): void {
   activeModule.value = index
+  // agent 工具可在后台增删技能/记忆，切到对应面板时拉最新，避免显示旧数据
+  if (index === 'skills') void loadSkills()
+  else if (index === 'memory') void loadMemories()
+}
+
+/**
+ * 清空对话守卫：导演任务仍在执行时，清空对话并不会停止任务（此前用户误解为
+ * "清空=任务没了"，导致后台渲染继续）。弹确认框让用户选择是否一并取消任务。
+ */
+async function clearChatGuarded(): Promise<void> {
+  if (running.value || paused.value) {
+    // 双分支选择框：确认=清空并取消任务，取消=仅清空对话，ESC/遮罩=放弃整个操作
+    const action = await ElMessageBox.confirm(
+      '导演任务仍在执行中，清空对话不会停止任务。是否同时取消当前任务？',
+      '清空对话 · 任务运行中',
+      {
+        type: 'warning',
+        confirmButtonText: '清空并取消任务',
+        cancelButtonText: '仅清空对话',
+        distinguishCancelAndClose: true
+      }
+    )
+      .then(() => 'confirm' as const)
+      .catch((a: unknown) => (a === 'cancel' ? 'cancel' as const : 'close' as const))
+    if (action === 'close') return
+    if (action === 'confirm') {
+      const pid = state.value?.projectId || projectId.value
+      if (pid) {
+        try {
+          await window.api.director.cancel(pid)
+          ElMessage.warning('已请求取消')
+        } catch (e) {
+          ElMessage.error('取消失败：' + (e instanceof Error ? e.message : String(e)))
+        }
+      }
+    }
+  }
+  await clearChat()
 }
 </script>
 
 <style scoped>
 .console {
   display: flex;
-  gap: 16px;
-  height: calc(100vh - 80px);
+  gap: 14px;
+  height: calc(100vh - 48px);
+  max-width: none;
+  padding: 0;
+  animation: page-enter var(--dur-slow) var(--ease-out);
 }
 .console-aside {
   width: 230px;
   flex-shrink: 0;
-  background: var(--bg-card);
-  border: 1px solid var(--border-weak);
-  border-radius: 8px;
   display: flex;
   flex-direction: column;
   padding: 12px 0;
+  /* 项目概览（含复审问题列表）过长时纵向滚动，避免 hidden 硬裁剪 */
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 .aside-title {
   padding: 4px 16px 12px;
+  font-family: var(--font-display);
   font-size: 15px;
-  font-weight: 600;
+  font-weight: 650;
   color: var(--text-primary);
 }
 .aside-menu {
   border-right: none;
   --el-menu-bg-color: transparent;
   --el-menu-text-color: var(--text-secondary);
-  --el-menu-active-color: #67c23a;
-  --el-menu-hover-bg-color: var(--bg-input);
+  --el-menu-active-color: var(--brand-strong);
+  --el-menu-hover-bg-color: var(--bg-hover);
 }
-.aside-menu :deep(.el-menu-item) { height: 44px; }
-.aside-menu :deep(.el-menu-item.is-active) { background: #1a2a1a; }
+.aside-menu :deep(.el-menu-item) {
+  height: 42px;
+  margin: 2px 8px;
+  border-radius: 10px;
+}
+.aside-menu :deep(.el-menu-item.is-active) {
+  background: var(--bg-menu-active);
+  box-shadow: inset 0 0 0 1px rgba(212, 165, 116, 0.22);
+}
+.selfcheck-badge { margin-left: auto; margin-right: 8px; }
 .aside-project {
   margin-top: auto;
   border-top: 1px solid var(--border-weak);
@@ -285,11 +528,13 @@ function onModuleSelect(index: string): void {
 .kv .v { color: var(--text-primary); display: flex; align-items: center; gap: 6px; }
 .review-issues { margin-top: 10px; }
 .issue-item {
-  color: #f56c6c;
+  color: var(--danger);
   font-size: 12px;
   line-height: 1.5;
   margin-bottom: 4px;
 }
+.review-more { margin-top: 2px; }
+.review-more .el-button.is-link { padding: 0; height: auto; font-size: 12px; }
 .final-path { margin-top: 10px; }
 
 .console-main {
@@ -299,14 +544,30 @@ function onModuleSelect(index: string): void {
   flex-direction: column;
   gap: 12px;
   overflow: hidden;
+  padding: 12px;
 }
 
 .console-right {
-  width: 360px;
+  width: min(380px, 34vw);
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
   gap: 12px;
   min-height: 0;
+  overflow: hidden;
+  padding: 4px;
+}
+
+@media (max-width: 1100px) {
+  .console {
+    flex-direction: column;
+    height: auto;
+    min-height: calc(100vh - 48px);
+  }
+  .console-aside { width: 100%; }
+  .console-right {
+    width: 100%;
+    min-height: 420px;
+  }
 }
 </style>

@@ -1,7 +1,9 @@
 import * as fs from 'fs/promises'
 import * as path from 'node:path'
 import { createRequire } from 'node:module'
-import type { Project, Character, Shot } from '../../shared/ipcTypes'
+import type { Project, Character, Shot, SceneBoard } from '../../shared/ipcTypes'
+import { mergeProtectedDoneShot, reviewedIsValid } from '../../shared/pipelineGuards'
+import { atomicWriteJson } from './fsUtil'
 
 // 延迟获取 electron：在 Electron 主进程内为真实对象；在纯 Node（测试）下
 // require('electron') 返回可执行路径字符串，解构得到 undefined 而不抛错。
@@ -44,7 +46,7 @@ export class ProjectStore {
         try {
           const jsonPath = path.join(this.userDataPath, dir.name, 'project.json')
           const raw = await fs.readFile(jsonPath, 'utf-8')
-          projects.push(JSON.parse(raw))
+          projects.push(this.normalizeProject(JSON.parse(raw) as Project))
         } catch {
           // 跳过无效目录
         }
@@ -61,6 +63,7 @@ export class ProjectStore {
     const projectDir = this.getProjectDir(id)
     await fs.mkdir(projectDir, { recursive: true })
     await fs.mkdir(path.join(projectDir, 'characters'), { recursive: true })
+    await fs.mkdir(path.join(projectDir, 'scenes'), { recursive: true })
     await fs.mkdir(path.join(projectDir, 'shots'), { recursive: true })
 
     const project: Project = {
@@ -70,19 +73,33 @@ export class ProjectStore {
       episode: 1,
       status: 'draft',
       characters: [],
+      sceneBoards: [],
       shots: [],
       fps: 24,
       createdAt: Date.now(),
       updatedAt: Date.now()
     }
 
-    await fs.writeFile(this.getProjectJsonPath(id), JSON.stringify(project, null, 2))
+    await atomicWriteJson(this.getProjectJsonPath(id), project)
     return project
   }
 
   async get(id: string): Promise<Project> {
     const raw = await fs.readFile(this.getProjectJsonPath(id), 'utf-8')
-    return JSON.parse(raw)
+    const project = JSON.parse(raw) as Project
+    return this.normalizeProject(project)
+  }
+
+  /** 旧项目补齐资产字段：场景库数组、角色脸图回填 */
+  private normalizeProject(project: Project): Project {
+    if (!project.sceneBoards) project.sceneBoards = []
+    for (const c of project.characters || []) {
+      if (c.refImagePath && !c.faceImagePath) c.faceImagePath = c.refImagePath
+    }
+    for (const s of project.shots || []) {
+      if (s.reviewed && !reviewedIsValid(s.type, s.reviewed, s.firstFramePath)) s.reviewed = false
+    }
+    return project
   }
 
   async save(project: Project): Promise<void> {
@@ -105,17 +122,61 @@ export class ProjectStore {
   private enqueue<T>(id: string, job: () => Promise<T>): Promise<T> {
     const prev = this.saveChains.get(id) ?? Promise.resolve()
     const next = prev.then(job)
-    this.saveChains.set(id, next.catch(() => { /* 吃掉错误，保证链不断 */ }))
+    const tail = next.catch(() => { /* 吃掉错误，保证链不断 */ })
+    this.saveChains.set(id, tail)
+    // 链排空后回收条目，防止项目数量增长时 Map 永久膨胀（M-16）；
+    // 仅当尾部仍是本次的 tail 时才删——已有后续入队时不回收
+    void tail.then(() => {
+      if (this.saveChains.get(id) === tail) this.saveChains.delete(id)
+    })
     return next
   }
 
   private async doSave(project: Project): Promise<void> {
+    this.normalizeProject(project)
+    // 防旧快照覆盖已完成镜头（M-x）：director 断点续跑/审批等路径可能持有一份
+    // 渲染期间的旧 project 对象，其已完成镜头仍是 rendering/pending（segmentPath 为空）。
+    // 若磁盘上该镜已是 done 且产物文件在盘，本次写入又把它"退化"成无产物的状态，
+    // 则保留磁盘 done 版本——避免已完成镜头被重置成待渲染（重渲浪费 + 状态丢失）。
+    // 用户显式重置（分镜页删除产物重渲）会同时删产物文件，此保护自动放行。
+    let prev: Project | null = null
+    try {
+      const raw = await fs.readFile(this.getProjectJsonPath(project.id), 'utf-8')
+      prev = JSON.parse(raw) as Project
+    } catch {
+      /* 首次落盘或文件缺失：无磁盘副本可对比 */
+    }
+    if (prev) {
+      const prevById = new Map(prev.shots.map(s => [s.id, s]))
+      let restored = 0
+      for (let i = 0; i < project.shots.length; i++) {
+        const cur = project.shots[i]
+        const old = prevById.get(cur.id)
+        if (cur.intentReset) {
+          delete cur.intentReset
+          continue
+        }
+        if (!old || old.status !== 'done' || !old.segmentPath) continue
+        const degraded =
+          (cur.status === 'pending' || cur.status === 'failed' || cur.status === 'rendering') &&
+          !cur.segmentPath
+        if (!degraded) continue
+        const abs = path.resolve(this.userDataPath, '..', old.segmentPath)
+        let exists = false
+        try {
+          exists = (await fs.stat(abs)).isFile()
+        } catch { /* 文件不在盘 */ }
+        if (exists) {
+          project.shots[i] = mergeProtectedDoneShot(old, cur)
+          restored++
+        }
+      }
+      if (restored > 0) {
+        console.warn(`[ProjectStore] 已拦截 ${restored} 个已完成镜头被旧快照退化覆盖（保护性恢复为 done）`)
+      }
+    }
     project.updatedAt = Date.now()
-    const target = this.getProjectJsonPath(project.id)
-    const tmp = `${target}.tmp`
-    // 原子写入：先写临时文件，再重命名，避免崩溃导致 project.json 损坏
-    await fs.writeFile(tmp, JSON.stringify(project, null, 2))
-    await fs.rename(tmp, target)
+    await atomicWriteJson(this.getProjectJsonPath(project.id), project)
   }
 
   async delete(id: string): Promise<void> {
@@ -156,38 +217,47 @@ export class ProjectStore {
 
     const charIdMap = new Map<string, string>()
     const newCharacters: Character[] = []
+    await fs.mkdir(path.join(this.getProjectDir(target.id), 'scenes'), { recursive: true })
 
     for (const c of source.characters) {
       const newCharId = `char_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
       charIdMap.set(c.id, newCharId)
 
-      let newRefImagePath = ''
-      if (c.refImagePath) {
-        // 兼容旧数据（绝对路径）与新规范（projects/<sid>/... → 相对 projects 目录为 <sid>/...）
-        const sourceAbs = path.isAbsolute(c.refImagePath)
-          ? c.refImagePath
-          : path.join(this.userDataPath, c.refImagePath.replace(/^projects[\\/]/, ''))
-        const ext = path.extname(sourceAbs) || '.png'
-        const destFromProjects = path.join(target.id, 'characters', `${newCharId}${ext}`)
-        try {
-          await fs.copyFile(sourceAbs, path.join(this.userDataPath, destFromProjects))
-          newRefImagePath = `projects/${destFromProjects.replace(/\\/g, '/')}`
-        } catch {
-          // 源定妆图缺失：副本保留空图，不阻断复制
-        }
-      }
+      const newFace = await this.copyAssetFile(c.faceImagePath || c.refImagePath, target.id, 'characters', `${newCharId}_face`)
+      const newBody = await this.copyAssetFile(c.bodySheetPath, target.id, 'characters', `${newCharId}_body`)
+      const newRef = newFace || (await this.copyAssetFile(c.refImagePath, target.id, 'characters', newCharId))
 
       newCharacters.push({
         id: newCharId,
         name: c.name,
-        refImagePath: newRefImagePath,
+        refImagePath: newRef,
+        faceImagePath: newFace || undefined,
+        bodySheetPath: newBody || undefined,
         description: c.description,
         voice: c.voice,
-        voiceRate: c.voiceRate
+        voiceRate: c.voiceRate,
+        appearanceLock: c.appearanceLock
+      })
+    }
+
+    const boardIdMap = new Map<string, string>()
+    const newBoards: SceneBoard[] = []
+    for (const board of source.sceneBoards || []) {
+      const newBoardId = `scene_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
+      boardIdMap.set(board.id, newBoardId)
+      const plate = await this.copyAssetFile(board.emptyPlatePath, target.id, 'scenes', `${newBoardId}_plate`)
+      newBoards.push({
+        id: newBoardId,
+        key: board.key,
+        name: board.name,
+        description: board.description,
+        emptyPlatePath: plate
       })
     }
 
     const newShots: Shot[] = source.shots.map((s, i) => ({
+      // —— 创作/提示词字段全量复制（D-01 整改 2026-10-20：副本保留拆镜成果，
+      //    不再丢 promptEn/negativeEn/首尾帧/转场/时长/道具等，避免「有分镜、提示词全空」）——
       id: `shot_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 6)}`,
       index: i + 1,
       scene: s.scene,
@@ -201,15 +271,78 @@ export class ProjectStore {
       height: s.height,
       frames: s.frames,
       seed: s.seed,
+      workflow: s.workflow,
+      voice: s.voice,
+      sceneBoardId: s.sceneBoardId ? boardIdMap.get(s.sceneBoardId) : undefined,
+      shotSize: s.shotSize,
+      sceneEn: s.sceneEn,
+      camera: s.camera,
+      transition: s.transition,
+      emotion: s.emotion,
+      lighting: s.lighting,
+      facing: s.facing,
+      continuity: s.continuity,
+      props: s.props ? [...s.props] : undefined,
+      promptEn: s.promptEn,
+      negativeEn: s.negativeEn,
+      frameSeconds: s.frameSeconds,
+      firstFrameEn: s.firstFrameEn,
+      midFrameEn: s.midFrameEn,
+      lastFrameEn: s.lastFrameEn,
+      handoffToNext: s.handoffToNext,
+      transitionEn: s.transitionEn,
+      // 剪辑台人工决策保留（不引用文件，语义仍有效）
+      trimStart: s.trimStart,
+      trimEnd: s.trimEnd,
+      skipped: s.skipped,
+      // —— 运行时/产物字段显式重置（防悬空资产路径 + doSave 的 done 保护误把无文件镜头复活成 done）——
+      sceneImagePath: undefined,
+      firstFramePath: undefined,
+      lastFramePath: undefined,
+      reviewed: undefined,
+      consistencyScore: undefined,
+      lowConsistency: undefined,
+      auditFix: undefined,
+      auditHint: undefined,
+      renderProfile: undefined,
+      audioPath: undefined,
+      audioFailed: undefined,
+      audioFailedReason: undefined,
+      rawVideoPath: undefined,
+      segmentPath: undefined,
+      error: undefined,
       status: 'pending'
     }))
 
     target.episode = source.episode
     target.fps = source.fps
     target.characters = newCharacters
+    target.sceneBoards = newBoards
     target.shots = newShots
     await this.save(target)
     return target
+  }
+
+  /** 复制项目内资产文件到目标项目子目录，返回新相对路径；失败返回空串 */
+  private async copyAssetFile(
+    relOrAbs: string | undefined,
+    targetProjectId: string,
+    subdir: string,
+    basename: string
+  ): Promise<string> {
+    if (!relOrAbs) return ''
+    const sourceAbs = path.isAbsolute(relOrAbs)
+      ? relOrAbs
+      : path.join(this.userDataPath, relOrAbs.replace(/^projects[\\/]/, ''))
+    const ext = path.extname(sourceAbs) || '.png'
+    const destFromProjects = path.join(targetProjectId, subdir, `${basename}${ext}`)
+    try {
+      await fs.mkdir(path.dirname(path.join(this.userDataPath, destFromProjects)), { recursive: true })
+      await fs.copyFile(sourceAbs, path.join(this.userDataPath, destFromProjects))
+      return `projects/${destFromProjects.replace(/\\/g, '/')}`
+    } catch {
+      return ''
+    }
   }
 
   async getShotDir(projectId: string, shotId: string): Promise<string> {

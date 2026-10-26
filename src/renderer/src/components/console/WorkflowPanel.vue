@@ -2,7 +2,7 @@
   <div class="workflow-panel">
     <header class="control-bar">
       <div class="control-title">
-        <span v-if="state">{{ state.title }}</span>
+        <span v-if="state" class="control-title-text" :title="state.title">{{ state.title }}</span>
         <span v-else>导演工作台</span>
         <el-tag v-if="paused" type="warning" effect="dark" size="small" class="state-tag">已暂停 · 等待确认</el-tag>
         <el-tag v-else-if="running" type="primary" effect="dark" size="small" class="state-tag">执行中</el-tag>
@@ -14,8 +14,17 @@
         <template v-else>
           <el-button v-if="!paused" type="warning" :icon="VideoPause" @click="emit('pause')">暂停</el-button>
           <el-button v-else type="success" :icon="VideoPlay" @click="emit('resume')">继续</el-button>
-          <el-button type="danger" :icon="Close" @click="emit('cancel')">取消任务</el-button>
         </template>
+        <!-- 停止/清空按钮常驻显示，状态不满足时置灰，避免用户找不到入口 -->
+        <el-button type="danger" :icon="CircleCloseFilled" :disabled="!running" @click="emit('cancel')">停止任务</el-button>
+        <el-button :icon="Delete" :disabled="running || !state" @click="emit('clear')">清空任务</el-button>
+        <el-button
+          v-if="!running && failedCount > 0"
+          type="danger"
+          plain
+          :icon="RefreshRight"
+          @click="emit('retryFailed')"
+        >重试失败镜头 ({{ failedCount }})</el-button>
       </div>
     </header>
 
@@ -26,141 +35,98 @@
       :closable="false"
       show-icon
       title="任务已停在阶段确认点"
-      description="进行中的渲染已安全完成，流水线已挂起。检查产物无误后点「继续」进入下一阶段，或点「取消任务」终止。"
+      description="进行中的渲染已安全完成，流水线已挂起。检查产物无误后点「继续」进入下一阶段，或点「停止任务」终止。"
     />
 
-    <!-- 九阶段时间线 -->
-    <div class="panel">
-      <div class="panel-title">工作流阶段</div>
-      <div class="stage-list">
-        <div
-          v-for="stage in stageOrder"
-          :key="stage"
-          class="stage-row"
-          :class="[`is-${state?.stages[stage]?.status || 'pending'}`]"
-        >
-          <div class="stage-icon">
-            <el-icon v-if="state?.stages[stage]?.status === 'running'" class="is-loading"><Loading /></el-icon>
-            <el-icon v-else-if="state?.stages[stage]?.status === 'done'"><CircleCheckFilled /></el-icon>
-            <el-icon v-else-if="state?.stages[stage]?.status === 'error'"><CircleCloseFilled /></el-icon>
-            <el-icon v-else-if="state?.stages[stage]?.status === 'skipped'"><RemoveFilled /></el-icon>
-            <el-icon v-else-if="isGate(stage)"><Timer /></el-icon>
-            <el-icon v-else><MoreFilled /></el-icon>
-          </div>
-          <div class="stage-body">
-            <div class="stage-head">
-              <span class="stage-name">{{ stageLabels[stage] }}</span>
-              <el-tag v-if="isGate(stage)" size="small" type="warning" effect="plain" class="gate-tag">阶段后暂停</el-tag>
-            </div>
-            <div v-if="state?.stages[stage]?.message" class="stage-msg">{{ state.stages[stage].message }}</div>
-            <el-progress
-              v-if="state?.stages[stage]?.status === 'running'"
-              :percentage="state.stages[stage].percent"
-              :stroke-width="4"
-              :show-text="false"
-              class="stage-progress"
-            />
-          </div>
-        </div>
+    <!-- 残留任务提示：上次任务结束后仍有未完成镜头（失败/待渲染），可一键续渲 -->
+    <el-alert
+      v-if="!running && !paused && leftoverCount > 0"
+      class="leftover-alert"
+      type="info"
+      :closable="false"
+      show-icon
+      :title="`上次任务未完成：${failedCount} 镜失败、${pendingCount} 镜待渲染`"
+      description="流水线已结束但镜头未全部产出。可重试失败镜头或续渲待渲染镜头，也可以在分镜页逐镜处理。"
+    >
+      <div class="leftover-actions">
+        <el-button
+          v-if="failedCount > 0"
+          size="small"
+          type="danger"
+          plain
+          :icon="RefreshRight"
+          @click="emit('retryFailed')"
+        >重试失败镜头 ({{ failedCount }})</el-button>
+        <el-button
+          v-if="pendingCount > 0"
+          size="small"
+          type="primary"
+          plain
+          :icon="VideoPlay"
+          @click="emit('retryPending')"
+        >续渲待渲染 ({{ pendingCount }})</el-button>
       </div>
-    </div>
+    </el-alert>
 
-    <!-- 中文执行日志（按阶段自动折叠） -->
-    <div class="panel panel-grow">
-      <div class="panel-title log-title">
-        执行日志
-        <span class="log-hint">已完成阶段自动折叠 · 新消息自动滚底</span>
-      </div>
-      <div ref="logBoxRef" class="log-box">
-        <el-collapse
-          v-if="logsByStage.length"
-          :model-value="expandedStages"
-          @update:model-value="onStagesUpdate"
-          class="log-collapse"
-        >
-          <el-collapse-item
-            v-for="group in logsByStage"
-            :key="group.stage"
-            :name="group.stage"
-          >
-            <template #title>
-              <span class="log-group-title">{{ stageLabels[group.stage] }}</span>
-              <el-tag size="small" :type="groupHasError(group) ? 'danger' : 'info'" effect="plain" class="log-count">
-                {{ group.entries.length }} 条
-              </el-tag>
-            </template>
-            <div v-for="entry in group.entries" :key="entry.id" class="log-entry">
-              <span class="log-time">{{ formatTime(entry.timestamp) }}</span>
-              <span class="log-level" :class="`lv-${entry.level}`">{{ levelText[entry.level] }}</span>
-              <span class="log-msg">{{ entry.message }}</span>
-            </div>
-          </el-collapse-item>
-        </el-collapse>
-        <el-empty v-else description="暂无日志，开始任务后在此实时显示" :image-size="80" />
-      </div>
-    </div>
+    <!-- 九阶段时间线（可折叠：点击阶段行展开产物预览/改提示词重渲） -->
+    <StageTimeline
+      :state="state"
+      :project="project"
+      :asset-urls="assetUrls"
+      :video-workflows="videoWorkflows"
+      :image-workflows="imageWorkflows"
+      :rerendering-shot-id="rerenderingShotId"
+      @resume-from="emit('resumeFrom', $event)"
+      @rerender-shot="emit('rerenderShot', $event)"
+      @rerender-shots="emit('rerenderShots', $event)"
+      @open-final-folder="emit('openFinalFolder')"
+      @asset-refreshed="emit('asset-refreshed')"
+      @start-task="openStartDialog"
+    />
+
+    <!-- 中文执行日志（可交互时间线：阶段卡片可展开，含耗时/错误详情/修复建议/产物） -->
+    <LogPanel
+      :local-logs="localLogs"
+      :expanded-stages="expandedStages"
+      :state="state"
+      @update:expanded-stages="emit('update:expandedStages', $event)"
+      @open-final-folder="emit('openFinalFolder')"
+    />
 
     <!-- 开拍需求确认弹窗 -->
     <el-dialog
       :model-value="startDialogVisible"
       @update:model-value="emit('update:startDialogVisible', $event)"
       title="开拍需求确认"
-      width="640px"
+      width="720px"
+      top="6vh"
+      append-to-body
       :close-on-click-modal="false"
+      class="start-dialog"
     >
-      <el-alert
-        type="info"
-        :closable="false"
-        show-icon
-        class="confirm-tip"
-        title="导演将按以下配置全自动执行：拆镜 → 定妆/首帧 → 逐镜渲染与审批 → 拼接 → 字幕 → 复审 → BGM"
-        description="勾选的阶段结束后流水线会暂停，等你检查确认再继续；不勾选则一口气跑完。"
+      <DirectorStartForm
+        :open="startDialogVisible"
+        :starting="starting"
+        @cancel="emit('update:startDialogVisible', false)"
+        @submit="confirmStart"
       />
-      <el-form label-width="92px" class="start-form">
-        <el-form-item label="片名" required>
-          <el-input v-model="startForm.title" maxlength="40" placeholder="例如：雨夜重逢" />
-        </el-form-item>
-        <el-form-item label="题材" required>
-          <el-select v-model="startForm.genre" style="width: 200px">
-            <el-option v-for="g in GENRE_TEMPLATES" :key="g.key" :label="g.label" :value="g.key" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="剧本" required>
-          <el-input
-            v-model="startForm.script"
-            type="textarea"
-            :rows="7"
-            placeholder="粘贴剧本正文，包含场景描述与角色台词…"
-          />
-        </el-form-item>
-        <el-form-item label="确认点">
-          <el-checkbox-group v-model="startForm.gateStages" class="gate-checks">
-            <el-checkbox v-for="g in gateOptions" :key="g.value" :label="g.value">
-              {{ g.label }}完成后暂停
-            </el-checkbox>
-          </el-checkbox-group>
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="emit('update:startDialogVisible', false)">取消</el-button>
-        <el-button type="primary" :loading="starting" @click="confirmStart">确认开拍</el-button>
-      </template>
     </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { computed, onMounted, ref } from 'vue'
 import {
-  VideoPlay, VideoPause, Close,
-  Loading, CircleCheckFilled, CircleCloseFilled, RemoveFilled, MoreFilled, Timer
+  VideoPlay, VideoPause, Delete, CircleCloseFilled, RefreshRight
 } from '@element-plus/icons-vue'
+import DirectorStartForm from '../project/DirectorStartForm.vue'
+import StageTimeline from './StageTimeline.vue'
+import LogPanel from './LogPanel.vue'
 import {
-  GENRE_TEMPLATES,
-  type DirectorState, type DirectorStage, type DirectorLogEntry
+  type DirectorState, type DirectorStage, type DirectorLogEntry,
+  type Project, type WorkflowMeta, type WorkflowCapability,
+  type AssetRegenerateKind, type AssetRegenerateInput, type DirectorStartInput
 } from '../../../../shared/ipcTypes'
-import { STAGE_ORDER, STAGE_LABELS, LEVEL_TEXT } from '../../composables/useDirectorState'
 
 const props = defineProps<{
   state: DirectorState | null
@@ -171,95 +137,74 @@ const props = defineProps<{
   paused: boolean
   startDialogVisible: boolean
   starting: boolean
+  /** 项目快照与产物 URL（实时预览角色/场景/镜头/成片） */
+  project: Project | null
+  assetUrls: Record<string, string>
+  /** 正在重渲的镜头 id（按钮 loading） */
+  rerenderingShotId: string
 }>()
 
 const emit = defineEmits<{
   pause: []
   resume: []
   cancel: []
+  /** 清空已结束任务的状态与日志，回到待命态 */
+  clear: []
   openFinalFolder: []
+  /** A 断点续跑：从指定阶段重跑 */
+  resumeFrom: [stage: DirectorStage]
+  /** D 批量重试失败镜头 */
+  retryFailed: []
+  /** 续渲全部待渲染镜头 */
+  retryPending: []
+  /** 渲染阶段：改提示词/工作流后重渲单镜 */
+  rerenderShot: [payload: { shotId: string; prompt: string; dialogue: string; negative: string; workflow: string }]
+  /** 渲染阶段：批量重渲选中镜头 */
+  rerenderShots: [payloads: Array<{ shotId: string; prompt: string; dialogue: string; negative: string; workflow: string }>]
+  /** 工作台产物：编辑提示词/工作流后重新生成（角色/场景/首尾帧） */
+  regenerateAsset: [payload: AssetRegenerateInput]
+  /** 工作台产物：回滚到上一版 */
+  rollbackAsset: [payload: AssetRegenerateInput]
+  /** 产物已变更，通知父级刷新 project/assetUrls */
+  'asset-refreshed': []
   'update:expandedStages': [stages: DirectorStage[]]
   'update:startDialogVisible': [visible: boolean]
-  start: [input: { title: string; genre: string; script: string; gateStages: DirectorStage[] }]
+  start: [input: { title: string; genre: string; script: string; gateStages?: DirectorStage[]; bgmAbsolutePath?: string }]
 }>()
 
-const stageOrder = STAGE_ORDER
-const stageLabels = STAGE_LABELS
-const levelText = LEVEL_TEXT
-
-const logsByStage = computed(() => {
-  const map = new Map<DirectorStage, DirectorLogEntry[]>()
-  for (const e of props.localLogs) {
-    const arr = map.get(e.stage) || []
-    arr.push(e)
-    map.set(e.stage, arr)
-  }
-  return STAGE_ORDER
-    .filter(s => map.has(s))
-    .map(stage => ({ stage, entries: map.get(stage)! }))
+const failedCount = computed(() => props.state?.failedShotIds.length ?? 0)
+/** 待渲染镜头数（残留任务提示用）：优先取项目快照，取不到时回退 state */
+const pendingCount = computed(() => {
+  const shots = props.project?.shots
+  if (shots) return shots.filter(s => s.status === 'pending').length
+  const total = props.state?.totalShots ?? 0
+  const done = props.state?.doneShots ?? 0
+  const failed = failedCount.value
+  return Math.max(0, total - done - failed)
 })
+const leftoverCount = computed(() => failedCount.value + pendingCount.value)
 
-function isGate(stage: DirectorStage): boolean {
-  return props.state?.gateStages.includes(stage) ?? false
-}
-function groupHasError(g: { entries: DirectorLogEntry[] }): boolean {
-  return g.entries.some(e => e.level === 'error')
-}
-function formatTime(ts: number): string {
-  const d = new Date(ts)
-  const p = (n: number) => String(n).padStart(2, '0')
-  return `${p(d.getHours())}:${p(d.getMinutes())}`
-}
-
-// el-collapse v-model 在父子分离场景下用 :model-value + @update
-function onStagesUpdate(val: string | string[]): void {
-  emit('update:expandedStages', Array.isArray(val) ? val as DirectorStage[] : [val as DirectorStage])
-}
-
-// ===== 开拍弹窗（form 状态由本子组件自管；visible 由父控制） =====
-const startForm = ref({
-  title: '',
-  genre: '霸总',
-  script: '',
-  gateStages: ['analyze', 'render'] as DirectorStage[]
-})
-
-// visible 由 false → true 时重置表单到默认值
-watch(() => props.startDialogVisible, (v) => {
-  if (v) {
-    startForm.value = {
-      title: startForm.value.title || '',
-      genre: startForm.value.genre || '霸总',
-      script: startForm.value.script || '',
-      gateStages: ['analyze', 'render']
-    }
+// ===== 工作流列表：按能力标签过滤（视频/图像分别给对应下拉） =====
+const workflows = ref<WorkflowMeta[]>([])
+onMounted(async () => {
+  try {
+    workflows.value = await window.api.workflow.list()
+  } catch {
+    workflows.value = []
   }
 })
+const VIDEO_CAPS: WorkflowCapability[] = ['t2v', 'i2v', 'flf2v']
+const IMAGE_CAPS: WorkflowCapability[] = ['t2i', 'i2i']
+const videoWorkflows = computed(() => workflows.value.filter(w => !w.capability || VIDEO_CAPS.includes(w.capability)))
+const imageWorkflows = computed(() => workflows.value.filter(w => !w.capability || IMAGE_CAPS.includes(w.capability)))
 
 function openStartDialog(): void {
   emit('update:startDialogVisible', true)
 }
 
-function confirmStart(): void {
-  if (!startForm.value.title.trim()) { ElMessage.warning('请填写片名'); return }
-  if (!startForm.value.script.trim()) { ElMessage.warning('请粘贴剧本正文'); return }
-  emit('start', {
-    title: startForm.value.title.trim(),
-    genre: startForm.value.genre,
-    script: startForm.value.script.trim(),
-    gateStages: startForm.value.gateStages
-  })
+function confirmStart(input: DirectorStartInput): void {
+  emit('start', input)
 }
-
-// ===== 新日志自动滚底（用户正在回看历史时不打断） =====
-const logBoxRef = ref<HTMLElement | null>(null)
-watch(() => props.localLogs.length, async () => {
-  await nextTick()
-  const box = logBoxRef.value
-  if (!box) return
-  const nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 140
-  if (nearBottom) box.scrollTop = box.scrollHeight
-})
 </script>
 
 <style scoped>
@@ -286,98 +231,35 @@ watch(() => props.localLogs.length, async () => {
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
 }
-.pause-alert { border-radius: 8px; }
-
-.panel {
-  background: var(--bg-card);
-  border: 1px solid var(--border-weak);
-  border-radius: 8px;
-  padding: 14px 16px;
-}
-.panel-grow {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-.panel-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin-bottom: 10px;
-  display: flex;
-  align-items: center;
-}
-.log-title { justify-content: space-between; }
-.log-hint { font-size: 12px; font-weight: 400; color: var(--text-muted); }
-
-.stage-list { display: flex; flex-direction: column; gap: 2px; }
-.stage-row {
-  display: flex;
-  gap: 12px;
-  padding: 8px 4px;
-  border-radius: 6px;
-}
-.stage-icon { width: 22px; display: flex; justify-content: center; color: var(--text-muted); font-size: 18px; }
-.stage-row.is-running .stage-icon { color: #409eff; }
-.stage-row.is-done .stage-icon { color: #67c23a; }
-.stage-row.is-error .stage-icon { color: #f56c6c; }
-.stage-row.is-skipped .stage-icon { color: var(--text-muted); }
-.is-loading { animation: spin 1.4s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
-.stage-body { flex: 1; min-width: 0; }
-.stage-head { display: flex; align-items: center; gap: 8px; }
-.stage-name {
-  font-size: 13px;
-  color: var(--text-secondary);
-}
-.stage-row.is-running .stage-name,
-.stage-row.is-done .stage-name,
-.stage-row.is-error .stage-name { color: var(--text-primary); font-weight: 500; }
-.gate-tag { transform: scale(0.9); }
-.stage-msg {
-  font-size: 12px;
-  color: var(--text-muted);
-  margin-top: 2px;
+/* 长标题单行截断，悬停显示全名；不折行 */
+.control-title-text {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  max-width: 220px;
+  min-width: 0;
 }
-.stage-row.is-error .stage-msg { color: #f56c6c; }
-.stage-progress { margin-top: 4px; max-width: 320px; }
+/* 语义禁用态：type=danger 按钮 disabled 后不再残留粉色，与「清空任务」一致置灰 */
+.control-actions .el-button.is-disabled,
+.control-actions .el-button.is-disabled:hover,
+.control-actions .el-button.is-disabled:focus {
+  background-color: var(--bg-input);
+  border-color: var(--border-weak);
+  color: var(--text-muted);
+}
+.pause-alert { border-radius: 8px; }
+.leftover-alert { border-radius: 8px; }
+.leftover-alert :deep(.el-alert__content) { width: 100%; }
+.leftover-actions { display: flex; gap: 8px; margin-top: 8px; }
 
-.log-box {
-  flex: 1;
+/* 弹窗：内容过高时 body 内部滚动，保证底部按钮始终可见 */
+.start-dialog :deep(.el-dialog__body) {
+  max-height: 62vh;
   overflow-y: auto;
-  min-height: 120px;
 }
-.log-collapse {
-  --el-collapse-border-color: var(--border-weak);
-  --el-collapse-header-bg-color: transparent;
-  --el-collapse-content-bg-color: transparent;
-  --el-collapse-header-text-color: var(--text-primary);
-  --el-collapse-text-color: var(--text-primary);
+.start-dialog :deep(.el-dialog__footer) {
+  border-top: 1px solid var(--border-weak);
 }
-.log-group-title { font-size: 13px; font-weight: 500; }
-.log-count { margin-left: 10px; }
-.log-entry {
-  display: flex;
-  gap: 10px;
-  font-size: 12px;
-  line-height: 1.9;
-  padding: 0 8px;
-  border-bottom: 1px dashed var(--border-weak);
-}
-.log-time { color: var(--text-muted); font-variant-numeric: tabular-nums; flex-shrink: 0; }
-.log-level { flex-shrink: 0; width: 34px; font-weight: 600; }
-.lv-info { color: #409eff; }
-.lv-success { color: #67c23a; }
-.lv-warn { color: #e6a23c; }
-.lv-error { color: #f56c6c; }
-.log-msg { color: var(--text-secondary); }
-
-.confirm-tip { margin-bottom: 16px; }
-.start-form :deep(.el-checkbox) { margin-right: 0; }
-.gate-checks { display: flex; flex-direction: column; gap: 4px; }
 </style>

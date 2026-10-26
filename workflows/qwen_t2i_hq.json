@@ -1,0 +1,188 @@
+{
+  "4": {
+    "class_type": "EmptySD3LatentImage",
+    "inputs": {
+      "width": "$WIDTH$",
+      "height": "$HEIGHT$",
+      "batch_size": 1
+    },
+    "_meta": {
+      "title": "EmptySD3LatentImage"
+    }
+  },
+  "6": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        "20",
+        1
+      ],
+      "text": "$PROMPT$"
+    },
+    "_meta": {
+      "title": "CLIP Text Encode (Positive Prompt)"
+    }
+  },
+  "7": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        "20",
+        1
+      ],
+      "text": "$NEGATIVE$"
+    },
+    "_meta": {
+      "title": "CLIP Text Encode (Negative Prompt)"
+    }
+  },
+  "9": {
+    "class_type": "ModelSamplingAuraFlow",
+    "inputs": {
+      "model": [
+        "21",
+        0
+      ],
+      "shift": 3
+    },
+    "_meta": {
+      "title": "ModelSamplingAuraFlow"
+    }
+  },
+  "10": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "14",
+        0
+      ],
+      "vae": [
+        "20",
+        2
+      ]
+    },
+    "_meta": {
+      "title": "VAEDecode"
+    }
+  },
+  "11": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "10",
+        0
+      ],
+      "filename_prefix": "ComfyUI"
+    },
+    "_meta": {
+      "title": "SaveImage"
+    }
+  },
+  "13": {
+    "class_type": "LatentUpscaleBy",
+    "inputs": {
+      "samples": [
+        "16",
+        0
+      ],
+      "upscale_method": "bislerp",
+      "scale_by": 1.5
+    },
+    "_meta": {
+      "title": "LatentUpscaleBy"
+    }
+  },
+  "14": {
+    "class_type": "KSamplerAdvanced",
+    "inputs": {
+      "model": [
+        "9",
+        0
+      ],
+      "positive": [
+        "6",
+        0
+      ],
+      "negative": [
+        "7",
+        0
+      ],
+      "latent_image": [
+        "13",
+        0
+      ],
+      "add_noise": "enable",
+      "noise_seed": "$SEED$",
+      "steps": 4,
+      "cfg": 1,
+      "sampler_name": "res_multistep",
+      "scheduler": "beta",
+      "start_at_step": 2,
+      "end_at_step": 10000,
+      "return_with_leftover_noise": "disable"
+    },
+    "_meta": {
+      "title": "KSamplerAdvanced"
+    }
+  },
+  "16": {
+    "class_type": "KSamplerAdvanced",
+    "inputs": {
+      "model": [
+        "9",
+        0
+      ],
+      "positive": [
+        "6",
+        0
+      ],
+      "negative": [
+        "7",
+        0
+      ],
+      "latent_image": [
+        "4",
+        0
+      ],
+      "add_noise": "enable",
+      "noise_seed": "$SEED$",
+      "steps": 4,
+      "cfg": 1,
+      "sampler_name": "res_multistep",
+      "scheduler": "beta",
+      "start_at_step": 0,
+      "end_at_step": 2,
+      "return_with_leftover_noise": "disable"
+    },
+    "_meta": {
+      "title": "KSamplerAdvanced"
+    }
+  },
+  "20": {
+    "class_type": "CheckpointLoaderSimple",
+    "inputs": {
+      "ckpt_name": "Qwen\\Qwen-Rapid-AIO-SFW-v23.safetensors"
+    },
+    "_meta": {
+      "title": "CheckpointLoaderSimple"
+    }
+  },
+  "21": {
+    "class_type": "ReservedVRAMSetter",
+    "inputs": {
+      "anything": [
+        "20",
+        0
+      ],
+      "reserved": 0.8,
+      "mode": "manual",
+      "seed": "$SEED$",
+      "auto_max_reserved": 0,
+      "clean_gpu_before": true
+    },
+    "_meta": {
+      "title": "ReservedVRAMSetter"
+    }
+  },
+  "_comment": "Qwen Rapid AIO 二次采样竖版文生图。$PROMPT$ $NEGATIVE$ $SEED$ $WIDTH$ $HEIGHT$"
+}

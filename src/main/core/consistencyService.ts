@@ -54,12 +54,22 @@ function solve4(Ain: number[][], bin: number[]): number[] {
  * 两套阈值（各自口径不同，不可混用），低于阈值视为人物/画面漂移，默认 warn 只告警不阻塞：
  * - FACE_CONSISTENCY_THRESHOLD：w600k_mbf ArcFace 512 维人脸向量余弦。
  *   2026-10 实测定标（同镜定妆照 vs 视频帧，构图/姿态接近，这是生产真实场景）：
- *   同人 0.558；换人 最高 0.200（同画风正脸跨性别），其余 -0.07~0.04 → 阈值取间隙中值 0.35。
- *   注：跨镜头极端姿态差异（大仰角侧脸 vs 正脸特写）同人也可能低至 0.20，此场景只告警。
+ *   同人 0.558；换人 最高 0.200（同画风正脸跨性别），其余 -0.07~0.04。
+ *   2026-10-11 修正：阈值由间隙中值 0.35 提到 0.5——实拍发现 0.35~0.5 区间大量
+ *   漂移/换脸镜（穿帮）被静默放行，宁可把姿态差异大的同人镜误伤为告警/剔除，
+ *   也不让漂移画面混入成片。跨镜头极端姿态差异（大仰角侧脸 vs 正脸特写）同人
+ *   仍可能低至 0.20，此场景只告警不阻断。
  * - CONSISTENCY_THRESHOLD：CLIP-B/32 全图向量余弦（无人脸回退路径）。
  */
-export const FACE_CONSISTENCY_THRESHOLD = 0.35
+export const FACE_CONSISTENCY_THRESHOLD = 0.5
 export const CONSISTENCY_THRESHOLD = 0.7
+/**
+ * H3 引擎身份漂移严重阈值：分数低于此值时，同引擎换 seed 重渲大概率仍是漂移，
+ * 直接自动切换 Wan i2v 重渲（Wan 用首帧做物理起点图，身份锁定远强于 H3 r2v）。
+ * 2026-10 实测：该镜 H3 r2v 人脸相似度 0.26~0.30（夸张大笑+脸型变形），
+ * 切 Wan i2v 后回升至 0.65。
+ */
+export const H3_WAN_FALLBACK_THRESHOLD = 0.3
 
 export interface RawRgbImage {
   data: Uint8Array
@@ -105,6 +115,8 @@ export class ConsistencyService {
   private initAttempted = false
   private initFailed = false
   private faceDetector: FaceDetector
+  /** 方法判定命中记录（诊断用，渲染日志可见） */
+  lastMethodTrace = ''
 
   constructor(
     private modelDir: string,
@@ -164,16 +176,34 @@ export class ConsistencyService {
     try {
       // 两侧都有人脸且 ArcFace 可用：专用人脸向量比对；任何失败静默回退全图 CLIP
       try {
-        if (await this.faceDetector.available()) {
+        const detOk = await this.faceDetector.available()
+        if (detOk) {
           const pair = await this.faceDetector.detectPair(ref.filePath, frame.filePath)
+          this.lastMethodTrace = `facesA=${pair?.a?.length ?? -1},facesB=${pair?.b?.length ?? -1}`
           if (pair && pair.a.length > 0 && pair.b.length > 0 && await this.faceDetector.recognitionAvailable()) {
             pair.a.sort((x, y) => y.score - x.score)
             pair.b.sort((x, y) => y.score - x.score)
-            const refFace = this.alignFace(ref, pair.a[0].lm, REC_SIZE, FACE_TEMPLATE_112)
-            const frameFace = this.alignFace(frame, pair.b[0].lm, REC_SIZE, FACE_TEMPLATE_112)
-            const emb = await this.faceDetector.embedPair(refFace.data, frameFace.data)
-            if (emb) return { score: this.cosine(emb.a, emb.b), method: 'face' }
+            // 小脸门控：640 画布上人脸框 <35px（中远景/过肩镜常见）时五点对齐出的
+            // 112 人脸是放大噪点，ArcFace 向量接近随机（实测同人低至 0.08~0.2），
+            // 此类帧必须回退全图 CLIP，不能把垃圾低分当作漂移证据
+            const fa = pair.a[0]
+            const fb = pair.b[0]
+            const MIN_FACE = 0.055
+            this.lastMethodTrace += `,topA=${fa.w.toFixed(3)}x${fa.h.toFixed(3)},topB=${fb.w.toFixed(3)}x${fb.h.toFixed(3)}`
+            if (fa.w >= MIN_FACE && fa.h >= MIN_FACE && fb.w >= MIN_FACE && fb.h >= MIN_FACE) {
+              const refFace = this.alignFace(ref, fa.lm, REC_SIZE, FACE_TEMPLATE_112)
+              const frameFace = this.alignFace(frame, fb.lm, REC_SIZE, FACE_TEMPLATE_112)
+              const emb = await this.faceDetector.embedPair(refFace.data, frameFace.data)
+              if (emb) return { score: this.cosine(emb.a, emb.b), method: 'face' }
+              this.lastMethodTrace += ',embed=null'
+            } else {
+              this.lastMethodTrace += ',MIN_FACE 门控拦截'
+            }
+          } else {
+            this.lastMethodTrace += ',rec不可用或单侧无脸'
           }
+        } else {
+          this.lastMethodTrace = 'detector不可用'
         }
       } catch (e) {
         console.warn('[Consistency] 人脸比对失败，回退全图 CLIP:', (e as Error).message)
@@ -191,6 +221,39 @@ export class ConsistencyService {
     } finally {
       await Promise.all([ref.dispose(), frame.dispose()])
     }
+  }
+
+  /**
+   * 多帧平均一致性：对视频按 frameTimes 逐帧比对参考图，取分数平均。
+   * 解决"单帧 90% 处抽样"漏掉中间段漂移的问题；method 取各帧中任一命中人脸即 face。
+   * 任一帧失败自动跳过；全部失败回退单帧（首帧时间点）。
+   */
+  async compareFrames(referenceImagePath: string, targetPath: string, frameTimes: number[]): Promise<ConsistencyResult> {
+    if (!Array.isArray(frameTimes) || frameTimes.length === 0) {
+      return this.compare(referenceImagePath, targetPath)
+    }
+    const results: ConsistencyResult[] = []
+    for (const t of frameTimes) {
+      try {
+        results.push(await this.compare(referenceImagePath, targetPath, t))
+      } catch (e) {
+        console.warn(`[Consistency] 帧 ${t.toFixed(2)}s 比对失败已跳过:`, (e as Error).message)
+      }
+    }
+    if (results.length === 0) {
+      return this.compare(referenceImagePath, targetPath, frameTimes[0])
+    }
+    // 分方法聚合（2026-10-17 修复）：face（ArcFace 0.5 阈值口径）与 full（CLIP 0.7 阈值口径）
+    // 是两套不同量表，混算平均后对标单一阈值会双向误判——CLIP 高分稀释 face 低分会放行真漂移，
+    // face 低分拉低 CLIP 平均会误杀同人。人脸帧存在时只信人脸帧均分（对换人最敏感）；
+    // 全部无人脸（小脸/背身被门控回退）时用全图均分。
+    const faceScores = results.filter(r => r.method === 'face').map(r => r.score)
+    const fullScores = results.filter(r => r.method === 'full').map(r => r.score)
+    const avg = (v: number[]): number => v.reduce((s, x) => s + x, 0) / v.length
+    if (faceScores.length > 0) {
+      return { score: Math.round(avg(faceScores) * 1000) / 1000, method: 'face' }
+    }
+    return { score: Math.round(avg(fullScores) * 1000) / 1000, method: 'full' }
   }
 
   /**

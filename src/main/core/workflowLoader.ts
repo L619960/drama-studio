@@ -1,6 +1,6 @@
 import * as fs from 'fs/promises'
 import * as path from 'node:path'
-import type { WorkflowMeta, WorkflowParam, WorkflowCheckIssue } from '../../shared/ipcTypes'
+import type { WorkflowMeta, WorkflowParam, WorkflowCheckIssue, WorkflowCapability } from '../../shared/ipcTypes'
 
 type WorkflowGraph = Record<string, { class_type?: string; _meta?: { title?: string }; inputs?: Record<string, unknown> }>
 
@@ -12,13 +12,63 @@ export interface ObjectNodeInfo {
   }
 }
 
-const PLACEHOLDER_RE = /^\$[A-Z_][A-Z0-9_]*\$$/
+/** 锚定占位符（$KEY$，KEY 可含数字）：供 getEditableParams/updateParam/deepReplace 的精确判定；
+ *  带捕获组供 deepReplace 提取键名，.test() 用法不受影响 */
+const PLACEHOLDER_RE = /^\$([A-Z_][A-Z0-9_]*)\$$/
+
+/** 全局占位符提取（带捕获组、global）：供 getMeta/buildGraph 扫描工作流全文 */
+const PLACEHOLDER_GLOBAL_RE = /\$([A-Z_][A-Z0-9_]*)\$/g
+
+/** 工作流名白名单（与 createWorkflow/importWorkflow 的命名净化字符集一致）：
+ *  阻断路径穿越，防止 load/updateParam/buildGraph 等入口以恶意 name 读写 workflowsDir 之外的 JSON */
+const WORKFLOW_NAME_RE = /^[\w一-龥-]+$/
+
+/** 图像输入节点（有任意一个 → 图生类） */
+const LOAD_IMAGE_NODES = new Set([
+  'LoadImage', 'LoadImageMask', 'VHS_LoadImagePath', 'VHS_LoadImages'
+])
+
+/** 视频输出节点（有任意一个 → 视频类；T2V 需同时无图像输入） */
+const VIDEO_OUT_NODES = new Set(['VHS_VideoCombine'])
+
+/** 音频输出节点（TTS/音乐/配音类） */
+const AUDIO_OUT_NODES = new Set(['SaveAudio', 'VHS_SaveAudio'])
+
+/** 依据占位符与节点结构推断工作流能力标签（导演自动选流依据） */
+function inferCapability(info: {
+  placeholders: string[]
+  classTypes: Set<string>
+  hasImageInput: boolean
+  hasEndFrame: boolean
+}): WorkflowCapability {
+  const hasVideo = [...info.classTypes].some(t => VIDEO_OUT_NODES.has(t))
+  const hasAudio = [...info.classTypes].some(t => AUDIO_OUT_NODES.has(t))
+  if (hasAudio && !hasVideo && !info.hasImageInput) return 'audio'
+  if (hasVideo) {
+    if (info.hasEndFrame) return 'flf2v'
+    if (info.hasImageInput) return 'i2v'
+    return 't2v'
+  }
+  if (info.hasImageInput) return 'i2i'
+  if (info.placeholders.includes('PROMPT')) return 't2i'
+  return 'other'
+}
 
 export class WorkflowLoader {
   private workflowsDir: string
+  /** D-05：按工作流文件串行化「读-改-写」，防 UI 连续保存竞态丢更新/写坏 JSON */
+  private writeQueues = new Map<string, Promise<void>>()
 
   constructor(workflowsDir: string) {
     this.workflowsDir = workflowsDir
+  }
+
+  /** D-05：同一工作流的读改写串行执行（前一个失败也继续跑后续，不阻塞队列） */
+  private enqueueWrite(name: string, fn: () => Promise<void>): Promise<void> {
+    const prev = this.writeQueues.get(name) ?? Promise.resolve()
+    const next = prev.then(fn, fn)
+    this.writeQueues.set(name, next.catch(() => undefined))
+    return next
   }
 
   /** 从 JSON 文本直接创建工作流（导演 agent 自建工作流用），返回工作流名称 */
@@ -111,17 +161,37 @@ export class WorkflowLoader {
     return metas.sort((a, b) => a.name.localeCompare(b.name))
   }
 
-  /** 提取工作流元信息：占位符列表、是否有图输入、是否有时长 */
+  /** 提取工作流元信息：占位符列表、是否有图输入、是否有时长、能力标签 */
   async getMeta(name: string): Promise<WorkflowMeta> {
     const workflow = await this.load(name)
     const jsonStr = JSON.stringify(workflow)
-    const matches = jsonStr.match(/\$([A-Z_][A-Z0-9_]*)\$/g) || []
+    const matches = jsonStr.match(PLACEHOLDER_GLOBAL_RE) || []
     const placeholders = [...new Set(matches.map((m) => m.slice(1, -1)))]
+
+    // 节点结构扫描（占位符缺失时也能推断：动态字段写死的库模板）
+    const classTypes = new Set<string>()
+    const loadImages = new Set<string>()
+    for (const [, node] of Object.entries(workflow)) {
+      const ct = node.class_type
+      if (!ct) continue
+      classTypes.add(ct)
+      if (LOAD_IMAGE_NODES.has(ct)) loadImages.add(ct)
+    }
+
+    const hasImageInput = placeholders.includes('REF_IMAGE') || loadImages.size > 0
+    const hasDuration = placeholders.includes('DURATION')
+    const hasEndFrame = placeholders.includes('END_IMAGE')
+    const capability = inferCapability({
+      placeholders, classTypes, hasImageInput, hasEndFrame
+    })
+
     return {
       name,
       placeholders,
-      hasImageInput: placeholders.includes('REF_IMAGE'),
-      hasDuration: placeholders.includes('DURATION')
+      hasImageInput,
+      hasDuration,
+      hasEndFrame,
+      capability
     }
   }
 
@@ -150,7 +220,7 @@ export class WorkflowLoader {
           })
           continue
         }
-        if (typeof rawValue === 'string' && /^\$[A-Z_]+\$$/.test(rawValue)) {
+        if (typeof rawValue === 'string' && PLACEHOLDER_RE.test(rawValue)) {
           params.push({
             nodeId,
             nodeTitle,
@@ -189,27 +259,32 @@ export class WorkflowLoader {
     key: string,
     value: string | number | boolean
   ): Promise<void> {
-    const workflow = await this.load(name)
-    const node = workflow[nodeId]
-    if (!node || !node.inputs) {
-      throw new Error(`节点 ${nodeId} 不存在`)
-    }
-    const current = node.inputs[key]
-    if (Array.isArray(current)) {
-      throw new Error('连接引用不可修改')
-    }
-    if (typeof current === 'string' && /^\$[A-Z_]+\$$/.test(current)) {
-      throw new Error('占位符不可直接修改')
-    }
-    node.inputs[key] = value
-    await fs.writeFile(
-      path.join(this.workflowsDir, `${name}.json`),
-      JSON.stringify(workflow, null, 2),
-      'utf-8'
-    )
+    await this.enqueueWrite(name, async () => {
+      const workflow = await this.load(name)
+      const node = workflow[nodeId]
+      if (!node || !node.inputs) {
+        throw new Error(`节点 ${nodeId} 不存在`)
+      }
+      const current = node.inputs[key]
+      if (Array.isArray(current)) {
+        throw new Error('连接引用不可修改')
+      }
+      if (typeof current === 'string' && PLACEHOLDER_RE.test(current)) {
+        throw new Error('占位符不可直接修改')
+      }
+      node.inputs[key] = value
+      await fs.writeFile(
+        path.join(this.workflowsDir, `${name}.json`),
+        JSON.stringify(workflow, null, 2),
+        'utf-8'
+      )
+    })
   }
 
   private async load(name: string): Promise<WorkflowGraph> {
+    if (!WORKFLOW_NAME_RE.test(name)) {
+      throw new Error(`非法工作流名称: ${name}`)
+    }
     const filePath = path.join(this.workflowsDir, `${name}.json`)
     const content = await fs.readFile(filePath, 'utf-8')
     return JSON.parse(content)
@@ -224,7 +299,23 @@ export class WorkflowLoader {
     const graph = this.deepReplace(workflow, vars) as Record<string, unknown>
     // _comment 是文档字段不是节点：部分 ComfyUI 插件的 on_prompt_handler 会遍历顶层键并对字符串调用 .get() 导致 500
     delete graph._comment
-    const remaining = JSON.stringify(graph).match(/\$[A-Z_]+\$/g)
+    // 兼容第三方导入模板：连接数组 [节点id, 输出索引] 的节点 id 必须为字符串
+    // （UI 格式转换时可能残留整型 id，ComfyUI 校验 prompt[节点id] 会 KeyError 整单拒收）
+    const nodeIds = new Set(Object.keys(graph).filter(k => k !== '_comment'))
+    for (const node of Object.values(graph) as Array<Record<string, unknown>>) {
+      if (!node || typeof node !== 'object' || !node.inputs) continue
+      for (const [key, value] of Object.entries(node.inputs as Record<string, unknown>)) {
+        if (
+          Array.isArray(value) &&
+          value.length === 2 &&
+          typeof value[0] === 'number' &&
+          nodeIds.has(String(value[0]))
+        ) {
+          ;(node.inputs as Record<string, unknown>)[key] = [String(value[0]), value[1]]
+        }
+      }
+    }
+    const remaining = JSON.stringify(graph).match(PLACEHOLDER_GLOBAL_RE)
     if (remaining) {
       throw new Error(`工作流 ${name} 存在未替换占位符: ${[...new Set(remaining)].join(', ')}`)
     }
@@ -233,7 +324,7 @@ export class WorkflowLoader {
 
   private deepReplace(node: unknown, vars: Record<string, string | number | boolean>): unknown {
     if (typeof node === 'string') {
-      const m = node.match(/^\$([A-Z_][A-Z0-9_]*)\$$/)
+      const m = node.match(PLACEHOLDER_RE)
       if (m && m[1] in vars) return vars[m[1]]
       // 嵌入模式：纯文本替换
       let s = node
@@ -307,6 +398,11 @@ export class WorkflowLoader {
         continue
       }
       // 枚举型输入校验（ckpt_name / unet_name / vae_name / lora_name 等模型文件）
+      // LoadImage/LoadAudio 的文件名枚举随上传变化，运行时已 upload，不做「模型缺失」误报
+      const DYNAMIC_MEDIA_NODES = new Set([
+        'LoadImage', 'LoadImageMask', 'LoadAudio', 'VHS_LoadImagePath', 'VHS_LoadImages'
+      ])
+      if (DYNAMIC_MEDIA_NODES.has(classType)) continue
       const defs = { ...info.input?.required, ...info.input?.optional }
       if (!node.inputs) continue
       for (const [key, value] of Object.entries(node.inputs)) {

@@ -1,0 +1,74 @@
+{
+  "name": "director",
+  "version": 1,
+  "description": "导演看守规则库：流水线每张图/每段视频按电影级条款生成；逐镜技术审核留痕（软提示不自动重渲、不拦剪辑，硬失败才停在剪辑前），分镜/首帧门禁 block 时暂停等待审核，批量渲染可一次性换 seed 重渲。",
+
+  "cinematicQuality": {
+    "quality": [
+      "8k filmic detail, photorealistic live-action chinese short-drama frame",
+      "shot on ARRI Alexa Mini LF with Zeiss Supreme Prime 50mm T1.5",
+      "natural imperfect skin with visible pores and micro-texture, no beauty filter",
+      "subtle Kodak Vision3 film grain, matte finish, documentary color science"
+    ],
+    "camera": [
+      "EXECUTE CAMERA MOVE per storyboard, smooth cinematic, continuous, no whip-pan, no crash zoom",
+      "slow push-in or slight pan preferred for dialogue, no teleport cut inside clip",
+      "locked-off tripod stability for wide establishing shots"
+    ],
+    "lighting": [
+      "practical motivated lighting, single consistent key light direction per scene",
+      "night rain light sources must match the story era: ancient/period drama uses lantern or torch light reflecting on wet stone or wet ground; modern drama may use street lamps reflecting on wet reflective ground",
+      "consistent color temperature across adjacent shots of the same scene"
+    ],
+    "fx": [
+      "no CGI, no 3d render, no illustration, no beauty filter, no plastic specular",
+      "no reverse motion, no playing backwards, no car reversing, wheels rotate forward if moving"
+    ],
+    "scene": [
+      "LOCKED LOCATION: same physical set in every shot of the scene, no scene swap",
+      "key props must appear exactly as listed and persist across frames, no teleporting props"
+    ]
+  },
+
+  "auditChecklist": [
+    { "id": "face", "label": "人脸身份", "check": "人脸身份、五官是否与定妆参考一致，无变形/换脸/年龄漂移", "severity": "block" },
+    { "id": "outfit", "label": "服装发型", "check": "服装、发型、颜色是否与定妆一致：逐项比对服装精确色名/色值/纹样/材质、发型束法/发带颜色/发冠形制是否与角色档案一致——色名不符（档案月白却生成米白/纯白）、同角色跨镜换装、发带/发冠形制漂移、发型束法改变均判服装发型漂移（block）；粗色系比对（仅按浅/深判定）不通过", "severity": "block" },
+    { "id": "role_confusion", "label": "角色混淆", "check": "本镜应出现分镜声明的角色，画面人物长相/服装色系/发型不得更接近另一角色（多角色剧必须逐镜核对是谁在演，禁止张冠李戴）", "severity": "block" },
+    { "id": "scene", "label": "场景一致", "check": "背景场景是否与本镜场景板一致，无场景串台", "severity": "block" },
+    { "id": "props", "label": "道具数量与形态", "check": "关键道具按分镜声明出现且未变形/消失/替换；持械镜必须严格一把武器、单手执械、另一手空手可见，禁止多出第二把武器/双剑/凭空变械，武器形态（刃型/颜色）全程稳定禁止刀剑互变", "severity": "block" },
+    { "id": "expression", "label": "表情", "check": "表情是否自然，无诡异/扭曲/僵硬/五官错位", "severity": "block" },
+    { "id": "drift", "label": "漂移穿帮", "check": "有无画面漂移、穿帮、瞬移、倒放、多手多指、肢体融化", "severity": "block" },
+    { "id": "camera", "label": "运镜", "check": "运镜是否符合分镜设定且平滑连续，无突兀甩镜", "severity": "warn" },
+    { "id": "light", "label": "光效", "check": "光效是否符合场景氛围与本剧时代（古装/武侠剧=灯笼/烛火/天光，现代剧=路灯/霓虹；夜景雨戏按时代光源反射 wet stone/wet ground），光源方向一致", "severity": "warn" },
+    { "id": "quality", "label": "画质", "check": "画质是否电影级，无塑料感/美颜滤镜/模糊", "severity": "warn" }
+  ],
+
+  "methodRules": [
+    "短镜化：单镜 3~6 秒、一个动作一个镜头；台词镜同样不超过 6 秒，宁可拆镜不拖长镜",
+    "身份铁律：人脸/发型/服装/肤色逐镜锁定，同角色全剧不得换装，禁止因题材擅自改穿西装礼服",
+    "全局光影：同一场景所有镜头保持统一光源方向、色温与色调，禁止每镜换调性",
+    "钥匙交接独立成镜：递接物品/开门上车/拥抱/扇耳光等物理动作必须独立成镜并呈现完成态",
+    "单人一画：每镜画面只能有一个可识别脸的角色；对手戏用正反打/反应镜拆开，另一个人只以背影/过肩虚化暗示",
+    "关键道具落幅：道具英文名词写入 action 与 props，禁止凭空消失/变形",
+    "入画→反应→开口：对方入画后必须先插无台词反应镜再进台词镜",
+    "上车空间链：车旁见面→开车门→车内对话→驶离拆成可感知完成态镜头，禁止硬切",
+    "车辆只走正向时间轴：驶离=尾灯远离镜头，驶来=大灯接近，禁止倒车/侧滑",
+    "动作幅度小而稳：i2v 首帧直接承载动作完成态，视频内只做微表演，禁止长距离位移过程",
+    "时代一致性：全剧同一时代（古风/现代由剧本设定），禁止出现设定时代之外的车辆、建筑、电子设备、广告牌——古风场景严禁现代轿车/洋楼/霓虹招牌，现代场景可含现代元素但需与设定一致",
+    "定妆时代锁（角色定妆/三视图/场景板铁律）：每个角色的 lookEn 与定妆图、三视图、场景板生成提示词必须严格匹配剧本时代——古装/宫廷/仙侠/玄幻/武侠/民国剧强制纯该时代服化道（汉服/束发/发簪/佩剑/古建筑/灯笼烛光，民国=旗袍长衫/复古陈设），禁止出现现代服装词（uniform/jacket/hoodie/jeans/suit/raincoat/work clothes/sneakers 等）与现代场景词（street lamp/asphalt/neon/glass building/car/electronics 等）；lookEn 混入他时代服装词即整档返工；同一部剧所有角色必须同一时代，禁止一个角色古装一个角色现代（实测事故：古装武侠剧角色定妆被画成黑色作战服+面罩、改良制服+雨夜街道灯，根因即定妆生成路径缺时代锁）",
+    "引擎分流设计：台词镜按音频驱动口型引擎设计（镜头≤6秒、medium/closeup、speaking 对话表演）；无台词镜按图生视频微表演设计（动作完成态、无长位移、living stillness）",
+    "侧/背面镜受限：侧面/背面机位镜头不超过总镜数 20%，仅限必要叙事（转身离开、背影反应、过肩视角），其余一律正面/四分之三视角——本机资产当前只有正脸定妆参考，侧背镜需额外多视角参考",
+    "高风险组合规避：禁止大仰角+侧脸特写、多人清晰同框、快速摇移/甩镜/穿墙机位——本机 H3 图生视频对这些组合极易漂移穿帮",
+    "身份关键镜近景化：老年/儿童等 AI 视频易漂移角色的身份关键镜（对话/情绪/反应/对手戏）一律 closeup 近景，禁止中景群像同框——中景小脸+多背景人脸必被换成平均脸（两轮实测验证）；中景群像只用于不承担身份锁定的过场镜",
+    "资产复用回退：本机 T2I 模型缺失或角色定妆/场景板生成失败时，自动从 settings.render.assetFallbackProjectId 指向的已完成项目按出场顺序复用定妆/场景板资产并继续流水线，不中断；复用日志标记为 warn 供事后核对（缺模型时正常现象，非故障）",
+    "画面提示词防串台自检（analyze 输出后逐镜强制核对）：promptEn/firstFrameEn/midFrameEn/lastFrameEn/handoffToNext 中的角色名、服装、物件、场景必须全部能在本剧本的 characters/props/scenes/action 中找到出处；出现本剧不存在的其他人物名（任何他剧/示例中的人物名，一律视为幻觉名）或异物（任何与本剧设定无关的物件，如书房陈设/油灯/古籍等）即视为幻觉，整镜画面字段重写后再输出——输出 JSON 前自查一遍，命中即返工（实测：模型曾把示例/他剧内容编造成整套剧情污染全部分镜画面提示词）",
+    "多角色差异化绑定（角色混淆根因级约束）：剧本含多个角色时，每个角色必须独立建档（character id 唯一），且必须绑定唯一的人物定妆参考图——任何两个角色不得共享/复用同一张 faceImagePath/refImagePath/bodySheetPath；每个角色的 appearanceLock 必须写清服装主色系+发型+年龄/气质三个差异化锚点，两角色外观趋同（同主色系、同发型、同年龄段且无气质差异词）视为设计缺陷，整批角色描述返工；分镜的 characterIds 与角色一一对应，禁止把多角色戏份全部并给同一角色（实测：一部剧全片只有 1 个角色表项，5 镜全部指向同一张特写，成片全是同一人）",
+    "参考图-角色绑定一致性（渲染前自检）：每镜的参考图（firstFramePath/定妆图）必须与分镜声明的角色为同一人——若某镜首帧/参考图人物更像另一角色的定妆（服装色系/发型/脸型明显不匹配本角色 appearanceLock），该镜参考图视为绑定错误，先纠正参考图（换回本角色定妆或重生成首帧）再渲染，禁止带着他人参考图出片",
+    "道具数量硬约束（持械/空手镜提示词铁律）：武打与持械镜的画面提示词必须显式声明「仅持一把武器、单手持械、另一手空手自然可见」，并写明武器种类与形态（如青锋长剑），禁止出现双剑、双手各持一械、多武器、凭空变械、武器变形/刀剑互变；角色无道具的台词镜必须显式声明「双手空手、手中无任何物品」，禁止模型给空手人物塞碗/杯/扇/卷轴等联想道具（实测：对打镜主角被生成双手各持一剑相交、同镜刀具由短刃漂移成匕首——均因提示词未锁道具数量与形态）",
+    "画面提示词本剧出处复核（渲染前逐镜兜底）：promptEn/firstFrameEn/midFrameEn/lastFrameEn 中的场景名、物件、服装必须全部出自本剧 scenes/props/角色定妆——出现本剧设定之外的他剧场景（地下室/厨房/轿车/办公室等）或他剧服装（背心/卫衣/牛仔裤等）或他剧人物名（英文人名引用），整镜画面字段作废改用本剧动作模板重写（实测：某剧 buildShots 的 promptEn 整段串入另一部现代剧的现代场景描述，因首帧锚定侥幸未被画成现代戏，但微表演完全失控）",
+    "精确外观锁（服装发型漂移根因约束）：每角色外观档案必须登记①服装精确色名+色值（如「月白 #F0EFEA 交领右衽长袍」而非「浅色/白色」）+ 领型/袍制/纹样/材质 + 腰封/腰饰②发型精确（发色/束法/发带颜色/发冠形制，无发带须明写「无发带」）③面部特征（眉型/眼型/年龄/气质）。prompt 注入（中英文）逐字复用该精确描述，禁止降级为粗色系词（浅色/深色/白色/米白等）；同一角色全剧外观描述逐字一致，禁止每镜改写（实测：主角档案月白袍在台词镜被生成米白色长袍、武打镜被凭空加发带，配角赭黄布衣在某镜变棕褐——根因是档案与 prompt 用粗色词，H3 跨镜渲染各自逼近同色系导致色差与发型细节漂移）",
+    "场景无路人（对打/武打/持械镜铁律）：武打、对打、对峙、特写镜的画面提示词必须显式声明「场景中只有分镜声明的角色，禁止出现任何路人/旁观者/背景人群/杂兵/不速之客」，角色数量锁定——单人对打=画面仅 1 人且背景无人，双人交锋=仅此 2 人，禁止第三人（含背景持械人影）；台词/特写镜同规则（背景不得出现剧本外人物）。渲染层注入英文锁「no other people in the scene, no bystanders, no background crowd, empty background around the character(s)」（实测：武打镜出现戴斗笠路人、对打镜出现黑衣路人——均因未锁角色数，H3 自由添背景人）",
+    "武器中式古兵器限定（古装/武侠剧时代武器锁铁律）：古装/武侠/仙侠剧持械镜的武器只允许中式冷兵器——剑/刀/枪/棍/鞭/暗器/朴刀/短剑/折扇等古装设定兵器；禁止出现日本武士刀（katana）、西洋剑、枪械、军刺/战术刀、能量武器/科幻武器。持械镜一律执行「道具数量硬约束」：exactly ONE weapon / ONE hand / empty hands（单手持一械、另一手空手自然可见），武器形态（刃型/颜色）跨镜稳定，禁止刀剑互变、双械、凭空变械。渲染层对古装剧注入时代武器负向：no katana, no gun, no military equipment, no sci-fi weapon",
+    "面部遮挡禁令（古装武侠剧时代锁）：角色面部遮挡只允许古装布巾/面纱（a piece of black cloth covering the lower half of the face / face veil），禁止现代面罩、战术头套、口罩、滑雪面罩、黑武士头盔（no face mask, no tactical balaclava, no hood, no respirator）。布巾遮挡描述不得使用 mask 字样（stripModernWardrobe 会把它当现代词清洗），一律用 cloth / veil / covering the lower face 表达；角色差异化特征（络腮胡 beard/八字胡 mustache/眉型/痣）是身份锚点，必须写入 lookEn 并在全剧逐字保留，不得当作皮肤瑕疵清洗（实测事故：古装武侠剧角色被画成黑色作战服+面罩，根因即定妆生成路径缺时代锁且面罩/战术词未拦）"
+  ]
+}

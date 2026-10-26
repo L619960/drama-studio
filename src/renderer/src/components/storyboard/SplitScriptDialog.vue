@@ -1,5 +1,6 @@
 <template>
   <el-dialog v-model="visible" title="AI 拆分镜" width="700px">
+    <p v-if="initialScript" class="prefill-tip">已预填当前项目剧本，可直接「开始拆分」；也可修改后再拆分。</p>
     <el-input
       v-model="script"
       type="textarea"
@@ -18,39 +19,43 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import type { GeneratedShot } from '../../../../shared/ipcTypes'
 
-const props = defineProps<{ projectGenre: string }>()
-const emit = defineEmits<{ split: [generated: GeneratedShot[]] }>()
+const props = defineProps<{ projectGenre: string; initialScript?: string }>()
+const emit = defineEmits<{ split: [script: string] }>()
 
 const visible = ref(false)
 const loading = ref(false)
 const script = ref('')
 
 function open(): void {
-  script.value = ''
+  // 预填项目已有剧本：对已建项目的「AI 拆分镜」不再要求手动复制粘贴
+  script.value = props.initialScript || ''
   loading.value = false
   visible.value = true
 }
 
-/** 调 LLM 拆分剧本，成功后把结果交给父组件追加保存 */
-async function doSplitScript() {
+/** 剧本交回父组件，由完整剧本分析（角色/场景/道具建档 + 分镜绑定）统一处理 */
+function doSplitScript() {
   if (!script.value.trim()) {
-    ElMessage.warning('请输入剧本内容')
+    ElMessage.warning('请输入剧本内容（如已有剧本请直接开始拆分）')
     return
   }
   loading.value = true
-  try {
-    const generated = await window.api.llm.splitScript(script.value, props.projectGenre)
-    if (generated.length === 0) throw new Error('未拆分出有效分镜')
-    visible.value = false
-    emit('split', generated)
-  } catch (e) {
-    ElMessage.error((e as Error).message || '拆分失败')
-  } finally {
-    loading.value = false
-  }
+  emit('split', script.value)
 }
 
-defineExpose({ open })
+function done(): void {
+  loading.value = false
+  visible.value = false
+}
+
+defineExpose({ open, done })
 </script>
+
+<style scoped>
+.prefill-tip {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+</style>

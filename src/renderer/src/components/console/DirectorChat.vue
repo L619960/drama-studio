@@ -2,7 +2,18 @@
   <div class="panel chat-panel">
     <div class="panel-title chat-title">
       <span class="chat-title-text"><el-icon><ChatDotRound /></el-icon>&nbsp;导演对话</span>
-      <el-button link size="small" :icon="Delete" class="chat-clear" @click="emit('clear')">清空</el-button>
+      <span class="chat-title-actions">
+        <el-button
+          v-if="props.taskRunning || props.taskPaused"
+          link
+          size="small"
+          type="danger"
+          :icon="CircleClose"
+          class="chat-cancel"
+          @click="emit('cancelTask')"
+        >取消任务</el-button>
+        <el-button link size="small" :icon="Delete" class="chat-clear" @click="emit('clear')">清空</el-button>
+      </span>
     </div>
 
     <div ref="chatBoxRef" class="chat-box">
@@ -26,16 +37,17 @@
         class="msg-row"
         :class="[m.role === 'user' ? 'is-user' : 'is-assistant', { 'is-error': m.error }]"
       >
-        <div v-if="m.role === 'user'" class="msg-user-wrap">
+        <div v-if="m.role === 'user'" class="msg-user-wrap" @contextmenu.prevent="onMsgContextMenu($event, m)">
           <div class="bubble bubble-user">{{ m.content }}</div>
           <div class="msg-user-foot">
             <span class="msg-time">{{ formatTime(m.ts) }}</span>
-            <span class="msg-op" title="复制" @click="emit('copyMsg', m.content)"><el-icon><CopyDocument /></el-icon></span>
-            <span class="msg-op" title="重新发送" @click="emit('resendMsg', m)"><el-icon><Refresh /></el-icon></span>
+            <button type="button" class="msg-op" title="复制" @click="emit('copyMsg', m.content)"><el-icon><CopyDocument /></el-icon></button>
+            <button type="button" class="msg-op" title="回退到此消息之前重新交互" @click="emit('rollbackMsg', m)"><el-icon><RefreshLeft /></el-icon></button>
+            <button type="button" class="msg-op" title="重新发送" @click="emit('resendMsg', m)"><el-icon><Refresh /></el-icon></button>
           </div>
         </div>
-        <div v-else class="bubble bubble-assistant">
-          <div v-if="m.content" class="msg-text msg-actionable" v-html="renderMd(m.content)" @contextmenu.prevent="emit('copyMsg', m.content)" />
+        <div v-else class="bubble bubble-assistant" @contextmenu.prevent="onMsgContextMenu($event, m)">
+          <div v-if="m.content" class="msg-text msg-actionable" v-html="renderMd(m.content)" />
           <div v-if="m.toolCalls?.length" class="tool-list">
             <div
               v-for="tc in m.toolCalls"
@@ -58,7 +70,7 @@
           </div>
           <div class="msg-foot">
             <span class="msg-time">{{ formatTime(m.ts) }}</span>
-            <span class="msg-op" title="复制" @click="emit('copyMsg', m.content)"><el-icon><CopyDocument /></el-icon></span>
+            <button type="button" class="msg-op" title="复制" @click="emit('copyMsg', m.content)"><el-icon><CopyDocument /></el-icon></button>
           </div>
         </div>
       </div>
@@ -71,27 +83,49 @@
     </div>
 
     <div class="chat-input">
+      <el-tooltip content="上传文件（txt/md/json/剧本等文本）" placement="top">
+        <el-button circle :icon="Paperclip" :disabled="sending" class="chat-upload" @click="emit('upload')" />
+      </el-tooltip>
+      <el-tooltip content="自主学习：让导演上网搜索最新技巧并沉淀为新技能" placement="top">
+        <el-button circle :icon="Reading" :disabled="sending" class="chat-learn" @click="emit('selfLearn')" />
+      </el-tooltip>
       <el-input
+        ref="chatInputRef"
         :model-value="inputText"
         @update:model-value="onInputChange"
         type="textarea"
         :autosize="{ minRows: 1, maxRows: 4 }"
         placeholder="给导演下达指令，Enter 发送 / Shift+Enter 换行"
         :disabled="sending"
-        @keydown.enter.exact.prevent="emit('send')"
+        @keydown.enter.exact.prevent="handleSend()"
       />
-      <el-button type="primary" circle :icon="Promotion" :loading="sending" @click="emit('send')" />
+      <!-- 发送中变为停止按钮：随时中断导演的思考与工具调用 -->
+      <el-button
+        v-if="sending"
+        circle
+        type="danger"
+        :icon="VideoPause"
+        title="停止生成"
+        @click="emit('stop')"
+      />
+      <el-button v-else type="primary" circle :icon="Promotion" @click="handleSend()" />
     </div>
+
+    <!-- 对话气泡右键菜单（交互规范 3.1：替代原"右键=直接复制"） -->
+    <ContextMenu ref="msgMenuRef" :items="msgMenuItems" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { nextTick, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import {
-  ChatDotRound, ChatLineSquare, Loading, CircleCheckFilled, CircleCloseFilled,
-  Promotion, Delete, CopyDocument, Refresh, CaretBottom
+  ChatDotRound, ChatLineSquare, Loading, CircleCheckFilled, CircleCloseFilled, CircleClose,
+  Promotion, Delete, CopyDocument, Refresh, RefreshLeft, CaretBottom, Paperclip, VideoPause, Reading
 } from '@element-plus/icons-vue'
 import type { ConversationMessage } from '../../../../shared/ipcTypes'
+// R-13：formatTime 唯一实现在 useDirectorState，删除第三份本地副本
+import { formatTime } from '../../composables/useDirectorState'
+import ContextMenu, { type CtxItem } from '../ContextMenu.vue'
 
 interface ChatProps {
   messages: ConversationMessage[]
@@ -103,6 +137,9 @@ interface ChatProps {
   scrollTick: number
   /** 由壳传入的 Markdown 渲染函数 */
   renderMd: (text: string) => string
+  /** 导演任务是否执行中/已暂停（用于显示取消任务按钮） */
+  taskRunning: boolean
+  taskPaused: boolean
 }
 
 const props = defineProps<ChatProps>()
@@ -112,19 +149,75 @@ const emit = defineEmits<{
   useQuick: [q: string]
   copyMsg: [text: string]
   resendMsg: [m: ConversationMessage]
+  rollbackMsg: [m: ConversationMessage]
+  regenerate: []
   send: []
+  stop: []
+  upload: []
+  selfLearn: []
   clear: []
+  cancelTask: []
   'update:inputText': [v: string]
 }>()
 
-function formatTime(ts: number): string {
-  const d = new Date(ts)
-  const p = (n: number) => String(n).padStart(2, '0')
-  return `${p(d.getHours())}:${p(d.getMinutes())}`
-}
-
 function onInputChange(val: string): void {
   emit('update:inputText', val)
+}
+
+/**
+ * 发送入口（Enter 与发送按钮共用）。
+ * IME 兜底：中文输入法组合尚未结束时（isComposing=true），el-input 的 v-model
+ * 不会把文字提交到 inputText，此时直接点发送会静默失败（表现为"点了没反应、
+ * 文字还在输入框"）。这里先从输入框 DOM 强制同步一次再发送。
+ */
+const chatInputRef = ref<{ textarea: HTMLTextAreaElement } | null>(null)
+function handleSend(): void {
+  const ta = chatInputRef.value?.textarea
+  if (ta && ta.value && !props.inputText) {
+    emit('update:inputText', ta.value)
+  }
+  emit('send')
+}
+
+// ===== 对话气泡右键菜单（替代原"右键=直接复制"） =====
+const msgMenuRef = ref<InstanceType<typeof ContextMenu> | null>(null)
+const currentMsg = ref<ConversationMessage | null>(null)
+
+const msgMenuItems = computed<CtxItem[]>(() => {
+  const m = currentMsg.value
+  if (!m) return []
+  const isUser = m.role === 'user'
+  const items: CtxItem[] = [
+    { label: '复制文本', icon: CopyDocument, action: () => emit('copyMsg', m.content) }
+  ]
+  if (isUser) {
+    items.push({ divider: true })
+    items.push({ label: '回退到此消息之前', icon: RefreshLeft, action: () => emit('rollbackMsg', m) })
+    items.push({ label: '重新发送', icon: Refresh, action: () => emit('resendMsg', m) })
+    return items
+  }
+  // 助理气泡：复制 + 重新生成。
+  // 仅当本条是列表尾部 assistant 且非发送中时，才可让导演就上一条提问重答；
+  // 中间历史里的回答不支持重生成（会割裂后续上下文），发送中也禁用。
+  const last = props.messages[props.messages.length - 1]
+  const isTailAssistant = !!last && last.id === m.id
+  const regenerateDisabled = !isTailAssistant || props.sending
+  items.push({ divider: true })
+  items.push({
+    label: '重新生成',
+    icon: Refresh,
+    disabled: regenerateDisabled,
+    tip: regenerateDisabled
+      ? (props.sending ? '发送中，请稍候' : '仅最后一条回答可重新生成')
+      : undefined,
+    action: () => emit('regenerate')
+  })
+  return items
+})
+
+function onMsgContextMenu(e: MouseEvent, m: ConversationMessage): void {
+  currentMsg.value = m
+  msgMenuRef.value?.open(e, m)
 }
 
 // 滚动信号触发后滚底（用户正在回看历史时不打断）
@@ -163,6 +256,8 @@ watch(() => props.scrollTick, async () => {
 .chat-title { justify-content: space-between; margin-bottom: 8px; }
 .chat-title-text { display: flex; align-items: center; }
 .chat-clear { color: var(--text-muted); }
+.chat-title-actions { display: flex; align-items: center; gap: 2px; }
+.chat-cancel { margin-right: 4px; }
 
 .chat-box {
   flex: 1;
@@ -195,25 +290,27 @@ watch(() => props.scrollTick, async () => {
 .msg-row.is-assistant { justify-content: flex-start; }
 .bubble {
   max-width: 88%;
-  border-radius: 10px;
+  border-radius: 12px;
   padding: 9px 12px;
   font-size: 13px;
   line-height: 1.7;
   word-break: break-word;
+  transition: box-shadow var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
 }
 .bubble-user {
-  background: #67c23a;
-  color: #fff;
-  border-bottom-right-radius: 3px;
+  background: var(--accent);
+  color: var(--on-brand);
+  border-bottom-right-radius: 4px;
 }
 .bubble-assistant {
   background: var(--bg-input);
   border: 1px solid var(--border-weak);
   color: var(--text-primary);
-  border-bottom-left-radius: 3px;
+  border-bottom-left-radius: 4px;
   width: 100%;
   max-width: 100%;
 }
+.bubble-assistant:hover { border-color: var(--border-strong); }
 .msg-row.is-error .bubble-assistant { border-color: #f56c6c; color: #f56c6c; }
 .msg-text { white-space: pre-wrap; }
 
@@ -248,14 +345,19 @@ watch(() => props.scrollTick, async () => {
   justify-content: center;
   width: 20px;
   height: 20px;
+  padding: 0;
+  border: none;
   border-radius: 4px;
+  background: transparent;
   color: var(--text-muted);
   cursor: pointer;
   opacity: 0;
   transition: opacity 0.15s, background 0.15s;
   font-size: 13px;
+  font-family: inherit;
 }
 .msg-row:hover .msg-op { opacity: 1; }
+.msg-op:focus-visible { opacity: 1; }
 .msg-op:hover { color: var(--text-primary); background: var(--bg-input); }
 
 .msg-text p { margin: 0; line-height: 1.7; }

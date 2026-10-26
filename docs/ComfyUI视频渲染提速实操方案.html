@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ComfyUI 视频渲染提速实操方案 · RTX 5060 Ti 16GB</title>
+<style>
+  :root{
+    --ink:#1a2332; --muted:#5b6b7f; --line:#e3e9f0; --bg:#f6f8fb;
+    --blue:#1d63d8; --blue-soft:#eaf1fd;
+    --green:#1e7e34; --green-soft:#e8f5ec;
+    --amber:#b26a00; --amber-soft:#fdf3e0;
+    --red:#c0392b; --red-soft:#fdeceb;
+    --purple:#5b3fd4; --purple-soft:#f0edfd;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{font-family:"Microsoft YaHei","PingFang SC","Segoe UI",sans-serif; background:var(--bg); color:var(--ink); line-height:1.75; font-size:15px;}
+  .wrap{max-width:1080px; margin:0 auto; padding:28px 20px 80px;}
+  header.hero{background:linear-gradient(135deg,#0f2447,#1d63d8); color:#fff; border-radius:16px; padding:34px 38px; margin-bottom:26px;}
+  header.hero h1{font-size:27px; letter-spacing:.5px; margin-bottom:8px;}
+  header.hero .sub{opacity:.85; font-size:14.5px;}
+  .hero-tags{margin-top:14px; display:flex; gap:8px; flex-wrap:wrap;}
+  .hero-tags span{background:rgba(255,255,255,.16); border:1px solid rgba(255,255,255,.25); padding:3px 12px; border-radius:20px; font-size:12.5px;}
+  h2{font-size:21px; margin:42px 0 14px; padding-left:12px; border-left:5px solid var(--blue);}
+  h3{font-size:17px; margin:24px 0 10px; color:#123a7e;}
+  h4{font-size:15px; margin:14px 0 6px;}
+  p{margin-bottom:10px;}
+  table{width:100%; border-collapse:collapse; background:#fff; border-radius:10px; overflow:hidden; box-shadow:0 1px 4px rgba(20,40,80,.08); margin:14px 0 20px; font-size:13.8px;}
+  th{background:#123a7e; color:#fff; text-align:left; padding:9px 12px; font-weight:600; white-space:nowrap;}
+  td{padding:8px 12px; border-bottom:1px solid var(--line); vertical-align:top;}
+  tr:nth-child(even) td{background:#fafcff;}
+  .card{background:#fff; border:1px solid var(--line); border-radius:12px; padding:18px 20px; margin:14px 0; box-shadow:0 1px 3px rgba(20,40,80,.06);}
+  .card .head{display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:8px;}
+  .card .head .nm{font-weight:700; font-size:15.5px; color:#123a7e;}
+  .badge{display:inline-block; font-size:12px; font-weight:700; padding:2px 10px; border-radius:12px; white-space:nowrap;}
+  .b-lossless{background:var(--green-soft); color:var(--green); border:1px solid #bfe6cc;}
+  .b-slight{background:var(--amber-soft); color:var(--amber); border:1px solid #f3dcb0;}
+  .b-lossy{background:var(--red-soft); color:var(--red); border:1px solid #f3c4c0;}
+  .b-info{background:var(--blue-soft); color:var(--blue); border:1px solid #c9dcf7;}
+  .b-wait{background:var(--purple-soft); color:var(--purple); border:1px solid #d5ccf2;}
+  .f{font-size:13.6px;}
+  .f b{color:#123a7e;}
+  .src{font-size:12.5px; color:var(--muted); margin-top:8px; word-break:break-all;}
+  .src a{color:#1d63d8; text-decoration:none;}
+  .src a:hover{text-decoration:underline;}
+  .callout{border-radius:10px; padding:12px 16px; margin:12px 0; font-size:14px;}
+  .c-green{background:var(--green-soft); border-left:4px solid var(--green);}
+  .c-amber{background:var(--amber-soft); border-left:4px solid var(--amber);}
+  .c-red{background:var(--red-soft); border-left:4px solid var(--red);}
+  .c-blue{background:var(--blue-soft); border-left:4px solid var(--blue);}
+  .code{background:#0f2447; color:#d7e4ff; font-family:Consolas,"Courier New",monospace; border-radius:8px; padding:12px 14px; font-size:13px; overflow-x:auto; margin:10px 0; white-space:pre;}
+  .code .c{color:#7fd1a8;}
+  ul,ol{margin:6px 0 10px 22px;}
+  li{margin-bottom:5px;}
+  .kv{display:grid; grid-template-columns:auto 1fr; gap:4px 14px; font-size:14px; margin:6px 0;}
+  .kv .k{color:var(--muted); font-weight:600; white-space:nowrap;}
+  .toc{background:#fff; border:1px solid var(--line); border-radius:12px; padding:16px 20px; margin:0 0 10px;}
+  .toc a{color:#1d63d8; text-decoration:none; display:inline-block; margin:2px 14px 2px 0; font-size:14px;}
+  .toc a:hover{text-decoration:underline;}
+  .small{font-size:12.5px; color:var(--muted);}
+  .foot{margin-top:50px; padding-top:16px; border-top:1px solid var(--line); font-size:12.5px; color:var(--muted);}
+  .prio{display:inline-block; min-width:46px; text-align:center; font-size:12px; font-weight:700; border-radius:6px; padding:1px 8px; margin-right:6px;}
+  .p1{background:#c62828; color:#fff;} .p2{background:#f57c00; color:#fff;} .p3{background:#2e7d32; color:#fff;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <h1>ComfyUI 视频渲染提速实操方案</h1>
+  <div class="sub">面向 RTX 5060 Ti 16GB（Blackwell sm_120）· 秋叶绘世整合包 · H3 / Wan2.2 REMIX flf2v / LTX 2.3　——　原则：<b>不损失质量，不换显卡，不上云</b></div>
+  <div class="hero-tags">
+    <span>torch 2.9.1 + cu130 ✓</span><span>ComfyUI 0.39.0 ✓</span><span>H3 20 步·未优化 ← 最大空间</span><span>Wan 6 步蒸馏 LoRA ✓</span><span>LTX 蒸馏 fp8 ✓</span>
+  </div>
+</header>
+
+<div class="toc">
+  <b>目录</b><br>
+  <a href="#s1">① 一句话诊断</a>
+  <a href="#s2">② 本机现状体检</a>
+  <a href="#s3">③ 方向一：模型层加速</a>
+  <a href="#s4">④ 方向二：编译层</a>
+  <a href="#s5">⑤ 方向三：采样层</a>
+  <a href="#s6">⑥ 方向四：帧数/时长策略</a>
+  <a href="#s7">⑦ 方向五：并行与显存</a>
+  <a href="#s8">⑧ 方向六：输出管线</a>
+  <a href="#s9">⑨ 方向七：中文社区实测</a>
+  <a href="#s10">⑩ 本机推荐配置速改表</a>
+  <a href="#s11">⑪ 不适用/已排除清单</a>
+  <a href="#s12">⑫ 风险与 OOM 防护</a>
+  <a href="#s13">⑬ 来源索引</a>
+</div>
+
+<p class="small">符号约定：<span class="badge b-lossless">无损</span>＝数值/画质不变，纯提速　<span class="badge b-slight">轻微有损</span>＝肉眼基本不可察　<span class="badge b-lossy">有损</span>＝肉眼可见差异，需你权衡　<span class="badge b-wait">待实测</span>＝无公开同卡数据，按规则不编造数字，需在本机验证。已做过且不再重复推荐的优化：fp8 量化模型、64 倍数分辨率、8 步采样、硬门短镜化、TTS 音频 lead 缓存。</p>
+
+<!-- ============ S1 诊断 ============ -->
+<h2 id="s1">① 一句话诊断</h2>
+<div class="card">
+  <p><b>你的环境其实很新，不用重装。</b>体检确认：PyTorch <b>2.9.1 + CUDA 13.0</b>、ComfyUI <b>0.39.0</b>（内置 Comfy Compiler / CUDA graphs 自 2026-09 起默认开启），GPU 识别为 sm_120（Blackwell）、支持 bf16。50 系的核心加速前提（cu130、NVFP4 硬件加速）<b>已经全部就位</b>——网上大量"50 系要先升级 cu130"的教程对本机不适用，直接跳过。</p>
+  <p><b>三套工作流的优化程度严重不均：</b></p>
+  <ul>
+    <li><b>H3（10-13 分钟）＝"裸奔"</b>：保存的 r2v/i2v 工作流里 <b>steps=20</b>、<b>无任何加速节点</b>（没有 SageAttention、没有分块/缓存节点）。这是三套里最慢、也是水分最大的。</li>
+    <li><b>Wan REMIX flf2v（约 4 分钟）＝已经很卷</b>：fp8_e4m3fn 双专家 + WanMoeKSampler 6 步 + lightx2v 4 步蒸馏 LoRA + wanBlockSwap×2 + fp16 累加 + sage_attention=auto。可再抠的只剩"确认 sage 是否真生效"和叠加 TeaCache。</li>
+    <li><b>LTX 2.3（较快）＝已经优化</b>：distilled fp8_scaled + 13/4 步双 pass + ChunkFeedForward + 分块 VAE 解码 + latent 超分。注意「稳定版」那份工作流用的是 <b>dev（非蒸馏）</b>权重，还有 NVFP4 变体可换。</li>
+  </ul>
+  <div class="callout c-green"><b>最优先三件事（做完 H3 预计从 10-13 分钟降到 5 分钟上下，数字待实测）：</b><br>
+  ① 给 H3 装上 SageAttention（官方口径"roughly double"，约 2×，几乎无损）；<br>
+  ② H3 上官方 8 步 turbo LoRA / FastH3 蒸馏版（20→8 步，约 2.5×，轻微损失）；<br>
+  ③ 确认 Wan/LTX 的 sage_attention 是真的生效了（先查 pip 里有没有 sageattention 包，再看启动日志）。</div>
+</div>
+
+<!-- ============ S2 体检 ============ -->
+<h2 id="s2">② 本机现状体检（2026-10-12 实查）</h2>
+<h3>环境版本</h3>
+<table>
+  <tr><th>项目</th><th>实测值</th><th>含义</th></tr>
+  <tr><td>PyTorch / CUDA</td><td>2.9.1+cu130 / 13.0</td><td>✅ Blackwell 优化内核已就位，NVFP4 可硬件加速，<b>无需再升级</b></td></tr>
+  <tr><td>GPU</td><td>RTX 5060 Ti，Compute Capability sm_120，bf16 支持=是</td><td>✅ 50 系原生</td></tr>
+  <tr><td>ComfyUI</td><td>0.39.0</td><td>✅ 内置 Comfy Compiler / CUDA graphs（0.35+ 默认开）</td></tr>
+</table>
+<h3>已装自定义节点（提速相关）</h3>
+<table>
+  <tr><th>节点</th><th>状态</th><th>备注</th></tr>
+  <tr><td>kijai ComfyUI-WanVideoWrapper</td><td>✅</td><td>含 DiffusionModelLoaderKJ（sage_attention 选项）、wanBlockSwap、WanVideo TeaCache</td></tr>
+  <tr><td>ComfyUI-WanMoeKSampler / Wan22FMLF</td><td>✅</td><td>Wan2.2 MoE 双专家采样</td></tr>
+  <tr><td>ComfyUI-VideoHelperSuite（VHS）</td><td>✅</td><td>输出管线</td></tr>
+  <tr><td>ComfyUI-LTXVideo</td><td>✅</td><td>LTX 官方节点栈</td></tr>
+  <tr><td>ComfyUI-GGUF / ComfyUI-nunchaku</td><td>✅</td><td>已装但本机三个视频模型都用不上（见排除清单）</td></tr>
+  <tr><td>ComfyUI-ReservedVRAM / memory_cleanup</td><td>✅</td><td>显存管理与清理</td></tr>
+  <tr><td>TeaCache 独立节点</td><td>❌</td><td>且不支持 Wan2.2 / H3（见方向一），无需安装</td></tr>
+  <tr><td>onediff / sageattention 独立包</td><td>❌ 未确认</td><td><b>sageattention 需在 python 环境里确认</b>（pip list | findstr sage）；Wan/LTX 工作流里 loader 的 sage_attention=auto 在没装包时会静默回退普通注意力</td></tr>
+</table>
+<h3>启动参数</h3>
+<p>秋叶绘世启动器是 GUI 程序，磁盘上读不到启动参数（无 .bat）。<b>请你在「绘世启动器 → 高级选项」里核对：</b>是否已勾选 <code>--use-sage-attention</code>、<code>--fast</code>、<code>--reserve-vram</code> 等（对应方案见方向二/五）。</p>
+<h3>三个工作流当前配置（实读 JSON）</h3>
+<table>
+  <tr><th>工作流</th><th>模型</th><th>采样</th><th>尺寸/帧数</th><th>编码</th><th>已有加速</th></tr>
+  <tr><td>minimax_h3_r2v / i2v / h3_i2v_15s</td><td>minimax_h3_ref2va/fl2va_pruned_<b>int8_convrot</b>；CLIP qwen3vl_32b_nvfp4_awq</td><td>res_multistep + simple，<b>steps=20</b>，BasicGuider（H3 无 CFG 概念）</td><td>占位符分辨率；fps=24；15s 版硬编码 362 帧（=17×21+5，合规）</td><td>VHS auto/auto（实际大概率 libx264 CPU 编码）</td><td><b>❌ 无任何加速节点</b>（无 sage/blockswap/缓存）</td></tr>
+  <tr><td>wan22_remix_flf2v / wan22_i2v</td><td>Wan2.2_Remix_14B fp8_e4m3fn 高/低噪双专家；sage=auto、fp16 累加=on</td><td>WanMoeKSampler <b>steps=6</b>，cfg=1/1，euler_ancestral+simple，shift=8，boundary≈0.875；I2V 用 PainterI2V（motion=1.15）</td><td>长边 832；length=$DURATION×16+1（5s→81 帧）@16fps</td><td>VHS h264-mp4 crf=19（CPU）</td><td>✅ lightx2v 4 步蒸馏 LoRA（高低噪配对）+ wanBlockSwap×2 + 显存清理</td></tr>
+  <tr><td>ltx_t2v_720p（+短剧版）</td><td>ltx-2.3-22b-<b>distilled</b>-1.1 fp8_scaled（短剧版同）；「稳定版」用 ltx-2.3-22b-<b>dev</b>（非蒸馏）</td><td>双 pass ManualSigmas：基础 13 步 + 超分 4 步，euler_ancestral，cfg=1（短剧版 9 步）</td><td>720×1280；361 帧；内部 fps=60、VHS 输出 fps=25（不一致，建议清理）</td><td>VHS h264-mp4 crf=19（CPU）</td><td>✅ ChunkFeedForward(4)、ReservedVRAM 1.5G、分块 VAE 解码、latent 超分</td></tr>
+</table>
+<div class="callout c-amber"><b>体检发现的两处"配置与传闻不符"：</b>① 你提到 H3 已用 8 步，但保存的 H3 工作流是 <b>steps=20</b>——若实际跑的就是这份，步数层面还有 2.5 倍空间（方案见方向三）；② LTX「稳定版」用的是 <b>dev 非蒸馏</b>权重，换成 distilled 权重步数可大幅下降（见方向一/三）。</div>
+
+<!-- ============ S3 方向一 ============ -->
+<h2 id="s3">③ 方向一：模型层加速（量化/蒸馏/缓存）</h2>
+
+<div class="card">
+  <div class="head"><span class="nm">1. lightx2v 4 步蒸馏 LoRA（Wan2.2 首选）</span><span class="badge b-slight">轻微有损</span><span class="prio p1">P1</span></div>
+  <div class="kv">
+    <span class="k">原理</span><span>官方把 Wan2.2 蒸馏到 4 步，用低/高噪声双 LoRA 加速，无需换模型。</span>
+    <span class="k">操作</span><span>你已在用（wan22 系列工作流已挂高低噪配对）。核对：T2V 用 <code>Wan2.2-T2V-A14B-4steps-lora-rank64-V1</code>；I2V/FLF2V 必须高低噪各挂一个：<code>wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise</code> + <code>..._low_noise</code>，步数设 4。</span>
+    <span class="k">收益</span><span>官方文档定性"从 20+ 步降到 4 步"；官方 4090D 实测（Wan2.2 Fun-Control，fp8_scaled）：524s→138s（首跑约 3.8×）、520s→79s（二次约 6.6×）。5060Ti 上你的 flf2v 已 6 步，再压到 4 步约再省 30%（待实测）。</span>
+    <span class="k">质量</span><span>轻微：细微运动细节/高频纹理略降，静态镜头几乎无感。</span>
+    <span class="k">风险</span><span>高低噪 LoRA 必须配对；CFG 需配合蒸馏调度（你已是 cfg=1，正确）；别叠加第二个加速 LoRA。</span>
+  </div>
+  <div class="src">来源：<a href="https://docs.comfy.org/tutorials/video/wan/wan2-2-fun-inp">docs.comfy.org/tutorials/video/wan/wan2-2-fun-inp</a>（LoRA 文件名与配对规则）· <a href="https://docs.comfy.org/tutorials/video/wan/wan2-2-fun-control">docs.comfy.org/tutorials/video/wan/wan2-2-fun-control</a>（4090D 实测 138s/79s）· <a href="https://lightx2v-zhcn.readthedocs.io/zh-cn/latest/getting_started/model_structure.html">lightx2v 中文文档</a></div>
+</div>
+
+<div class="card">
+  <div class="head"><span class="nm">2. H3 官方加速三件套（SageAttention / Comfy Kitchen / 稀疏注意力 / FastH3）</span><span class="badge b-slight">轻微有损</span><span class="prio p1">P1</span></div>
+  <div class="kv">
+    <span class="k">原理</span><span>H3 慢在注意力层；SageAttention 用低比特量化注意力替换标准注意力（官方明示可"约 2 倍速"）；FastH3 是官方蒸馏检查点（8 步 vsa 模式）；稀疏注意力跳过不重要的 key block。</span>
+    <span class="k">操作</span><span>① 装 SageAttention：从 SageAttention Releases 下载与 torch/CUDA 匹配的 Windows wheel（本机 torch 2.9+cu130，选对应版），在整合包 python 环境 <code>pip install &lt;wheel&gt;</code>；② 工作流在 UNETLoader→BasicGuider 之间插 <code>Patch Sage Attention KJ</code>（KJNodes，sage_attention=auto），或启动器加 <code>--use-sage-attention</code>；③ 若用 bf16 权重出片尾 morphing/花字，换 Comfy Kitchen attention（<code>--use-ck-attention</code>，0.32+）或 Model Attention Backend 节点；④ 长镜头试内置 <code>Model Sparse Attention</code>（sol-attn，tau≈1.3，start_percent=0.2）；⑤ 0.36+ 直接用 FastH3 模板（8 步）。</span>
+    <span class="k">收益</span><span>官方原文 SageAttention "roughly double the generation speed with minimal quality loss"（≈2×）；5060Ti 社区实测：H3 8 步约 50s/步、10 秒片 494s，比纯分块 111s/步快约 2.2×（掘金帖）。你的 10-13 分钟 → 约 5-7 分钟（叠加 turbo LoRA 更低，待实测）。</span>
+    <span class="k">质量</span><span>Sage INT8 kernel 在片尾可能出现 morphing/花字（官方明示），换 bf16 权重 + ck-attention 可解；默认 int8_convrot 权重<b>不兼容</b> ck-attention（issue #15529 会崩），此时保持默认注意力或换 bf16 权重。</span>
+    <span class="k">风险</span><span>sage wheel 与 torch 版本错配会静默回退普通注意力（控制台有提示属正常）；int8_convrot 权重用 ck-attention 会崩溃——别照搬网上的 ck-attention 教程不区分权重。</span>
+  </div>
+  <div class="src">来源：<a href="https://docs.comfy.org/tutorials/video/minimax/minimax-h3">docs.comfy.org/tutorials/video/minimax/minimax-h3</a>（官方，已核实原文）· <a href="https://pypi.org/project/sageattention/2.2.0/">pypi.org/project/sageattention/2.2.0</a>（wheel）· <a href="https://github.com/comfyanonymous/ComfyUI/issues/15529">ComfyUI issue #15529</a> · <a href="https://juejin.cn/post/7672711130194395176">juejin.cn/post/7672711130194395176</a>（5060Ti 实测）</div>
+</div>
+
+<div class="card">
+  <div class="head"><span class="nm">3. WanVideo TeaCache（kijai wrapper 内置，Wan2.2 缓存复用）</span><span class="badge b-slight">轻微有损</span><span class="prio p2">P2</span></div>
+  <div class="kv">
+    <span class="k">原理</span><span>相邻步输出变化小于阈值时跳过该步前向、复用上一步缓存，省模型前向次数。</span>
+    <span class="k">操作</span><span>在 kijai WanVideoWrapper 工作流加 <code>WanVideo TeaCache</code> 节点：选 Wan2.2 MoE 对应系数，阈值保守起步；<b>起始步不要跳过</b>（early steps never skip），否则运动崩坏。</span>
+    <span class="k">收益</span><span>社区定位为与 SageAttention / torch.compile 叠加的"标准三件套"之一，单节点约 1.5-1.8×（4090 口径；5060Ti 待实测）。</span>
+    <span class="k">质量</span><span>轻微；阈值过激进→运动拖沓、帧间抖动。</span>
+    <span class="k">风险</span><span>只省前向不省显存；与 6 步超短 schedule 叠加时收益会缩水（可跳步本来就少）。</span>
+  </div>
+  <div class="src">来源：<a href="https://github.com/kijai/ComfyUI-WanVideoWrapper">github.com/kijai/ComfyUI-WanVideoWrapper</a> · <a href="https://comfy.org/cloud/supported-nodes/ComfyUI-WanVideoWrapper/">comfy.org 节点页</a> · 备注：独立 TeaCache 节点（welltop-cn）支持矩阵是 Wan2.1/LTX-Video(0.9)/HunyuanVideo/CogVideoX，<b>不支持 Wan2.2、不支持 H3</b>，见 <a href="https://deepwiki.com/welltop-cn/ComfyUI-TeaCache/4-supported-models">deepwiki 支持矩阵</a>、<a href="https://stable-diffusion-art.com/teacache/">stable-diffusion-art.com/teacache</a></div>
+</div>
+
+<div class="card">
+  <div class="head"><span class="nm">4. LTX 2.3 NVFP4 变体（50 系专用）</span><span class="badge b-slight">轻微有损</span><span class="prio p2">P2</span></div>
+  <div class="kv">
+    <span class="k">原理</span><span>NVFP4 是 Blackwell 原生的 4bit 浮点格式，只有 cu130 的 torch 才能硬件加速（本机已满足）。</span>
+    <span class="k">操作</span><span>在 ComfyUI 模板浏览器/模型库换用 LTX-2.3 的 <code>NVFP4</code> 权重（Lightricks 官方发布，配 ComfyUI-LTXVideo 节点栈），FP8 变体次之。</span>
+    <span class="k">收益</span><span>NVIDIA 官方博客（RTX 50 系）：NVFP4 最高 <b>2.5× 性能、显存 -60%</b>；FP8 最高 1.7×、显存 -40%（测试在 RTX 5090 上）。5060Ti 具体倍数待实测。</span>
+    <span class="k">质量</span><span>轻微：4bit 格式，官方称质量损失极小。</span>
+    <span class="k">风险</span><span>必须 cu130（本机已是）；NVFP4 文件需从官方渠道下载，别混用 fp8 文件。</span>
+  </div>
+  <div class="src">来源：<a href="https://blogs.nvidia.cn/blog/rtx-ai-garage-flux-ltx-video-comfyui-gdc/">blogs.nvidia.cn（官方，已核实"2.5×/60%"原文）</a></div>
+</div>
+
+<div class="card">
+  <div class="head"><span class="nm">5. GGUF（city96）——仅当显存吃紧</span><span class="badge b-wait">不提速·待实测</span></div>
+  <div class="kv">
+    <span class="k">原理</span><span>K-quants 把高/低噪双专家权重压到约一半体积，运行时反量化。主作用是<b>显存</b>而非速度。</span>
+    <span class="k">操作</span><span>Manager 装 city96/ComfyUI-GGUF；Wan2.2 A14B 有官方教程点名的 GGUF（HuggingFace bullerwins 系列），用 <code>UnetLoaderGGUF</code> 分别拉高低噪两文件（档位必须一致：Q4_K_M 起步、Q5_K_M 质量档）。</span>
+    <span class="k">收益</span><span>社区共识 Q8 视觉与 fp16 无差，但 5060Ti 上 GGUF 反量化 kernel 与 fp8 对比<b>无公开数字，待实测</b>，大概率不显著快于你现在的 fp8。</span>
+    <span class="k">质量</span><span>Q4 轻微～中等（细节略软），Q5 轻微。</span>
+    <span class="k">风险</span><span>FLF2V 无独立 GGUF 文件（只有 I2V/T2V-A14B）；<b>H3、LTX 无 GGUF 量化包，不可用</b>。</span>
+  </div>
+  <div class="src">来源：<a href="https://docs.comfy.org/zh/tutorials/video/wan/wan2_2">docs.comfy.org/zh/tutorials/video/wan/wan2_2</a> · <a href="https://github.com/city96/ComfyUI-GGUF">github.com/city96/ComfyUI-GGUF</a></div>
+</div>
+
+<div class="card">
+  <div class="head"><span class="nm">6. Nunchaku int4/NVFP4（SVDQuant）——当前不适用</span><span class="badge b-lossy">不适用</span></div>
+  <div class="kv">
+    <span class="k">结论</span><span>当前 nunchaku 官方支持列表只有 FLUX.1、Qwen-Image、SANA、Z-Image，<b>不含 Wan 2.1/2.2、H3、LTX 任何视频模型</b>。网上 2025 年"nunchaku 跑 Wan2.1"的教程指向旧分支，别照搬。等官方放出视频 4bit 权重再考虑。</span>
+    <span class="k">风险</span><span>Windows 编译 wheel 门槛高（需 CUDA≥12.8、VS Build Tools）；Blackwell 侧 CI 已适配（含 RTX 5090，NVFP4 较 BF16 约 3× 是 FLUX 数据）。</span>
+  </div>
+  <div class="src">来源：<a href="https://github.com/nunchux-ai/nunchaku">github.com/nunchux-ai/nunchaku（README 支持列表）</a></div>
+</div>
+
+<!-- ============ S4 方向二 ============ -->
+<h2 id="s4">④ 方向二：编译层</h2>
+
+<div class="card">
+  <div class="head"><span class="nm">1. ComfyUI 内置 Comfy Compiler + CUDA graphs</span><span class="badge b-lossless">无损</span><span class="prio p1">P1</span></div>
+  <div class="kv">
+    <span class="k">原理</span><span>aimdo 内存编译器提前算定显存分配 + 原生 CUDA graphs，消除分配抖动、让每步跳过低开销。<b>不是</b> torch.compile。</span>
+    <span class="k">操作</span><span><b>本机已具备</b>（ComfyUI 0.39.0，0.35+ 默认开），无需任何操作。仅当崩溃/与自定义节点冲突时在启动参数加 <code>--disable-comfy-compiler</code> 或 <code>--disable-cuda-graphs</code> 回退；用 <code>--assert-graph-breaks</code> 诊断。</span>
+    <span class="k">收益</span><span>步间开销下降；官方 changelog 未给倍数 → 待实测。</span>
+    <span class="k">质量</span><span>无损失（不改数值）。</span>
+    <span class="k">风险</span><span>个别老 LoRA 链可能触发图断裂崩溃，回退即上面两个 flag。</span>
+  </div>
+  <div class="src">来源：<a href="https://docs.comfy.org/development/comfyui-server/startup-flags">docs.comfy.org/development/comfyui-server/startup-flags</a> · <a href="https://docs.comfy.org/changelog">docs.comfy.org/changelog</a></div>
+</div>
+
+<div class="card">
+  <div class="head"><span class="nm">2. torch.compile（内置 TorchCompileModel 节点）</span><span class="badge b-lossless">无损</span><span class="prio p2">P2</span></div>
+  <div class="kv">
+    <span class="k">原理</span><span>torch.compile(inductor) 包 UNet forward，首跑编译、之后走编译图；首次编译耗时几分钟，改 LoRA 栈后需重编译。</span>
+    <span class="k">操作</span><span>工作流加内置 <code>TorchCompileModel</code>（或社区 TorchCompileSpeed）节点，插在 UNETLoader→采样之间，mode 用 default 或 max-autotune-no-cudagraphs。本机 torch 2.9.1+cu130 满足 Blackwell 要求。</span>
+    <span class="k">收益</span><span>社区实测"100 帧 35-50 秒、快 2-3 倍、显存 12G 不变"（CSDN 帖，未注明显卡型号）；5060Ti 待实测。</span>
+    <span class="k">质量</span><span>轻微（inductor 纯算子融合，数值等价）。</span>
+    <span class="k">风险</span><span>编译缓存路径含中文/空格可能失败；与部分自定义节点不兼容崩溃时删节点回退。</span>
+  </div>
+  <div class="src">来源：<a href="https://docs.comfy.org/built-in-nodes/TorchCompileModel.md">docs.comfy.org/built-in-nodes/TorchCompileModel.md</a> · <a href="https://blog.csdn.net/qq_39934403/article/details/155322176">CSDN 实测帖</a> · <a href="https://rentry.org/wan21kjguide">rentry.org/wan21kjguide</a>（50 系 cu128/cu130 命令）</div>
+</div>
+
+<div class="card">
+  <div class="head"><span class="nm">3. 启动参数 --fast（fp16 累加 / fp8 矩阵乘 / cublas_ops）</span><span class="badge b-slight">轻微有损</span><span class="prio p2">P2</span></div>
+  <div class="kv">
+    <span class="k">原理</span><span>启动级算子加速开关；fp16_accumulation 就是社区说的 fp16_fast。</span>
+    <span class="k">操作</span><span>绘世启动器高级选项加 <code>--fast</code>（或 <code>--use-sage-attention</code> 一并加）；控制台须显示 "Enabled fp16 accumulation" 才生效。注意：你的 Wan 工作流已在 loader 层开了 fp16_accumulation=true，全局 --fast 主要惠及 H3/LTX。</span>
+    <span class="k">收益</span><span>配合 SageAttention 是社区 Wan 提速标配；单独倍数未溯源 → 待实测。</span>
+    <span class="k">质量</span><span>轻微（官方标注 experimental、may affect quality）。</span>
+    <span class="k">风险</span><span>出图异常先删 --fast 排查；依赖 torch 版本匹配（本机 cu130 OK）。</span>
+  </div>
+  <div class="src">来源：<a href="https://docs.comfy.org/development/comfyui-server/startup-flags">docs.comfy.org/development/comfyui-server/startup-flags</a></div>
+</div>
+
+<div class="card">
+  <div class="head"><span class="nm">4. SageAttention v2（编译/算子层最优解之一）</span><span class="badge b-slight">轻微有损</span><span class="prio p1">P1</span></div>
+  <div class="kv">
+    <span class="k">原理</span><span>低比特量化注意力替换标准 SDPA；注意力占视频扩散大头，故提速明显。</span>
+    <span class="k">操作</span><span>① 从 SageAttention Releases 下载与 torch/CUDA 匹配的 Windows wheel（本机选 cu130/torch2.9 对应版，abi3 通用 wheel 可跨 py3.10-3.13）；整合包 python 里 <code>pip install &lt;wheel&gt;</code>；② 全局：启动器加 <code>--use-sage-attention</code>；或工作流加 KJNodes 的 <code>Patch Sage Attention KJ</code>（H3 插在 UNETLoader→BasicGuider 之间，sage_attention=auto）。Blackwell 另可试 <code>ComfyUI-SageAttention3</code>（pip install sageattn3）。</span>
+    <span class="k">收益</span><span>官方 H3 文档："roughly double the generation speed with minimal quality loss"（约 2×）；5060Ti Wan 实测（81 帧 720p）：Sage1 5分40秒 → Sage2 4分58秒 → Sage3 4分51秒（Sage2/3 比 Sage1 快约 25%）。</span>
+    <span class="k">质量</span><span>轻微；H3 的 INT8 kernel 片尾 morphing/花字→换 bf16 权重 + Comfy Kitchen attention 解决；R2V 多参考大显存机器有"开了发糊"的社区报告。</span>
+    <span class="k">风险</span><span>需要 fp16/bf16 张量，部分层自动回退标准注意力（正常）；<b>先确认本机是否真的装了 sageattention 包</b>——Wan/LTX 的 loader 里 sage_attention=auto 在无包时静默回退。</span>
+  </div>
+  <div class="src">来源：<a href="https://docs.comfy.org/tutorials/video/minimax/minimax-h3">docs.comfy.org（H3 官方文档，已核实）</a> · <a href="https://pypi.org/project/sageattention/2.2.0/">pypi sageattention</a> · <a href="https://github.com/wallen0322/ComfyUI-SageAttention3">github.com/wallen0322/ComfyUI-SageAttention3</a> · 5060Ti 实测见方向七表格</div>
+</div>
+
+<div class="card">
+  <div class="head"><span class="nm">5. OneDiff / CTranslate2 / TensorRT —— 本机不适用（已核实）</span><span class="badge b-lossy">不适用</span></div>
+  <div class="kv">
+    <span class="k">OneDiff</span><span>上游明确 Windows 仅支持 WSL2 运行（onediff 1.2.1.dev19 PyPI 说明）；秋叶整合包是 Windows 便携 Python，套 WSL 等于另起环境，不兼容 → 跳过。</span>
+    <span class="k">CTranslate2/Faster-*</span><span>为自回归 LLM/whisper 设计；Wan/H3/LTX 是 flow-matching 扩散 DiT（序列动态变化、CFG 双路、自定义注意力），架构上无可复用方案，不值得装。</span>
+    <span class="k">TensorRT</span><span>官方 ComfyUI TensorRT 节点只覆盖 SDXL/SD3/FLUX 图像模型；TensorRT-LLM 里的 Wan2.1-I2V 是数据中心管线，非 Windows 本地 ComfyUI 可走的路。</span>
+  </div>
+  <div class="src">来源：<a href="https://pypi.org/project/onediff/1.2.1.dev19/">pypi onediff</a>（"use it under WSL"）· <a href="https://nvidia.github.io/TensorRT-LLM/latest/models/supported-models.html">TensorRT-LLM 支持列表</a></div>
+</div>
+
+<!-- ============ S5 方向三 ============ -->
+<h2 id="s5">⑤ 方向三：采样层（步数/CFG/采样器）</h2>
+
+<div class="card">
+  <div class="head"><span class="nm">1. H3 官方采样参数基线（res_multistep + simple）</span><span class="badge b-slight">看档位</span><span class="prio p1">P1</span></div>
+  <div class="kv">
+    <span class="k">原理</span><span>H3 官方模板指定采样器/调度器组合，步数决定质量-速度平衡点，与 CFG 无关（BasicGuider 无 CFG 概念）。</span>
+    <span class="k">操作</span><span>保持 KSamplerSelect=res_multistep + BasicScheduler=simple（你已是）。步数档位：<b>简单内容 12-16 步够用</b>；高频细节（链甲/花纹/小物件堆）到约 50 步还在变好；<b>音轨比画面收敛慢</b>，8 步时人声音色最弱，12 步以上才可用。</span>
+    <span class="k">收益</span><span>你保存的 H3 工作流是 20 步。20→16 步省约 20%，20→12 步省约 40%（5060Ti 绝对秒数待实测）。</span>
+    <span class="k">质量</span><span>12-16 步对多数镜头可接受；R2V/参考类镜头<b>别用 4 步</b>（官方明示参考几乎不生效、人脸/姿态漂移），紧盯参考回 20-25 步。</span>
+    <span class="k">风险</span><span>步数再低（&lt;12）画面细节与音轨同步劣化。</span>
+  </div>
+  <div class="src">来源：<a href="https://docs.comfy.org/tutorials/video/minimax/minimax-h3">docs.comfy.org/tutorials/video/minimax/minimax-h3</a>（官方文档，已核实）</div>
+</div>
+
+<div class="card">
+  <div class="head"><span class="nm">2. H3 官方 8 步 turbo LoRA / FastH3 蒸馏版</span><span class="badge b-slight">轻微有损</span><span class="prio p1">P1</span></div>
+  <div class="kv">
+    <span class="k">原理</span><span>模板内置 Enable Lightning LoRA（turbo_mode）：T2V/I2V 从 20 步降到 8 步，R2V 降到 4 步；FastH3 是官方蒸馏检查点（8 步 vsa，0.36+ 模板直接有）。</span>
+    <span class="k">操作</span><span>H3 工作流里打开模板的 Enable Lightning LoRA 开关（或加载对应 turbo LoRA）后 steps 改 8；或直接用 FastH3 模板。</span>
+    <span class="k">收益</span><span>步数 20→8 ≈ 2.5×；与 SageAttention 叠加理论近 4-5×（待实测）。社区参考：秋叶整合包 H3 实测 4 步 LoRA 后 21 分钟→13 分钟（未写明设备）。</span>
+    <span class="k">质量</span><span>轻微；R2V 紧参考镜头的 4 步档官方明确警示（参考几乎不生效），此类镜头回 20 步。</span>
+    <span class="k">风险</span><span>turbo LoRA 与普通 LoRA 叠加需测试；8 步时音频质量仍需 12 步以上档位复核。</span>
+  </div>
+  <div class="src">来源：<a href="https://docs.comfy.org/tutorials/video/minimax/minimax-h3">docs.comfy.org（官方，已核实）</a> · 秋叶 H3 实测见方向七表格（<a href="https://www.iesdouyin.com/share/video/7673095023717518602">抖音链接</a>）</div>
+</div>
+
+<div class="card">
+  <div class="head"><span class="nm">3. Wan2.2 采样：你现在 6 步已是"低步数终点"，别再加戏</span><span class="badge b-lossless">保持现状</span></div>
+  <div class="kv">
+    <span class="k">结论</span><span>官方 flf2v 模板两段式（高低噪声段各 4 步、uni_pc+beta、CFG 1），社区推荐区间 CFG 3.5-5 / euler；你已经用 WanMoeKSampler 6 步 + cfg=1/1 + euler_ancestral + lightx2v 4 步蒸馏 LoRA——这是社区标准加速形态。再降步数会明显崩质量；<b>本方向对 Wan 无进一步无损空间</b>。</span>
+    <span class="k">注意</span><span>CFG 拉高会增加伪影；motion_amplitude=1.15（PainterI2V）已设，运动幅度越大越要保帧数而不是降帧数。</span>
+  </div>
+  <div class="src">来源：<a href="https://unpkg.com/comfyui-mcp@0.27.0/plugin/skills/wan-flf-video/SKILL.md">comfyui-mcp wan-flf skill</a> · <a href="https://comfy.org/workflows/video_wan2_2_14B_flf2v-7016f027bcf1/">comfy.org 官方 flf2v 工作流</a> · <a href="https://deepwiki.com/stduhpf/ComfyUI-WanMoeKSampler/10.2-performance-optimization">WanMoeKSampler 文档</a></div>
+</div>
+
+<div class="card">
+  <div class="head"><span class="nm">4. LTX 2.3：8 步是蒸馏版设计工作点</span><span class="badge b-slight">看档位</span></div>
+  <div class="kv">
+    <span class="k">结论</span><span>蒸馏版官方即 8 步固定（euler，细化/放大段 CFG=1）；完整（dev）模型 30-50 步。你的 ltx_t2v_720p 用 distilled + 13/4 步双 pass，已合理；「稳定版」那份用 <b>dev 权重</b>——换成 distilled 权重后步数可大幅下降（对照 dev 30-50 步）。再压 8→6 步质量下降（待实测）。</span>
+    <span class="k">RESTART</span><span>LTX-2.3 官方 API 带 use_restart_sampling 开关（每步注入小噪声改善质量）；ComfyUI 侧用 ComfyUI-Restart-Sampling 节点。代价是等效多跑几轮——是"8 步发糊时补质量"的手段，<b>不是纯提速</b>。</span>
+  </div>
+  <div class="src">来源：<a href="https://fal.ai/models/fal-ai/ltx-2.3-22b/audio-to-video/api">fal.ai LTX-2.3 API 文档</a>（restart 开关）· <a href="https://comfy.icu/node/KRestartSamplerAdv">comfy.icu KRestartSamplerAdv</a></div>
+</div>
+
+<div class="card">
+  <div class="head"><span class="nm">5. "RAD=8" 出处核查结论</span><span class="badge b-info">无出处</span></div>
+  <div class="kv">
+    <span class="k">结论</span><span>未找到 "RAD=8" 作为具名社区配方的可追溯出处（Reddit/4chan/中文社区检索无对应帖），不编造。最接近的可溯源低步数技巧就是：H3 turbo 8 步、Wan lightx2v 4 步蒸馏 LoRA、两段式高低噪声采样（你已全部在用或可加）。</span>
+  </div>
+</div>
+
+<!-- ============ S6 方向四 ============ -->
+<h2 id="s6">⑥ 方向四：帧数/时长策略</h2>
+
+<div class="card">
+  <div class="head"><span class="nm">1. H3 帧数吸附：17k+5，固定 24fps</span><span class="badge b-lossless">无损</span><span class="prio p1">P1</span></div>
+  <div class="kv">
+    <span class="k">原理</span><span>H3 时间维按 17 帧一块处理，合法总帧数只能是 17k+5：5/22/39/56/73/90/107/124/141/158/175/…；固定 24fps（严格校验 ±0.01），官方时长规格 4-15 秒。你的 175 帧=17×10+5≈7.3 秒，正是合规值；15s 版 362 帧=17×21+5 也合规。</span>
+    <span class="k">操作</span><span>别在秒数上精调（5.0→5.1 吸附后可能是同一档）。要省时间就<b>下踩一整档 17 帧</b>：175→158（6.6s）或 141（5.9s）；要确定时长，先定 17k+5 帧数再 ÷24 回填秒数。</span>
+    <span class="k">收益</span><span>帧数≈线性影响采样耗时：每少 17 帧省约 1/10 推理时间。参考 4090 上 124 帧 640×1152 端到端 120.9s（20 步含 VAE）。5060Ti 绝对秒数待实测。</span>
+    <span class="k">质量</span><span>无损（只是镜头短 0.7s/档）。</span>
+    <span class="k">风险</span><span>低于 124 帧后动作易截断；别越过 4-15s 规格。</span>
+  </div>
+  <div class="src">来源：<a href="https://iqilian.com/learn/minimax-h3-comfyui-fenbianlv-zhenshu/">iqilian.com（17k+5 详解）</a> · <a href="https://www.minimax.io/news/minimax-h3-open-source">minimax.io 官方发布</a> · <a href="https://www.besthub.dev/articles/running-minimax-h3-locally-comfyui-setup-faster-downloads-and-vram-peak-management-eae294f24697">besthub.dev H3 本地运行</a></div>
+</div>
+
+<div class="card">
+  <div class="head"><span class="nm">2. Wan 帧数网格：4n+1（"16n+1"是更保守的超集）</span><span class="badge b-lossless">无损</span><span class="prio p2">P2</span></div>
+  <div class="kv">
+    <span class="k">原理</span><span>Wan VAE 时域 4× 压缩，帧数需满足 (帧数−1) 被 4 整除，即 4n+1：…49/77/81/121…。你工作流里的 $DURATION×16+1（5s→81 帧）落在 16n+1 网格——它是 4n+1 的合法超集，不出错但偏保守；kijai wrapper 以 81 帧窗为常用单元。</span>
+    <span class="k">操作</span><span>短镜可试 4n+1 最小合规档：49 帧（16fps≈3s）比 81 帧省约 40% 采样；81 帧（≈5s）是推荐工作点；121 帧（≈7.5s）显存大增慎用。flf2v 与 t2v 同网格；flf2v 只多两次 CLIP Vision 关键帧编码（一次性开销，远小于采样），显存画质同档，优势是首尾可控、减少返工。</span>
+    <span class="k">质量</span><span>无损（帧数合规即可）；49 帧动作偏赶，复杂运镜建议 81 帧。</span>
+    <span class="k">风险</span><span>Wan2.2-TI2V-5B 宽高需 32 倍数（2.2 VAE 16× 空间压缩）；REMIX flf2v 配 lightx2v 蒸馏 LoRA 时帧数离训练分布太远可能崩运动（需实测）。</span>
+  </div>
+  <div class="src">来源：<a href="https://utensils.io/mold/models/wan.html">utensils.io/mold/models/wan.html（4n+1 网格）</a> · <a href="https://unpkg.com/comfyui-mcp@0.22.0/plugin/skills/wan-t2v-video/SKILL.md">comfyui-mcp wan-t2v skill</a> · <a href="https://raw.githubusercontent.com/kijai/ComfyUI-WanVideoWrapper/main/readme.md">kijai WanVideoWrapper readme</a></div>
+</div>
+
+<div class="card">
+  <div class="head"><span class="nm">3. LTX 帧数：8n+1，最短 25 帧</span><span class="badge b-lossless">无损</span><span class="prio p3">P3</span></div>
+  <div class="kv">
+    <span class="k">操作</span><span>LTX VAE 时域 8× 压缩，video_frames 须满足 8k+1：25/121/241…。短镜直接取 25 或 121，别填中间数。你的 361 帧=8×45+1 合规。</span>
+    <span class="k">风险</span><span>内部 fps=60 与 VHS 输出 fps=25 不一致，建议统一（LTX 原生 60fps 训练、输出 25fps 播放时确认帧率转换节点设置）。</span>
+  </div>
+  <div class="src">来源：<a href="https://docs.qvac.tether.io/ai-capabilities/video-generation/">docs.qvac.tether.io（8k+1 约束）</a></div>
+</div>
+
+<div class="card">
+  <div class="head"><span class="nm">4. 帧数 vs 耗时的总规律</span><span class="badge b-lossless">无损</span></div>
+  <div class="kv">
+    <span class="k">结论</span><span>渲染耗时 ≈ 随（latent 帧数 × 分辨率 × 步数）线性增长。合规网格上"下踩一整档"是无画质损失的省时间手段，比降步数更划算。工作流层面：把 H3 的 175 帧按镜头实际需要压缩到 141/158，把 Wan 短镜压到 49-57 帧（4n+1），每档都实打实省时间。</span>
+  </div>
+</div>
+
+<!-- ============ S7 方向五 ============ -->
+<h2 id="s7">⑦ 方向五：并行与显存</h2>
+
+<div class="card">
+  <div class="head"><span class="nm">1. 单卡 16G：不要队列并行/多开</span><span class="badge b-lossless">不推荐</span></div>
+  <div class="kv">
+    <span class="k">结论</span><span>ComfyUI 单实例本串行执行；多开实例可并行，但视频扩散已吃满显存与 CUDA 引擎，正片渲染并行只会更慢/ OOM。最多错峰用：一个实例出草稿、一个实例跑正片，且正片保持单实例队列。</span>
+    <span class="k">pipeline/tensor parallel</span><span>ComfyUI 的 MultiGPU/pipeline parallel 要求多张同型号 GPU（官方测最快 1.95×）；tensor parallel 需跨设备切分通信——单卡完全用不上，别装这类节点。</span>
+  </div>
+  <div class="src">来源：<a href="https://docs.comfy.org/built-in-nodes/MultiGPU_WorkUnits">docs.comfy.org MultiGPU_WorkUnits</a> · <a href="https://dev.to/abdollah_ebadi_cbec8f6471/running-multiple-comfyui-in-parallel-on-a-single-gpu-what-actually-breaks-first-4n04">dev.to 单卡并行实测</a></div>
+</div>
+
+<div class="card">
+  <div class="head"><span class="nm">2. 显存策略：常驻 + 动态显存 + 桌面预留</span><span class="badge b-lossless">无损</span><span class="prio p2">P2</span></div>
+  <div class="kv">
+    <span class="k">原理</span><span>新版 ComfyUI 动态显存让模型常驻显存、不卸回 RAM（省 PCIe/DDR 往返）；--reserve-vram 给系统/桌面留缓冲防 OOM。</span>
+    <span class="k">操作</span><span>① 绘世启动器加 <code>--reserve-vram 1.5</code>（Windows 桌面合成预留）；② 若一条镜头重复跑、显存够，加 <code>--highvram</code> 让模型常驻免重载（16G 跑 H3 时反而别加，会挤爆分块）；③ <b>别用 --lowvram/--novram</b>（4-8G 卡用的，会拖慢）；④ H3 分块加载时，采样完、VAE 解码前插一个"清缓存/卸载全部模型"屏障节点（你已装 memory_cleanup），腾显存再装双 VAE。</span>
+    <span class="k">收益</span><span>消除模型反复重载与 offload 抖动；5060Ti 上 H3 纯分块 111s/步 vs Sage 8 步 50s/步（含调度差异，见方向一）。</span>
+    <span class="k">质量</span><span>无损。</span>
+  </div>
+  <div class="src">来源：<a href="https://docs.comfy.org/development/comfyui-server/startup-flags">docs.comfy.org 启动参数</a> · <a href="https://blog.comfy.org/p/dynamic-vram-in-comfyui-saving-local">blog.comfy.org 动态显存</a></div>
+</div>
+
+<div class="card">
+  <div class="head"><span class="nm">3. 精度取舍：别加 --force-fp16</span><span class="badge b-lossless">无损（防翻车）</span><span class="prio p2">P2</span></div>
+  <div class="kv">
+    <span class="k">结论</span><span>H3 按 bf16/int8（int8_convrot）发布，强转 fp16 有 NaN/黑屏风险；保持官方量化权重。真正无损加速靠 SageAttention 的 int8/fp8 attention kernel 与 NVFP4（cu130 硬件加速）。fp8_scaled / int8_convrot / nvfp4_awq 都是"官方档位"，比手动 --force-fp16 安全得多。</span>
+    <span class="k">注意</span><span>功耗墙压到 150W 只慢 3%（5060Ti 实测 510s vs 494s）还降温——若显存温度高可考虑，与提速无关。</span>
+  </div>
+  <div class="src">来源：<a href="https://juejin.cn/post/7672711130194395176">juejin.cn 5060Ti H3 实测</a></div>
+</div>
+
+<div class="card">
+  <div class="head"><span class="nm">4. 环境版本核查结论（cu130 已就位，无需折腾）</span><span class="badge b-lossless">已满足</span></div>
+  <div class="kv">
+    <span class="k">结论</span><span>网上"50 系必须升 cu130"的教程对本机<b>不适用</b>：torch 2.9.1+cu130 已含 sm_120 内核、NVFP4 可硬件加速。唯一要做的是<b>保持 ComfyUI 与关键节点更新</b>（Manager 里只更新核心 ComfyUI 与必要加速节点；KJNodes/第三方大节点整包慎升，更新前备份 custom_nodes）。</span>
+  </div>
+  <div class="src">来源：<a href="https://blog.comfy.org/p/new-comfyui-optimizations-for-nvidia">blog.comfy.org 新优化公告</a> · <a href="https://www.aiqnahub.com/stable-diffusion-gpu-upgrade-5060-ti/">aiqnahub 5060Ti 升级评估</a></div>
+</div>
+
+<!-- ============ S8 方向六 ============ -->
+<h2 id="s8">⑧ 方向六：输出管线</h2>
+
+<div class="card">
+  <div class="head"><span class="nm">1. VHS 全工作流换 NVENC 硬编码</span><span class="badge b-lossless">无损</span><span class="prio p2">P2</span></div>
+  <div class="kv">
+    <span class="k">原理</span><span>你的三套工作流输出都是 VHS <code>video/h264-mp4</code>＝libx264 <b>CPU</b> 编码；换 <code>video/nvenc_h264-mp4</code>（或 nvenc_hevc）走显卡 NVENC 编码单元，几乎不占采样算力。</span>
+    <span class="k">操作</span><span>VHS_VideoCombine → format 选 <code>video/nvenc_h264-mp4</code>；该格式下质量控件是 <b>bitrate（Mbps）而非 crf</b>，建议 20-40 Mbps（60Mbps 近无损档）；pix_fmt=yuv420p；frame_rate 填实际帧率。注意 VHS 的 nvenc 格式不暴露 faststart，网页秒开需外部重封装。</span>
+    <span class="k">收益</span><span>编码阶段从 CPU 数十秒级压到秒级；占总耗时比例待实测（渲染主导）。</span>
+    <span class="k">质量</span><span>同码率 NVENC 略逊 libx264，但 crf≈19 视觉档目视无损；hevc 同质量更省码率。</span>
+    <span class="k">风险</span><span>驱动/FFmpeg 不带 nvenc 时该格式不出现（装 imageio-ffmpeg）；50 系需较新驱动；nvenc 格式无 faststart 开关。</span>
+  </div>
+  <div class="src">来源：<a href="https://www.numonic.ai/integrations/comfyui/vhs-video-combine">numonic.ai VHS 参数表</a> · <a href="https://docs.nvidia.com/video-technologies/video-codec-sdk/13.1/ffmpeg-with-nvidia-gpu/index.html">NVIDIA NVENC FFmpeg 文档</a></div>
+</div>
+
+<div class="card">
+  <div class="head"><span class="nm">2. 外置 ffmpeg NVENC 压制（PNG 序列方案）</span><span class="badge b-lossless">无损</span><span class="prio p3">P3</span></div>
+  <div class="kv">
+    <span class="k">原理</span><span>VHS 存无损 PNG 序列（video/8bit-png），渲染与编码解耦，后期一次性压制。</span>
+    <span class="k">命令模板（已按 FFmpeg 源码校正）</span><span class="code"><span class="c"># 注意：h264_nvenc 的质量档是 -cq 不是 -crf（-crf 会被忽略）</span>
+ffmpeg -framerate 24 -start_number 0 -i frame_%05d.png -c:v h264_nvenc -preset p5 -rc vbr -cq 19 -pix_fmt yuv420p -movflags +faststart out.mp4
+
+<span class="c"># 合并 TTS 音频：</span>
+ffmpeg -framerate 24 -i frame_%05d.png -i audio.wav -c:v h264_nvenc -preset p5 -rc vbr -cq 19 -pix_fmt yuv420p -c:a aac -shortest out.mp4</span>
+    <span class="k">参数说明</span><span>preset p1 最快质量最低 → p7 最慢质量最好（默认 P4，近线性）；cq 19≈libx264 crf 19 视觉档；+faststart 网页秒开；帧从 0 编号时加 -start_number 0。</span>
+    <span class="k">收益</span><span>175 帧 PNG 序列 NVENC p5 压制通常数秒完成（待实测）。</span>
+    <span class="k">风险</span><span>分辨率必须偶数（640×1152 合规）；老驱动不支持 hevc_nvenc 时退回 h264_nvenc；PNG 序列占盘大（每帧约 1-2MB）。</span>
+  </div>
+  <div class="src">来源：<a href="https://ffmpeg.org/doxygen/7.0/nvenc__h264_8c_source.html">ffmpeg.org nvenc_h264 源码（cq/preset/rc 选项表）</a> · <a href="https://developer.nvidia.com/blog/introducing-video-codec-sdk-10-presets/">NVIDIA Video Codec SDK 10 presets 博客</a></div>
+</div>
+
+<div class="card">
+  <div class="head"><span class="nm">3. 草稿低分辨率 + 后超分（返工率最高的大头）</span><span class="badge b-lossy">有损（画面后处理）</span><span class="prio p2">P2</span></div>
+  <div class="kv">
+    <span class="k">原理</span><span>扩散采样耗时随像素近似平方增长；先出低分辨率草稿定镜头，定稿再单次超分，避免"正片废帧重渲染"。</span>
+    <span class="k">实测</span><span>Wan2.2 14B fp8+4 步（V100 16G，5 秒片）：832×480 ≈178s，1280×720 ≈15分12秒——像素仅 2.2×，耗时约 5×。官方视频放大页：FlashVSR 本地 4K 约 52s；SeedVR2（5090）1080p 约 312s；SeedVR2 在 12GB 卡超分 10 秒片需 35-45 分钟（社区实测）。</span>
+    <span class="k">操作</span><span>出片按 640×1152 或更低草稿跑、定镜头；定稿走 LTX 原生 2x 空间放大器（你已有 latent 超分）或 FlashVSR。</span>
+    <span class="k">质量</span><span>超分对运动模糊帮助有限；SeedVR2 在 16G 卡上耗时需实测。</span>
+  </div>
+  <div class="src">来源：<a href="https://blog.csdn.net/jiangkp/article/details/167177218">CSDN 分辨率-耗时实测</a> · <a href="https://docs.comfy.org/zh/tutorials/utility/video-upscale">docs.comfy.org 官方视频放大</a></div>
+</div>
+
+<div class="card">
+  <div class="head"><span class="nm">4. VHS 常见坑速查</span><span class="badge b-info">防坑</span></div>
+  <ul>
+    <li>格式下拉只有 GIF/WebP → FFmpeg 未被识别，装 imageio-ffmpeg；</li>
+    <li>预览黑屏但文件能播 → 用了 h265/10bit，换 h264+yuv420p；</li>
+    <li>音频不同步 → 时长应为 帧数÷帧率，用 trim_to_audio 开关；</li>
+    <li>报 "Got unsupported ScalarType BFloat16" → 上游 VAE 输出转 fp16；</li>
+    <li>frame_rate 必须是单值，接列表报 "unable to parse option value as video rate"；</li>
+    <li>长片 OOM → 挂 VHS_BatchManager。</li>
+  </ul>
+  <div class="src">来源：<a href="https://www.numonic.ai/integrations/comfyui/vhs-video-combine">numonic.ai</a> · <a href="http://raw.githubusercontent.com/Kosinkadink/ComfyUI-VideoHelperSuite/main/README.md">VHS README</a></div>
+</div>
+
+<!-- ============ S9 方向七 ============ -->
+<h2 id="s9">⑨ 方向七：中文社区实测（同卡/近卡数据）</h2>
+<p class="small">以下数字均为来源原文照抄，设备以来源标注为准；"待实测"指本机 5060Ti 需自行验证。抖音链接为分享页。</p>
+<table>
+  <tr><th>平台/作者</th><th>内容与链接</th><th>设备</th><th>实测数字（原文）</th></tr>
+  <tr><td>抖音 @comfyui学习笔记</td><td><a href="https://www.iesdouyin.com/share/video/7636603306563330277">Wan2.2 14B 提速实测</a></td><td>5060Ti 16G/32G 内存</td><td>fp8+4步LoRA+sageAttn：848×480 <b>2分24秒</b>；1280×720 <b>6分44秒</b>；sage2.2 81帧720p <b>5分</b></td></tr>
+  <tr><td>抖音</td><td><a href="https://www.iesdouyin.com/share/video/7644268840374089147">Sage1/2/3 对比实测</a></td><td>5060Ti 16G，Wan2.2 14B，81帧</td><td>480×848：Sage1 <b>2分06秒</b>/Sage2 <b>1分29秒</b>/Sage3 <b>1分44秒</b>；720×1280：<b>5分40秒/4分58秒/4分51秒</b>（Sage2/3 比 Sage1 快约 25%）</td></tr>
+  <tr><td>抖音</td><td><a href="https://www.iesdouyin.com/share/video/7635136442452266290">16G 卡 Wan 基线</a></td><td>16G卡/32G内存</td><td>Wan2.2 图生视频 81帧16fps 5秒片 <b>7分钟</b>（4步LoRA）</td></tr>
+  <tr><td>抖音 @AIGC电脑配置</td><td><a href="https://www.iesdouyin.com/share/video/7662766574454066289">5060Ti 装机实测</a></td><td>5060Ti 16G/R5 5600</td><td>文生视频 <b>约600秒</b></td></tr>
+  <tr><td>抖音（H3 合集）</td><td><a href="https://www.iesdouyin.com/share/video/7672272314850959354">H3 加速组合实测</a> · <a href="https://www.iesdouyin.com/share/video/7671741280473226963">H3 TeaCache+Sage</a></td><td>H3（设备未写明）</td><td>TeaCache / SageAttn 单独各 <b>1.5-1.8×</b>；叠加后 5s 视频 <b>125秒</b>；Turbo LoRA 基准 48 秒，再组合更快</td></tr>
+  <tr><td>抖音（LTX2.3 教程）</td><td><a href="https://www.iesdouyin.com/share/video/7643285970015587626">LTX 加载器对比</a></td><td>50系/40系</td><td>GGUF <b>5分钟</b>；UNIQ 加载器 <b>3分钟</b>（快约 40%）</td></tr>
+  <tr><td>抖音（秋叶整合包 H3）</td><td><a href="https://www.iesdouyin.com/share/video/7673095023717518602">H3 4步LoRA实测</a></td><td>设备未写明</td><td>迭代前 <b>1000-1300秒（约21分钟）</b>→ 四步加速LoRA后 <b>800多秒（约13分钟）</b></td></tr>
+  <tr><td>抖音（二采）</td><td><a href="https://www.iesdouyin.com/share/video/7686408485403184438">5060Ti 二采实测</a></td><td>5060Ti/32G 内存</td><td>二采 0.7 分辨率 <b>400多秒</b></td></tr>
+  <tr><td>ComfyUI 官方文档</td><td><a href="https://docs.comfy.org/tutorials/video/wan/wan2-2-fun-control">Wan2.2 Fun-Control 官方实测</a></td><td>RTX 4090D</td><td>fp8_scaled ≈524s/520s；+4步LoRA ≈<b>138s/79s</b>（首跑约3.8×、二次约6.6×）</td></tr>
+  <tr><td>NVIDIA 官方博客</td><td><a href="https://blogs.nvidia.cn/blog/rtx-ai-garage-flux-ltx-video-comfyui-gdc/">LTX-2.3 NVFP4 发布</a></td><td>RTX 5090 基准</td><td>LTX-2.3 NVFP4：<b>最高2.5×性能、显存-60%</b>；FP8：最高1.7×、显存-40%</td></tr>
+</table>
+<p class="small">说明：① "秋叶整合包升级 torch/cu128 提速"未找到带前后数字的实测帖，不编数字；② onediff / GGUF 在 Wan 视频上针对 5060Ti 的具体提速数字未检索到可信来源，均标待实测；③ 抖音 H3 那组 "TeaCache+SageAttn" 是针对 H3 的第三方加速组合，与方向一结论（独立 TeaCache 不支持 H3）不冲突——该 UP 主用的是集成加速方案，具体节点请以该视频为准。</p>
+
+<!-- ============ S10 速改表 ============ -->
+<h2 id="s10">⑩ 本机推荐配置速改表（按收益排序）</h2>
+<p class="small">P1=立即做（收益大/成本低），P2=值得做，P3=顺手做。改动位置对应你项目里的工作流文件。所有"约×"倍数：官方口径注明官方，社区口径注明设备，其余为待实测合理预期。</p>
+<table>
+  <tr><th>优先级</th><th>方案</th><th>改动位置</th><th>预期收益（5060Ti 16G）</th><th>质量</th></tr>
+  <tr><td><span class="prio p1">P1</span></td><td>给 H3 装 SageAttention 并启用（<code>--use-sage-attention</code> 或 Patch Sage Attention KJ 插 UNETLoader→BasicGuider）</td><td>环境 + minimax_h3_*.json</td><td>官方"约 2×"：10-13 分钟 → 约 5-7 分钟</td><td><span class="badge b-slight">轻微</span> 片尾 morphing 可换 bf16 权重+ck-attention</td></tr>
+  <tr><td><span class="prio p1">P1</span></td><td>H3 上官方 8 步 turbo LoRA / FastH3（模板 Enable Lightning LoRA，steps 20→8）</td><td>minimax_h3_*.json</td><td>步数减半以上 ≈2.5×（与 Sage 叠加理论 4-5×）</td><td><span class="badge b-slight">轻微</span> R2V 紧参考镜头回 20 步</td></tr>
+  <tr><td><span class="prio p1">P1</span></td><td>确认 Wan/LTX 的 sage_attention 真生效（pip list 查 sageattention；看启动日志）</td><td>环境</td><td>若没装＝白挂 auto：装上后 Wan/LTX ≈1.7-2×（官方口径）</td><td><span class="badge b-slight">轻微</span></td></tr>
+  <tr><td><span class="prio p2">P2</span></td><td>H3 帧数下踩合规整档：175→158/141（17 帧一档）</td><td>minimax_h3_*.json 的 length</td><td>每档约省 1/10 推理</td><td><span class="badge b-lossless">无损</span></td></tr>
+  <tr><td><span class="prio p2">P2</span></td><td>Wan 加 kijai WanVideo TeaCache（阈值保守、起始步不跳过）</td><td>wan22_remix_flf2v.json</td><td>约 1.5-1.8×（4090 口径，待实测）</td><td><span class="badge b-slight">轻微</span> 阈值激→运动拖沓</td></tr>
+  <tr><td><span class="prio p2">P2</span></td><td>LTX 换 NVFP4 变体（cu130 已具备）</td><td>ltx 系列工作流的权重</td><td>官方最高 2.5×、显存-60%（5090 基准，待实测）</td><td><span class="badge b-slight">轻微</span></td></tr>
+  <tr><td><span class="prio p2">P2</span></td><td>LTX「稳定版」dev 权重 → distilled 权重</td><td>1_LTX2_3文生视频稳定版.json</td><td>dev 需 30-50 步 → distilled 8 步档</td><td><span class="badge b-slight">轻微</span></td></tr>
+  <tr><td><span class="prio p2">P2</span></td><td>VHS 输出全换 nvenc_h264-mp4（bitrate 20-40Mbps）</td><td>三套工作流的 VideoCombine</td><td>编码秒级完成（渲染主导，占比待实测）</td><td><span class="badge b-lossless">无损</span></td></tr>
+  <tr><td><span class="prio p2">P2</span></td><td>绘世启动器加 <code>--reserve-vram 1.5</code>；可选 <code>--fast</code></td><td>启动器高级选项</td><td>防 OOM/桌面抢占；--fast 另加 fp16 累加</td><td><span class="badge b-lossless">无损</span> / <span class="badge b-slight">--fast 轻微</span></td></tr>
+  <tr><td><span class="prio p2">P2</span></td><td>草稿低分辨率 + FlashVSR/SeedVR2 定稿超分</td><td>工作流外流程</td><td>实测像素 2.2× → 耗时约 5×，草稿/正片分离省返工</td><td><span class="badge b-lossy">有损</span> 运动模糊受限</td></tr>
+  <tr><td><span class="prio p3">P3</span></td><td>Wan 短镜用 49-57 帧（4n+1 最小合规档，需实测运动质量）</td><td>wan22 系列 length</td><td>49 帧比 81 帧省约 40% 采样</td><td><span class="badge b-lossless">无损</span> 动作偏赶需实测</td></tr>
+  <tr><td><span class="prio p3">P3</span></td><td>LTX 内部 fps=60 与 VHS fps=25 统一</td><td>ltx_t2v_720p.json</td><td>消除不一致隐患</td><td><span class="badge b-lossless">无损</span></td></tr>
+  <tr><td><span class="prio p3">P3</span></td><td>外置 ffmpeg NVENC 压制（-cq 19 +faststart，见方向六命令）</td><td>工作流外</td><td>编码数秒完成 + 网页秒开</td><td><span class="badge b-lossless">无损</span></td></tr>
+</table>
+<div class="callout c-amber"><b>有损项需要你权衡的只有三处：</b>① H3 8 步 turbo（对紧参考 R2V 镜头退回 20 步）；② Wan TeaCache（阈值保守起步，出问题就关）；③ LTX NVFP4 / 超分方案（轻微）。其余全部为无损或近乎无损。</div>
+
+<!-- ============ S11 排除 ============ -->
+<h2 id="s11">⑪ 不适用 / 已排除清单（省得踩坑）</h2>
+<table>
+  <tr><th>方案</th><th>排除原因</th></tr>
+  <tr><td>onediff / nexfort</td><td>Windows 仅 WSL2 支持，与秋叶整合包（Windows 便携 Python）不兼容（PyPI 官方说明）</td></tr>
+  <tr><td>TensorRT</td><td>官方节点只覆盖 SDXL/SD3/FLUX 图像模型；TensorRT-LLM 的 Wan 是数据中心管线，非本地 ComfyUI 路径</td></tr>
+  <tr><td>CTranslate2 / Faster-*</td><td>为自回归 LLM 设计，扩散 DiT 架构无可复用方案</td></tr>
+  <tr><td>nunchaku int4（SVDQuant）</td><td>官方支持列表不含任何视频模型（仅 FLUX/Qwen-Image/SANA/Z-Image）；等官方放 Wan 4bit</td></tr>
+  <tr><td>GGUF 提速（city96）</td><td>仅 Wan A14B I2V/T2V 有官方 GGUF，无 FLF2V/H3/LTX；作用是显存不是速度，Blackwell 上对 fp8 无提速证据</td></tr>
+  <tr><td>独立 TeaCache 节点（welltop-cn）</td><td>支持 Wan2.1/LTX-Video(0.9)/HunyuanVideo/CogVideoX，<b>不支持 Wan2.2、不支持 H3</b>；Wan2.2 用 kijai 的 WanVideo TeaCache</td></tr>
+  <tr><td>队列并行 / 多开实例</td><td>单卡 16G 视频任务并行必 thrash/OOM，正片无收益</td></tr>
+  <tr><td>pipeline / tensor parallel</td><td>需多张同型号 GPU，单卡不可用</td></tr>
+  <tr><td>升级 torch 到 cu130</td><td>本机已是 torch 2.9.1+cu130，无需再动</td></tr>
+  <tr><td>--force-fp16</td><td>H3 按 bf16/int8 发布，强转有 NaN/黑屏风险</td></tr>
+</table>
+
+<!-- ============ S12 风险 ============ -->
+<h2 id="s12">⑫ 风险与 OOM 防护</h2>
+<ul>
+  <li><b>先备份再动环境</b>：装 wheel / 更新节点前，备份整合包 custom_nodes 与 python 环境（或记下当前版本号可回滚）。</li>
+  <li><b>sage wheel 与 torch 版本必须匹配</b>（本机 torch 2.9.1+cu130）：错配不会报错，只会静默回退普通注意力——务必看启动日志确认 "SageAttention" 字样。</li>
+  <li><b>H3 int8_convrot 权重不兼容 ck-attention</b>（issue #15529 崩溃）：用默认注意力或换 bf16 权重再切。</li>
+  <li><b>编译节点（torch.compile）</b>首次编译耗时几分钟、改 LoRA 需重编译；路径含中文/空格可能失败；崩溃就删节点回退。</li>
+  <li><b>OOM 防护组合</b>：--reserve-vram 1.5 + 采样后 VAE 解码前加 memory_cleanup 屏障节点 + H3 分块加载别叠加 --highvram。</li>
+  <li><b>LTX 的 ReservedVRAMSetter 已设 1.5GB/0.8GB</b>：换 NVFP4 后显存占用下降，可适当调小预留提速。</li>
+  <li><b>更新策略</b>：Manager 只更新核心 ComfyUI 与必要加速节点；KJNodes 等大节点整包慎升（易改旧行为），更新前备份。</li>
+</ul>
+
+<!-- ============ S13 来源 ============ -->
+<h2 id="s13">⑬ 来源索引</h2>
+<h3>官方（ComfyUI / 模型方 / NVIDIA）</h3>
+<ul class="small">
+  <li>H3 官方教程（SageAttention 约2×、turbo 步数档、int8 质量问题、FastH3）：<a href="https://docs.comfy.org/tutorials/video/minimax/minimax-h3">docs.comfy.org/tutorials/video/minimax/minimax-h3</a></li>
+  <li>Wan2.2 官方教程（lightx2v 4 步 LoRA 文件名与配对）：<a href="https://docs.comfy.org/tutorials/video/wan/wan2-2-fun-inp">docs.comfy.org/tutorials/video/wan/wan2-2-fun-inp</a>；官方实测（4090D 138s/79s）：<a href="https://docs.comfy.org/tutorials/video/wan/wan2-2-fun-control">wan2-2-fun-control</a></li>
+  <li>Wan2.2 GGUF 官方教程：<a href="https://docs.comfy.org/zh/tutorials/video/wan/wan2_2">docs.comfy.org/zh/tutorials/video/wan/wan2_2</a></li>
+  <li>ComfyUI 启动参数：<a href="https://docs.comfy.org/development/comfyui-server/startup-flags">docs.comfy.org/development/comfyui-server/startup-flags</a>；TorchCompileModel 节点：<a href="https://docs.comfy.org/built-in-nodes/TorchCompileModel.md">docs.comfy.org/built-in-nodes/TorchCompileModel.md</a></li>
+  <li>NVIDIA 官方：LTX-2.3 NVFP4 2.5×/60% <a href="https://blogs.nvidia.cn/blog/rtx-ai-garage-flux-ltx-video-comfyui-gdc/">blogs.nvidia.cn</a>；NVENC presets <a href="https://developer.nvidia.com/blog/introducing-video-codec-sdk-10-presets/">developer.nvidia.com</a></li>
+  <li>MiniMax H3 官方发布：<a href="https://www.minimax.io/news/minimax-h3-open-source">minimax.io</a></li>
+  <li>ComfyUI 动态显存：<a href="https://blog.comfy.org/p/dynamic-vram-in-comfyui-saving-local">blog.comfy.org</a>；50系新优化：<a href="https://blog.comfy.org/p/new-comfyui-optimizations-for-nvidia">blog.comfy.org</a></li>
+</ul>
+<h3>GitHub / 节点仓库</h3>
+<ul class="small">
+  <li>kijai WanVideoWrapper（WanVideo TeaCache / sage 选项 / blockswap）：<a href="https://github.com/kijai/ComfyUI-WanVideoWrapper">github.com/kijai/ComfyUI-WanVideoWrapper</a></li>
+  <li>city96/ComfyUI-GGUF：<a href="https://github.com/city96/ComfyUI-GGUF">github.com/city96/ComfyUI-GGUF</a></li>
+  <li>nunchaku（支持列表）：<a href="https://github.com/nunchux-ai/nunchaku">github.com/nunchux-ai/nunchaku</a></li>
+  <li>SageAttention PyPI：<a href="https://pypi.org/project/sageattention/2.2.0/">pypi.org/project/sageattention/2.2.0</a>；Sage3 节点：<a href="https://github.com/wallen0322/ComfyUI-SageAttention3">github.com/wallen0322/ComfyUI-SageAttention3</a></li>
+  <li>TeaCache 支持矩阵：<a href="https://deepwiki.com/welltop-cn/ComfyUI-TeaCache/4-supported-models">deepwiki.com</a>；用法：<a href="https://stable-diffusion-art.com/teacache/">stable-diffusion-art.com</a></li>
+  <li>MultiGPU WorkUnits：<a href="https://docs.comfy.org/built-in-nodes/MultiGPU_WorkUnits">docs.comfy.org</a></li>
+  <li>onediff Windows 说明：<a href="https://pypi.org/project/onediff/1.2.1.dev19/">pypi.org</a></li>
+</ul>
+<h3>社区实测（B站/抖音/掘金/CSDN）</h3>
+<ul class="small">
+  <li>5060Ti H3 实测（8步50s/步、10秒片494s、功耗墙）：<a href="https://juejin.cn/post/7672711130194395176">juejin.cn/post/7672711130194395176</a></li>
+  <li>5060Ti Wan 实测（Sage1/2/3）：<a href="https://www.iesdouyin.com/share/video/7644268840374089147">抖音 7644268840374089147</a>；Wan 14B 组合：<a href="https://www.iesdouyin.com/share/video/7636603306563330277">抖音 7636603306563330277</a></li>
+  <li>H3 TeaCache+Sage 组合：<a href="https://www.iesdouyin.com/share/video/7672272314850959354">抖音 7672272314850959354</a></li>
+  <li>秋叶 H3 4步LoRA：<a href="https://www.iesdouyin.com/share/video/7673095023717518602">抖音 7673095023717518602</a>；LTX 加载器对比：<a href="https://www.iesdouyin.com/share/video/7643285970015587626">抖音 7643285970015587626</a></li>
+  <li>分辨率-耗时实测（V100 Wan2.2 14B）：<a href="https://blog.csdn.net/jiangkp/article/details/167177218">CSDN jiangkp</a>；torch.compile 实测：<a href="https://blog.csdn.net/qq_39934403/article/details/155322176">CSDN</a></li>
+  <li>H3 帧数 17k+5 详解：<a href="https://iqilian.com/learn/minimax-h3-comfyui-fenbianlv-zhenshu/">iqilian.com</a></li>
+  <li>VHS 参数表：<a href="https://www.numonic.ai/integrations/comfyui/vhs-video-combine">numonic.ai</a>；VHS README：<a href="https://raw.githubusercontent.com/Kosinkadink/ComfyUI-VideoHelperSuite/main/README.md">raw.githubusercontent.com</a></li>
+</ul>
+
+<div class="foot">
+  本方案基于 2026-10-12 对 GitHub / 官方文档 / Reddit / B站 / 抖音 / 掘金 / CSDN 的检索整理，核心来源已抽查核实。凡标注「待实测」的收益均为本机 RTX 5060 Ti 16GB 尚未有公开对照数据、按规则未编造的合理预期，建议按速改表逐项改动并记录前后耗时。所有改动前请先备份工作流与 custom_nodes。
+</div>
+
+</div>
+</body>
+</html>

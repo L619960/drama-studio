@@ -1,8 +1,11 @@
 import { computed, reactive, ref, type Ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
+import { confirmDanger } from '../utils/confirm'
+import { throttleTap } from '../utils/throttle'
 import type {
   ConversationMessage, ConversationToolEvent, DirectorState
 } from '../../../shared/ipcTypes'
+import { SELF_LEARN_PROMPT } from '../../../shared/ipcTypes'
 
 /**
  * 导演对话：消息流 + 工具卡片 + Markdown 渲染。
@@ -49,8 +52,20 @@ export function useDirectorChat(
   })
 
   async function loadChat(): Promise<void> {
-    messages.value = await window.api.conversation.list(chatScope.value)
-    requestScroll()
+    const scope = chatScope.value
+    // R-8/R-9：自兜底 catch——onMounted 与路由 watch 中若此处 reject 会产生
+    // unhandled rejection 且连坐跳过后续初始化
+    try {
+      const list = await window.api.conversation.list(scope)
+      // 异步期间用户已切到别的项目：丢弃过期结果，防止旧对话覆盖新对话
+      if (chatScope.value !== scope) return
+      messages.value = list
+      requestScroll()
+      // C-01：路由切回时若主进程仍在发送，恢复发送态并在完成后自动刷新
+      void syncSending()
+    } catch (e) {
+      ElMessage.error(`会话加载失败：${e instanceof Error ? e.message : String(e)}`)
+    }
   }
 
   function toggleTool(id: string): void {
@@ -147,16 +162,26 @@ export function useDirectorChat(
     requestScroll()
   }
 
-  async function sendMessage(): Promise<void> {
-    const text = inputText.value.trim()
-    if (!text || sending.value) return
+  async function sendMessage(text?: string): Promise<void> {
+    const content = (text ?? inputText.value).trim()
+    if (!content) {
+      // 不再静默：空内容/IME 未提交时给用户明确反馈，避免"点了没反应"
+      if (throttleTap('director-send-empty', 500)) ElMessage.warning('请输入内容后再发送')
+      return
+    }
+    if (sending.value) return
+    const scope = chatScope.value
     inputText.value = ''
-    messages.value.push({ id: `local_${Date.now()}`, role: 'user', content: text, ts: Date.now() })
+    messages.value.push({ id: `local_${Date.now()}`, role: 'user', content, ts: Date.now() })
     sending.value = true
     requestScroll()
     try {
-      messages.value = await window.api.conversation.send(chatScope.value, text)
+      const list = await window.api.conversation.send(scope, content)
+      // 异步期间已切换项目：丢弃旧 scope 的全量结果，避免覆盖新会话
+      if (chatScope.value !== scope) return
+      messages.value = list
     } catch (e) {
+      if (chatScope.value !== scope) return
       messages.value.push({
         id: `err_${Date.now()}`, role: 'assistant',
         content: `对话服务出错：${e instanceof Error ? e.message : String(e)}`,
@@ -168,16 +193,149 @@ export function useDirectorChat(
     }
   }
 
+  /** 停止当前发送：主进程中断 LLM 请求与工具循环，返回后以落盘历史为准 */
+  async function stopSend(): Promise<void> {
+    if (!sending.value) return
+    try {
+      await window.api.conversation.stop(chatScope.value)
+    } catch { /* 主进程会在发送收尾时自行落盘 */ }
+  }
+
+  /** 回退到某条用户消息之前：删除该消息及其后记录，用户可重新编辑发送 */
+  async function rollbackMsg(m: ConversationMessage): Promise<void> {
+    if (m.role !== 'user') return
+    const okRollback = await confirmDanger(
+      '将删除这条消息及其后的全部对话，回到此处重新交互。确定回退吗？',
+      { title: '回退对话', confirmText: '回退' }
+    )
+    if (!okRollback) return
+    const scope = chatScope.value
+    try {
+      const list = await window.api.conversation.rollback(scope, m.id)
+      // 异步期间已切换项目：丢弃旧 scope 的结果，避免覆盖新会话
+      if (chatScope.value !== scope) return
+      messages.value = list
+      ElMessage.success('已回退')
+    } catch (e) {
+      if (chatScope.value !== scope) return
+      ElMessage.error(`回退失败：${e instanceof Error ? e.message : String(e)}`)
+    }
+    requestScroll()
+  }
+
+  /**
+   * 重新生成：让导演就"最后一条 user 提问"重新回答（与 resendMsg 区分）。
+   *
+   * - resendMsg = 原样重发某条 user 消息，后续历史全部保留（再追加一轮）；
+   * - regenerateMsg = 以"最后一条 user 提问"为界：删掉它及其后的旧回答（含尾 assistant），
+   *   再用同一提问原文重发——更早的上下文保持不变，旧回答被新回答替换。
+   *
+   * 实现复用既有机制，不另起一套：
+   * - truncation 走既有 rollback IPC 落盘（后端 send 是"追加 user"，不先删旧回答会重复历史）；
+   * - 重发直接调用 sendMessage：复用其 sending 状态、乐观 user 气泡、scope 切换守卫、
+   *   错误处理与 scrollTick；工具过程仍由 applyToolEvent 实时推进，最终以权威列表收尾。
+   * 仅当列表尾部为 assistant 且非发送中才可触发（UI 侧禁用，此处再做幂等兜底）。
+   */
+  async function regenerateMsg(): Promise<void> {
+    // 挡住 rollback 落盘等待期间的连击；正式发送期由 sending 守卫
+    if (!throttleTap('director-regenerate', 1000)) return
+    if (sending.value) return
+    const list = messages.value
+    const last = list[list.length - 1]
+    // 仅当尾部是 assistant 时才有"重新回答"对象
+    if (!last || last.role !== 'assistant') return
+    // 向前找触发本轮回答的最近一条 user 提问
+    let userIdx = -1
+    for (let i = list.length - 2; i >= 0; i--) {
+      if (list[i].role === 'user') { userIdx = i; break }
+    }
+    if (userIdx < 0) {
+      ElMessage.warning('找不到对应的提问，无法重新生成回答')
+      return
+    }
+    const userMsg = list[userIdx]
+    const userContent = userMsg.content
+    const scope = chatScope.value
+    try {
+      // 先在落盘侧删掉旧提问与旧回答（保留更早上下文）
+      const kept = await window.api.conversation.rollback(scope, userMsg.id)
+      // 异步期间已切换项目：丢弃旧 scope 结果
+      if (chatScope.value !== scope) return
+      // 立即刷新本地视图，避免旧气泡与新乐观气泡并存造成闪烁
+      messages.value = kept
+      requestScroll()
+      // 用同一提问原文重发：sendMessage 会 push 新 user 气泡、置 sending、走工具循环，
+      // 并以权威列表收尾——尾 assistant 即为本轮新回答
+      await sendMessage(userContent)
+    } catch (e) {
+      if (chatScope.value !== scope) return
+      ElMessage.error(`重新生成失败：${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+
+  /** 上传文件：选择文本文件后把内容拼进用户消息发给导演 */
+  async function uploadAndSend(): Promise<void> {
+    if (sending.value) return
+    let payload: { name: string; content: string; truncated: boolean } | null = null
+    try {
+      payload = await window.api.conversation.uploadFile()
+    } catch (e) {
+      // 用户在文件选择框点取消：主进程 reject 'User cancelled'，不报错
+      if (e instanceof Error && e.message === 'User cancelled') return
+      ElMessage.error(`文件读取失败：${e instanceof Error ? e.message : String(e)}`)
+      return
+    }
+    if (!payload) return
+    const header = `我上传了文件「${payload.name}」${payload.truncated ? '（内容过长已截断）' : ''}，请查收并按内容处理：`
+    await sendMessage(`${header}\n\n${payload.content}`)
+  }
+
+  /** 自主学习：让导演上网搜索最新技巧并沉淀/更新技能（指令文案与主进程每日自动学习共用） */
+  function selfLearn(): void {
+    if (sending.value) return
+    void sendMessage(SELF_LEARN_PROMPT)
+  }
+
   async function clearChat(): Promise<void> {
     if (!messages.value.length) return
+    const ok = await confirmDanger('确定清空与导演的对话记录吗？此操作不可恢复。', {
+      title: '清空对话', confirmText: '清空'
+    })
+    if (!ok) return
     try {
-      await ElMessageBox.confirm('确定清空与导演的对话记录吗？此操作不可恢复。', '清空对话', {
-        type: 'warning', confirmButtonText: '清空', cancelButtonText: '取消'
-      })
-    } catch { return }
-    await window.api.conversation.clear(chatScope.value)
-    messages.value = []
-    expandedTools.clear()
+      await window.api.conversation.clear(chatScope.value)
+      messages.value = []
+      expandedTools.clear()
+      ElMessage.success('对话已清空')
+    } catch (e) {
+      ElMessage.error(`清空失败：${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+
+  /** C-01：本组件未持有发送过程（路由切走时被卸载）但主进程仍在发送时，恢复 sending 态并轮询至完成后刷新 */
+  let sendingPoll: ReturnType<typeof setInterval> | null = null
+  async function syncSending(): Promise<void> {
+    if (sending.value || sendingPoll) return
+    const scope = chatScope.value
+    try {
+      if (!(await window.api.conversation.isSending(scope))) return
+      if (chatScope.value !== scope) return
+      sending.value = true
+      sendingPoll = setInterval(() => {
+        void (async () => {
+          try {
+            const still = await window.api.conversation.isSending(scope)
+            if (chatScope.value !== scope || !still) {
+              if (sendingPoll) { clearInterval(sendingPoll); sendingPoll = null }
+              if (chatScope.value === scope) {
+                sending.value = false
+                await loadChat()
+              }
+            }
+          } catch { /* 下一轮再试 */ }
+        })()
+      }, 2000)
+    } catch { /* 状态查询失败不影响主流程 */ }
   }
 
   let unsubTool: (() => void) | null = null
@@ -187,13 +345,14 @@ export function useDirectorChat(
   function unsubscribeAll(): void {
     unsubTool?.()
     unsubTool = null
+    if (sendingPoll) { clearInterval(sendingPoll); sendingPoll = null }
   }
 
   return {
     messages, inputText, sending, expandedTools, scrollTick,
     quickPrompts,
     loadChat, toggleTool, useQuick, renderMd, copyMsg, resendMsg,
-    sendMessage, clearChat, applyToolEvent,
+    sendMessage, stopSend, rollbackMsg, regenerateMsg, uploadAndSend, selfLearn, clearChat, applyToolEvent,
     subscribe, unsubscribeAll
   }
 }

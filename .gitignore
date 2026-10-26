@@ -4,6 +4,7 @@ node_modules/
 # 构建产物
 out/
 release/
+release-build/
 dist/
 
 # 类型检查缓存
@@ -11,7 +12,10 @@ dist/
 
 # 测试与运行时数据
 test/.e2e-data/
+test/.review-*/
 test/dist/
+test/*.log
+test/smoke-*.log
 
 # 数据目录（用户运行项目生成）
 .models/
@@ -32,3 +36,12 @@ Thumbs.db
 *.typecheck-output.txt
 .env
 .env.local
+
+# 临时/缓存目录
+tmp/
+.tmp-test/
+.screenshots/
+.trae/
+
+# 运行时 pid
+*.pid

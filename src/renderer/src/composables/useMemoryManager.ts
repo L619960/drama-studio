@@ -1,5 +1,6 @@
 import { computed, reactive, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
+import { confirmDanger } from '../utils/confirm'
 import type { MemoryItem, MemoryKind } from '../../../shared/ipcTypes'
 
 export const MEMORY_KIND_OPTIONS = [
@@ -7,6 +8,17 @@ export const MEMORY_KIND_OPTIONS = [
   { value: 'rule', label: '制作规则' },
   { value: 'lesson', label: '经验教训' }
 ] as const
+
+// ===== 纯工具函数（R-13：唯一实现，MemoryPanel 直接 import，不再各自复制）=====
+
+export function memoryCountOf(list: MemoryItem[], kind: MemoryKind): number {
+  return list.filter(m => m.kind === kind).length
+}
+export function formatDateTime(ts: number): string {
+  const d = new Date(ts)
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getMonth() + 1}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
 
 /**
  * 导演记忆库：跨项目长期记忆的 CRUD + tabs 切换 + 编辑弹窗状态。
@@ -24,17 +36,15 @@ export function useMemoryManager() {
   })
 
   const filteredMemories = computed(() => memories.value.filter(m => m.kind === memoryKind.value))
-  function memoryCountOf(kind: MemoryKind): number {
-    return memories.value.filter(m => m.kind === kind).length
-  }
-  function formatDateTime(ts: number): string {
-    const d = new Date(ts)
-    const p = (n: number) => String(n).padStart(2, '0')
-    return `${d.getMonth() + 1}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
-  }
 
   async function loadMemories(): Promise<void> {
-    memories.value = await window.api.memory.list()
+    // 必须自兜底：onMounted 的 Promise.all 中若此处 reject，
+    // 后续 subscribe/subscribeChat/runSelfcheck 全部不执行，控制台呈"死"状态
+    try {
+      memories.value = await window.api.memory.list()
+    } catch (e) {
+      ElMessage.error(`记忆加载失败：${e instanceof Error ? e.message : String(e)}`)
+    }
   }
 
   function openMemoryDialog(m?: MemoryItem): void {
@@ -78,19 +88,22 @@ export function useMemoryManager() {
   }
 
   async function removeMemory(m: MemoryItem): Promise<void> {
+    const ok = await confirmDanger(`确定删除记忆「${m.title}」吗？`, {
+      title: '删除记忆', confirmText: '删除'
+    })
+    if (!ok) return
     try {
-      await ElMessageBox.confirm(`确定删除记忆「${m.title}」吗？`, '删除记忆', {
-        type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消'
-      })
-    } catch { return }
-    await window.api.memory.remove(m.id)
-    await loadMemories()
-    ElMessage.success('已删除')
+      await window.api.memory.remove(m.id)
+      await loadMemories()
+      ElMessage.success('已删除')
+    } catch (e) {
+      ElMessage.error(`删除失败：${e instanceof Error ? e.message : String(e)}`)
+    }
   }
 
   return {
     memories, memoryKind, memoryKindOptions: MEMORY_KIND_OPTIONS,
-    filteredMemories, memoryCountOf, formatDateTime,
+    filteredMemories,
     editingMemory, memorySaving, memoryDialog,
     loadMemories, openMemoryDialog, closeMemoryDialog, saveMemory, removeMemory
   }

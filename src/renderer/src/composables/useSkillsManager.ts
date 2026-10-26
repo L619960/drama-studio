@@ -1,5 +1,6 @@
 import { reactive, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
+import { confirmDanger } from '../utils/confirm'
 import type { Skill } from '../../../shared/ipcTypes'
 
 /**
@@ -77,14 +78,17 @@ export function useSkillsManager() {
   }
 
   async function removeSkill(s: Skill): Promise<void> {
+    const ok = await confirmDanger(`确定删除技能「${s.name}」吗？`, {
+      title: '删除技能', confirmText: '删除'
+    })
+    if (!ok) return
     try {
-      await ElMessageBox.confirm(`确定删除技能「${s.name}」吗？`, '删除技能', {
-        type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消'
-      })
-    } catch { return }
-    await window.api.skills.remove(s.id)
-    await loadSkills()
-    ElMessage.success('已删除')
+      await window.api.skills.remove(s.id)
+      await loadSkills()
+      ElMessage.success('已删除')
+    } catch (e) {
+      ElMessage.error(`删除失败：${e instanceof Error ? e.message : String(e)}`)
+    }
   }
 
   return {

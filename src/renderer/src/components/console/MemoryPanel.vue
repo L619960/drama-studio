@@ -14,7 +14,7 @@
       class="memory-tabs"
     >
       <el-tab-pane v-for="k in memoryKindOptions" :key="k.value" :name="k.value">
-        <template #label>{{ k.label }}（{{ memoryCountOf(k.value) }}）</template>
+        <template #label>{{ k.label }}（{{ memoryCountOf(memories, k.value) }}）</template>
       </el-tab-pane>
     </el-tabs>
     <div class="skill-list">
@@ -74,6 +74,8 @@
 import { computed } from 'vue'
 import { Plus, EditPen, Delete } from '@element-plus/icons-vue'
 import type { MemoryItem, MemoryKind } from '../../../../shared/ipcTypes'
+// R-13：memoryCountOf/formatDateTime 唯一实现在 useMemoryManager，不再本地重复
+import { memoryCountOf, formatDateTime } from '../../composables/useMemoryManager'
 
 const props = defineProps<{
   memories: MemoryItem[]
@@ -95,14 +97,6 @@ const emit = defineEmits<{
 const filteredMemories = computed(() =>
   props.memories.filter(m => m.kind === props.memoryKind)
 )
-function memoryCountOf(kind: MemoryKind): number {
-  return props.memories.filter(m => m.kind === kind).length
-}
-function formatDateTime(ts: number): string {
-  const d = new Date(ts)
-  const p = (n: number) => String(n).padStart(2, '0')
-  return `${d.getMonth() + 1}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
-}
 
 function onKindChange(val: string | number): void {
   emit('update:memoryKind', val as MemoryKind)

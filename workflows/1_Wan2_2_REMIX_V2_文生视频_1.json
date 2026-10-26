@@ -1,0 +1,208 @@
+{
+  "163": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        283,
+        0
+      ],
+      "text": "$PROMPT$"
+    }
+  },
+  "164": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        283,
+        0
+      ],
+      "text": "色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走"
+    }
+  },
+  "165": {
+    "class_type": "WanMoeKSampler",
+    "inputs": {
+      "model_high_noise": [
+        207,
+        0
+      ],
+      "model_low_noise": [
+        208,
+        0
+      ],
+      "positive": [
+        167,
+        0
+      ],
+      "negative": [
+        167,
+        1
+      ],
+      "latent_image": [
+        256,
+        0
+      ],
+      "boundary": 0.9,
+      "seed": 603918348206616,
+      "steps": 6,
+      "cfg_high_noise": 1,
+      "cfg_low_noise": 1,
+      "sampler_name": "euler_ancestral",
+      "scheduler": "simple",
+      "sigma_shift": 8,
+      "denoise": 1
+    }
+  },
+  "166": {
+    "class_type": "VHS_VideoCombine",
+    "inputs": {
+      "images": [
+        276,
+        0
+      ]
+    }
+  },
+  "167": {
+    "class_type": "WanImageToVideo",
+    "inputs": {
+      "positive": [
+        163,
+        0
+      ],
+      "negative": [
+        164,
+        0
+      ],
+      "vae": [
+        177,
+        0
+      ],
+      "width": 832,
+      "height": 480,
+      "length": 241,
+      "batch_size": 1
+    }
+  },
+  "168": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        165,
+        0
+      ],
+      "vae": [
+        177,
+        0
+      ]
+    }
+  },
+  "169": {
+    "class_type": "PlaySound|pysssss",
+    "inputs": {
+      "any": [
+        168,
+        0
+      ],
+      "mode": "always",
+      "volume": 0.1,
+      "file": "notify.mp3"
+    }
+  },
+  "176": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "wan2.2\\umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+      "type": "wan"
+    }
+  },
+  "177": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "wan2.1\\wan_2.1_vae.safetensors"
+    }
+  },
+  "207": {
+    "class_type": "Power Lora Loader (rgthree)",
+    "inputs": {
+      "model": [
+        277,
+        0
+      ]
+    }
+  },
+  "208": {
+    "class_type": "Power Lora Loader (rgthree)",
+    "inputs": {
+      "model": [
+        278,
+        0
+      ]
+    }
+  },
+  "256": {
+    "class_type": "EmptyHunyuanLatentVideo",
+    "inputs": {
+      "width": "$WIDTH$",
+      "height": "$HEIGHT$",
+      "length": 241,
+      "batch_size": 1
+    }
+  },
+  "275": {
+    "class_type": "VRAMCleanup",
+    "inputs": {
+      "anything": [
+        168,
+        0
+      ],
+      "offload_model": true,
+      "offload_cache": true
+    }
+  },
+  "276": {
+    "class_type": "RAMCleanup",
+    "inputs": {
+      "anything": [
+        275,
+        0
+      ],
+      "clean_file_cache": true,
+      "clean_processes": true,
+      "clean_dlls": true,
+      "retry_times": 3
+    }
+  },
+  "277": {
+    "class_type": "DiffusionModelLoaderKJ",
+    "inputs": {
+      "model_name": "Wan2.2_Remix\\Wan2.2_Remix_NSFW_t2v_14b_high_lighting_v2.0.safetensors",
+      "weight_dtype": "default",
+      "compute_dtype": "default",
+      "patch_cublaslinear": false,
+      "sage_attention": "auto",
+      "enable_fp16_accumulation": true
+    }
+  },
+  "278": {
+    "class_type": "DiffusionModelLoaderKJ",
+    "inputs": {
+      "model_name": "Wan2.2_Remix\\Wan2.2_Remix_NSFW_t2v_14b_low_lighting_v2.0.safetensors",
+      "weight_dtype": "default",
+      "compute_dtype": "default",
+      "patch_cublaslinear": false,
+      "sage_attention": "auto",
+      "enable_fp16_accumulation": true
+    }
+  },
+  "283": {
+    "class_type": "VRAMCleanup",
+    "inputs": {
+      "anything": [
+        176,
+        0
+      ],
+      "offload_model": true,
+      "offload_cache": true
+    }
+  }
+}

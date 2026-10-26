@@ -1,20 +1,7 @@
 {
-  "compilerOptions": {
-    "target": "ES2022",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "strict": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "resolveJsonModule": true,
-    "isolatedModules": true,
-    "noEmit": true,
-    "jsx": "preserve",
-    "paths": {
-      "@/*": ["./src/renderer/src/*"],
-      "@main/*": ["./src/main/*"],
-      "@shared/*": ["./src/shared/*"]
-    }
-  },
-  "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.vue"]
+  "files": [],
+  "references": [
+    { "path": "./tsconfig.node.json" },
+    { "path": "./tsconfig.web.json" }
+  ]
 }

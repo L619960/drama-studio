@@ -1,0 +1,27 @@
+{
+  "1": {
+    "class_type": "FB_Qwen3TTSVoiceClone",
+    "inputs": {
+      "target_text": "$PROMPT$",
+      "model_choice": "1.7B",
+      "device": "cuda",
+      "precision": "bf16",
+      "language": "Chinese",
+      "seed": "$SEED$",
+      "max_new_tokens": 2048,
+      "top_p": 0.8,
+      "top_k": 20,
+      "temperature": 0.9,
+      "repetition_penalty": 1.05,
+      "x_vector_only": true,
+      "attention": "auto",
+      "unload_model_after_generate": false
+    },
+    "_meta": { "title": "Qwen3-TTS 本地固定音色（无参考音频，x-vector 模式）" }
+  },
+  "2": {
+    "class_type": "SaveAudioMP3",
+    "inputs": { "audio": ["1", 0], "filename_prefix": "drama_tts_local", "quality": "V0" },
+    "_meta": { "title": "保存语音" }
+  }
+}

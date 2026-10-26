@@ -1,52 +1,20 @@
 <template>
-  <!-- AI 导演对话框 -->
-  <el-dialog v-model="dialog.visible" title="AI 导演 · 剧本一键成片" width="640px">
-    <el-form label-width="80px">
-      <el-form-item label="片名" required>
-        <el-input v-model="dialog.title" placeholder="如：总裁的隐婚新娘" />
-      </el-form-item>
-      <el-form-item label="题材">
-        <el-select v-model="dialog.genre" filterable allow-create style="width: 100%">
-          <el-option
-            v-for="t in GENRE_TEMPLATES"
-            :key="t.key"
-            :label="t.label"
-            :value="t.key"
-          />
-        </el-select>
-      </el-form-item>
-      <el-form-item label="剧本" required>
-        <el-input
-          v-model="dialog.script"
-          type="textarea"
-          :rows="10"
-          placeholder="粘贴完整剧本（含场景、动作、台词），AI 将自动拆分分镜、创建角色、生成定妆图与场景图，逐镜渲染后拼接为成片"
-        />
-      </el-form-item>
-      <el-form-item label="BGM">
-        <div class="bgm-row">
-          <span class="bgm-name" :class="{ placeholder: !dialog.bgmPath }">
-            {{ dialog.bgmPath || '可选：选择背景音乐' }}
-          </span>
-          <el-button size="small" @click="selectBgm">选择</el-button>
-          <el-button v-if="dialog.bgmPath" size="small" link @click="dialog.bgmPath = ''">
-            清除
-          </el-button>
-        </div>
-      </el-form-item>
-    </el-form>
-    <div class="director-tip">
-      将自动完成：剧本分析 → 角色建档/定妆图 → 场景图 → 逐镜渲染（含配音）→ 拼接 → 字幕烧录 → BGM 混音。
-      中途失败的镜头将跳过并在结束时汇总。
-    </div>
-    <template #footer>
-      <el-button @click="dialog.visible = false">取消</el-button>
-      <el-button
-        type="success"
-        :loading="starting"
-        @click="startDirector"
-      >开始制作</el-button>
-    </template>
+  <!-- AI 导演对话框：复用统一开拍表单（含 gateStages 确认点） -->
+  <el-dialog
+    :model-value="dialog.visible"
+    @update:model-value="onDialogVisible"
+    title="AI 导演 · 一键成片"
+    width="720px"
+    top="6vh"
+    :close-on-click-modal="false"
+    class="director-start-dialog"
+  >
+    <DirectorStartForm
+      :open="dialog.visible"
+      :starting="starting"
+      @cancel="dialog.visible = false"
+      @submit="onSubmit"
+    />
   </el-dialog>
 
   <!-- AI 导演进度面板 -->
@@ -107,6 +75,9 @@
               type="danger"
               size="small"
             >{{ shotIndexById(id) }}</el-tag>
+            <el-button size="small" type="danger" plain :loading="retrying" @click="retryFailed">
+              重试失败镜头 ({{ state.failedShotIds.length }})
+            </el-button>
           </div>
         </template>
         <template v-else>
@@ -117,6 +88,18 @@
             show-icon
             style="margin: 8px 0 12px"
           />
+          <div v-if="state.failedShotIds.length" class="failed-list" style="margin-bottom: 10px">
+            失败镜头编号：
+            <el-tag
+              v-for="id in state.failedShotIds"
+              :key="id"
+              type="danger"
+              size="small"
+            >{{ shotIndexById(id) }}</el-tag>
+            <el-button size="small" type="danger" plain :loading="retrying" @click="retryFailed">
+              重试失败镜头 ({{ state.failedShotIds.length }})
+            </el-button>
+          </div>
           <div v-if="state.reviewIssues?.length" class="failed-list">
             <div style="margin-bottom: 4px">复审意见：</div>
             <div
@@ -151,25 +134,22 @@
 <script setup lang="ts">
 import { ref, computed, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
+import { confirmDanger } from '../../utils/confirm'
 import {
   CircleCheckFilled, CircleCloseFilled, Loading, RemoveFilled, MoreFilled
 } from '@element-plus/icons-vue'
-import type { Project, DirectorState, DirectorStage, DirectorProgressEvent } from '../../../../shared/ipcTypes'
-import { GENRE_TEMPLATES } from '../../../../shared/ipcTypes'
+import type {
+  Project, DirectorState, DirectorStage, DirectorProgressEvent, DirectorStartInput
+} from '../../../../shared/ipcTypes'
+import DirectorStartForm from './DirectorStartForm.vue'
 
 const props = defineProps<{ projects: Project[] }>()
 const emit = defineEmits<{ started: [] }>()
 
 const router = useRouter()
 
-const dialog = ref({
-  visible: false,
-  title: '',
-  genre: '',
-  script: '',
-  bgmPath: ''
-})
+const dialog = ref({ visible: false })
 const starting = ref(false)
 const progressVisible = ref(false)
 const state = ref<DirectorState | null>(null)
@@ -178,8 +158,8 @@ let unsub: (() => void) | null = null
 
 const STAGE_LABEL_LIST: Array<{ key: DirectorStage; label: string }> = [
   { key: 'analyze', label: '剧本分析' },
-  { key: 'casting', label: '角色建档 · 定妆图' },
-  { key: 'scenes', label: '场景图生成' },
+  { key: 'casting', label: '角色建档 · 面部+三视图' },
+  { key: 'scenes', label: '场景板与首尾帧' },
   { key: 'render', label: '逐镜渲染 · 审批' },
   { key: 'combine', label: '拼接成片' },
   { key: 'subtitle', label: '烧录字幕' },
@@ -195,25 +175,15 @@ const stageList = computed(() =>
 )
 
 function open(): void {
-  dialog.value = {
-    visible: true,
-    title: '',
-    genre: '',
-    script: '',
-    bgmPath: ''
-  }
+  dialog.value.visible = true
 }
 
-async function selectBgm(): Promise<void> {
-  const p = await window.api.dialog.selectAudio()
-  if (p) dialog.value.bgmPath = p
+function onDialogVisible(v: boolean): void {
+  dialog.value.visible = v
 }
 
-async function startDirector(): Promise<void> {
-  const d = dialog.value
-  if (!d.title.trim()) { ElMessage.warning('请输入片名'); return }
-  if (!d.script.trim()) { ElMessage.warning('请粘贴剧本'); return }
-
+/** 统一开拍表单提交：透传 gateStages 等全部字段给 director.start */
+async function onSubmit(input: DirectorStartInput): Promise<void> {
   // 订阅进度：先清理上一次的订阅，避免重复发起时监听器叠加
   unsub?.()
   unsub = window.api.director.onProgress((e: DirectorProgressEvent) => {
@@ -223,19 +193,16 @@ async function startDirector(): Promise<void> {
 
   starting.value = true
   try {
-    const projectId = await window.api.director.start({
-      title: d.title.trim(),
-      genre: d.genre,
-      script: d.script,
-      bgmAbsolutePath: d.bgmPath || undefined
-    })
+    const projectId = await window.api.director.start(input)
     currentId.value = projectId
     // 主进程在 start 返回前已发出首个事件（此时还拿不到 projectId 会被过滤），
     // 主动拉取一次当前状态补齐，避免进度面板首阶段空白
     state.value = await window.api.director.getState(projectId)
     dialog.value.visible = false
-    progressVisible.value = true
     emit('started')
+    // 开拍成功后跳转控制台，由 WorkflowPanel/ConsoleView 接管进度展示；
+    // 切到其他页后 ConsoleView 的 hydrate 会恢复进度，不会丢失
+    await router.push(`/project/${projectId}/console`)
   } catch (e) {
     ElMessage.error('启动失败：' + (e instanceof Error ? e.message : String(e)))
     unsub?.()
@@ -246,16 +213,18 @@ async function startDirector(): Promise<void> {
 }
 
 async function cancelDirector(): Promise<void> {
+  const ok = await confirmDanger('确定取消制作吗？已完成的渲染产物会保留。', {
+    title: '取消制作',
+    confirmText: '取消制作',
+    cancelText: '继续制作'
+  })
+  if (!ok) return
   try {
-    await ElMessageBox.confirm('确定取消制作吗？已完成的渲染产物会保留。', '取消制作', {
-      confirmButtonText: '取消制作',
-      cancelButtonText: '继续制作',
-      type: 'warning'
-    })
-  } catch {
-    return
+    await window.api.director.cancel(currentId.value)
+    ElMessage.info('已请求取消，当前阶段结束后自动停下')
+  } catch (e) {
+    ElMessage.error(`取消失败：${e instanceof Error ? e.message : String(e)}`)
   }
-  await window.api.director.cancel(currentId.value)
 }
 
 /** 失败镜头 id → 镜头序号（用于汇总展示） */
@@ -263,6 +232,22 @@ function shotIndexById(id: string): number {
   const p = props.projects.find(x => x.id === currentId.value)
   const idx = p?.shots.find(s => s.id === id)?.index
   return idx ?? 0
+}
+
+/** D 批量重试失败镜头：入队后由影子任务同步进度回本面板 */
+const retrying = ref(false)
+async function retryFailed(): Promise<void> {
+  const ids = state.value?.failedShotIds ?? []
+  if (!ids.length || retrying.value) return
+  retrying.value = true
+  try {
+    await window.api.render.start(currentId.value, [...ids], false)
+    ElMessage.success(`已重新入队 ${ids.length} 个失败镜头，进度在下方实时更新`)
+  } catch (e) {
+    ElMessage.error('重试失败：' + (e instanceof Error ? e.message : String(e)))
+  } finally {
+    retrying.value = false
+  }
 }
 
 function locateFinal(): void {
@@ -285,30 +270,10 @@ defineExpose({ open })
 </script>
 
 <style scoped>
-/* AI 导演 */
-.bgm-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-}
-.bgm-name {
-  flex: 1;
-  font-size: 13px;
-  color: var(--text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.bgm-name.placeholder { color: var(--text-muted); }
-
-.director-tip {
-  font-size: 12px;
-  color: var(--text-muted);
-  background: var(--bg-card);
-  border-radius: 6px;
-  padding: 8px 12px;
-  line-height: 1.7;
+/* 开拍表单弹窗：内容过高时 body 内部滚动，底部按钮始终可见 */
+.director-start-dialog :deep(.el-dialog__body) {
+  max-height: 62vh;
+  overflow-y: auto;
 }
 
 .director-panel {

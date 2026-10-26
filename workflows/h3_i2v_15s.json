@@ -1,0 +1,19 @@
+{
+  "_comment": "【2026-10-25 标注：死模板，勿手动选】src 全库 0 引用，362 帧硬编码为 15s 长镜（短剧 3-6s 镜不需要）；生产路径=minimax_h3_i2v.json + 运行时 17k+5 帧网格。保留仅为历史参考（E-P2-4）。",
+  "10": {"class_type": "LoadImage", "inputs": {"image": "$REF_IMAGE$"}},
+  "20": {"class_type": "UNETLoader", "inputs": {"unet_name": "minimax_h3_fl2va_pruned_int8_convrot.safetensors", "weight_dtype": "default"}},
+  "25": {"class_type": "LoraLoaderModelOnly", "inputs": {"model": ["20", 0], "lora_name": "minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors", "strength_model": 1.0}},
+  "21": {"class_type": "CLIPLoader", "inputs": {"clip_name": "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors", "type": "minimax", "device": "default"}},
+  "22": {"class_type": "VAELoader", "inputs": {"vae_name": "minimax_h3_video_vae_int8_convrot.safetensors"}},
+  "23": {"class_type": "VAELoader", "inputs": {"vae_name": "minimax_h3_audio_vae_fp32.safetensors"}},
+  "30": {"class_type": "MiniMaxH3ImageToVideo", "inputs": {"clip": ["21", 0], "vae": ["22", 0], "prompt": "$PROMPT$", "width": "$WIDTH$", "height": "$HEIGHT$", "length": 362, "first_frame": ["10", 0]}},
+  "40": {"class_type": "RandomNoise", "inputs": {"noise_seed": "$SEED$"}},
+  "41": {"class_type": "KSamplerSelect", "inputs": {"sampler_name": "res_multistep"}},
+  "42": {"class_type": "BasicScheduler", "inputs": {"model": ["25", 0], "scheduler": "simple", "steps": 8, "denoise": 1}},
+  "43": {"class_type": "BasicGuider", "inputs": {"model": ["25", 0], "conditioning": ["30", 0]}},
+  "44": {"class_type": "SamplerCustomAdvanced", "inputs": {"noise": ["40", 0], "guider": ["43", 0], "sampler": ["41", 0], "sigmas": ["42", 0], "latent_image": ["30", 1]}},
+  "50": {"class_type": "VAEDecode", "inputs": {"samples": ["44", 0], "vae": ["22", 0]}},
+  "51": {"class_type": "VAEDecodeAudio", "inputs": {"samples": ["44", 0], "vae": ["23", 0]}},
+  "52": {"class_type": "CreateVideo", "inputs": {"images": ["50", 0], "fps": 24, "audio": ["51", 0]}},
+  "60": {"class_type": "SaveVideo", "inputs": {"video": ["52", 0], "filename_prefix": "h3_15s", "format": "auto", "codec": "auto"}}
+}

@@ -1,0 +1,196 @@
+{
+  "_comment": "【2026-10-25 标注：死模板，勿手动选】src 全库 0 引用——生产路径=基础模板 minimax_h3_i2v.json + taskQueue 运行时 LoraLoaderModelOnly 注入（fl2v_turbo_8step/ref2v_turbo_4step），turbo 已由图改写实现；本文件保留仅为历史参考（E-P2-1/C-P2-5 文档漂移项）。选它会导致 $LENGTH$/$PREFIX$ 无 vars 替换、buildGraph 抛错。MiniMax H3 双采高效工作流（本机验证版，API 格式）：同一首帧双路 I2V——直出路 + 3D latent 放大精修路，输出一条视频。挂 fl2v_turbo_8step LoRA（8 步直出 + 6 步 0.3 denoise 精修），比无 LoRA 版本提速约 2 倍且更稳。占位符：$PROMPT$ $SEED$ $REF_IMAGE$ $WIDTH$ $HEIGHT$ $WIDTH2$ $HEIGHT2$ $LENGTH$ $PREFIX$。WIDTH2/HEIGHT2=精修目标尺寸（直出尺寸×1.5 向下对齐 32，例 480x864→704x1280）。帧数 17k+5 网格：107≈4.5s/124≈5.2s/141≈5.9s。由 taskQueue 提交时 WIDTH/HEIGHT 由档位与竖横屏自动换算。",
+  "1": {
+    "class_type": "UNETLoader",
+    "inputs": {
+      "unet_name": "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+      "weight_dtype": "default"
+    }
+  },
+  "2": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+      "model": ["1", 0],
+      "lora_name": "minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors",
+      "strength_model": 1.0
+    }
+  },
+  "3": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+      "type": "minimax"
+    }
+  },
+  "4": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "minimax_h3_video_vae_int8_convrot.safetensors"
+    }
+  },
+  "5": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "minimax_h3_audio_vae_fp32.safetensors"
+    }
+  },
+  "6a": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "$REF_IMAGE$"
+    }
+  },
+  "6": {
+    "class_type": "MiniMaxH3ImageToVideo",
+    "inputs": {
+      "clip": ["3", 0],
+      "vae": ["4", 0],
+      "first_frame": ["6a", 0],
+      "prompt": "$PROMPT$",
+      "width": "$WIDTH$",
+      "height": "$HEIGHT$",
+      "length": "$LENGTH$"
+    }
+  },
+  "6b": {
+    "class_type": "MiniMaxH3ImageToVideo",
+    "inputs": {
+      "clip": ["3", 0],
+      "vae": ["4", 0],
+      "first_frame": ["6a", 0],
+      "prompt": "$PROMPT$",
+      "width": "$WIDTH2$",
+      "height": "$HEIGHT2$",
+      "length": "$LENGTH$"
+    }
+  },
+  "7": {
+    "class_type": "BasicGuider",
+    "inputs": {
+      "model": ["21", 0],
+      "conditioning": ["6", 0]
+    }
+  },
+  "22": {
+    "class_type": "BasicGuider",
+    "inputs": {
+      "model": ["21", 0],
+      "conditioning": ["6b", 0]
+    }
+  },
+  "8": {
+    "class_type": "KSamplerSelect",
+    "inputs": {
+      "sampler_name": "euler"
+    }
+  },
+  "9": {
+    "class_type": "BasicScheduler",
+    "inputs": {
+      "model": ["21", 0],
+      "scheduler": "simple",
+      "steps": 8,
+      "denoise": 1.0
+    }
+  },
+  "10": {
+    "class_type": "RandomNoise",
+    "inputs": {
+      "noise_seed": "$SEED$"
+    }
+  },
+  "11": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+      "noise": ["10", 0],
+      "guider": ["7", 0],
+      "sampler": ["8", 0],
+      "sigmas": ["9", 0],
+      "latent_image": ["6", 1]
+    }
+  },
+  "12": {
+    "class_type": "LTXVSeparateAVLatent",
+    "inputs": {
+      "av_latent": ["11", 0]
+    }
+  },
+  "13": {
+    "class_type": "MinimaxH3LatentUpscaler3D",
+    "inputs": {
+      "latent": ["12", 0],
+      "model_name": "minimax_h3_latent_upscaler_3d_conv_v1_bf16.safetensors",
+      "mode": "scale by multiplier",
+      "mode.scale": 1.5,
+      "align": 32,
+      "enable_temporal_chunking": true,
+      "force_unload": true,
+      "device": "cuda",
+      "precision": "bf16"
+    }
+  },
+  "14": {
+    "class_type": "LTXVConcatAVLatent",
+    "inputs": {
+      "video_latent": ["13", 0],
+      "audio_latent": ["12", 1]
+    }
+  },
+  "15": {
+    "class_type": "BasicScheduler",
+    "inputs": {
+      "model": ["21", 0],
+      "scheduler": "simple",
+      "steps": 6,
+      "denoise": 0.3
+    }
+  },
+  "16": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+      "noise": ["10", 0],
+      "guider": ["22", 0],
+      "sampler": ["8", 0],
+      "sigmas": ["15", 0],
+      "latent_image": ["14", 0]
+    }
+  },
+  "17": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": ["16", 0],
+      "vae": ["4", 0]
+    }
+  },
+  "18": {
+    "class_type": "VAEDecodeAudio",
+    "inputs": {
+      "samples": ["16", 0],
+      "vae": ["5", 0]
+    }
+  },
+  "19": {
+    "class_type": "CreateVideo",
+    "inputs": {
+      "images": ["17", 0],
+      "fps": 24,
+      "audio": ["18", 0]
+    }
+  },
+  "20": {
+    "class_type": "SaveVideo",
+    "inputs": {
+      "video": ["19", 0],
+      "filename_prefix": "$PREFIX$",
+      "format": "auto",
+      "format.codec": "auto"
+    }
+  },
+  "21": {
+    "class_type": "ModelAttentionBackend",
+    "inputs": {
+      "model": ["2", 0],
+      "attention": "comfy kitchen attention"
+    }
+  }
+}

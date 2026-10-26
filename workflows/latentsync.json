@@ -27,9 +27,9 @@
     "inputs": {
       "images": ["1", 0],
       "audio": ["2", 0],
-      "seed": $SEED$,
-      "lips_expression": $EXPRESSION$,
-      "inference_steps": $STEPS$
+      "seed": "$SEED$",
+      "lips_expression": "$EXPRESSION$",
+      "inference_steps": "$STEPS$"
     }
   },
   "4": {

@@ -12,5 +12,5 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["src/main/**/*.ts", "src/preload/**/*.ts", "src/shared/**/*.ts", "test/**/*.ts"]
+  "include": ["src/main/**/*.ts", "src/preload/**/*.ts", "src/shared/**/*.ts", "tests/**/*.ts"]
 }

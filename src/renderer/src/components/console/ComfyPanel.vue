@@ -57,7 +57,7 @@
           v-for="n in matchedNodes.slice(0, 30)"
           :key="n"
           size="small"
-          :type="n.toLowerCase() === nodeQuery.toLowerCase() ? 'success' : 'info'"
+          :type="n.toLowerCase() === nodeQuery.trim().toLowerCase() ? 'success' : 'info'"
           effect="plain"
           class="node-tag"
         >{{ n }}</el-tag>
@@ -92,6 +92,15 @@
           :title="`发现 ${validateBadCount} 个问题（将在渲染时被拦截）`"
           style="margin-bottom: 10px"
         />
+        <div v-if="validateBadCount > 0" class="models-dir-row">
+          <el-button size="small" type="primary" plain :disabled="!modelsDir" @click="emit('openModelsDir')">
+            <el-icon><FolderOpened /></el-icon>&nbsp;打开 models 目录
+          </el-button>
+          <el-button size="small" :loading="validateLoading" @click="emit('runValidate')">重新自检</el-button>
+          <span class="muted models-dir-hint">
+            {{ modelsDir ? `把缺失模型放入：${modelsDir}` : '未定位到 models 目录，可在 设置 → ComfyUI 中手动配置' }}
+          </span>
+        </div>
         <div v-for="r in validateReports.filter(x => !x.ok)" :key="r.workflow" class="validate-block">
           <div class="validate-wf">{{ r.workflow }}</div>
           <div v-for="(iss, i) in r.issues" :key="i" class="validate-issue">
@@ -118,6 +127,7 @@
             <el-tag size="small" type="success" effect="plain" v-if="w.hasImageInput">图生视频</el-tag>
             <el-tag size="small" type="primary" effect="plain" v-else>纯文生</el-tag>
             <el-tag size="small" type="warning" effect="plain" v-if="w.hasDuration">时长参数</el-tag>
+            <el-tag size="small" type="danger" effect="plain" v-if="w.hasEndFrame">首尾帧</el-tag>
           </template>
           <div class="wf-params">
             <div v-for="p in workflowParams[w.name] || []" :key="`${p.nodeId}.${p.key}`" class="wf-param">
@@ -157,11 +167,13 @@
 </template>
 
 <script setup lang="ts">
-import { Refresh } from '@element-plus/icons-vue'
+import { Refresh, FolderOpened } from '@element-plus/icons-vue'
 import type {
-  ComfySystemStats, ComfyGpuDevice,
+  ComfySystemStats,
   WorkflowMeta, WorkflowParam, WorkflowCheckReport
 } from '../../../../shared/ipcTypes'
+// R-13：gb/gpuLabel/vramPercent/canEditParam 唯一实现在 useComfyPanel，不再本地重复
+import { gb, gpuLabel, vramPercent, canEditParam } from '../../composables/useComfyPanel'
 
 const props = defineProps<{
   comfyStats: ComfySystemStats | null
@@ -176,6 +188,7 @@ const props = defineProps<{
   validateLoading: boolean
   validateRun: boolean
   validateBadCount: number
+  modelsDir: string | null
 }>()
 
 const emit = defineEmits<{
@@ -183,26 +196,9 @@ const emit = defineEmits<{
   wfExpand: [active: string | string[]]
   updateParam: [name: string, p: WorkflowParam, value: string | number | boolean]
   runValidate: []
+  openModelsDir: []
   'update:nodeQuery': [v: string]
 }>()
-
-function gb(bytes: number): string {
-  return (bytes / 1024 / 1024 / 1024).toFixed(1)
-}
-function gpuLabel(d: ComfyGpuDevice): string {
-  const cleaned = (d.name || '')
-    .replace(/^cuda:\d+\s*/i, '')
-    .replace(/\s*:\s*cudaMalloc\w*\s*$/i, '')
-    .trim()
-  return cleaned || d.type || d.name
-}
-function vramPercent(d: ComfyGpuDevice): number {
-  if (!d.vramTotal) return 0
-  return Math.min(100, Math.round(((d.vramTotal - d.vramFree) / d.vramTotal) * 100))
-}
-function canEditParam(p: WorkflowParam): boolean {
-  return !p.isPlaceholder && !p.isConnection
-}
 
 function onQueryChange(val: string): void {
   emit('update:nodeQuery', val)
@@ -265,6 +261,14 @@ function onWfExpand(active: string | string[]): void {
 .validate-block { margin-bottom: 10px; padding: 8px 10px; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; background: rgba(255,255,255,0.03); }
 .validate-wf { font-weight: 600; margin-bottom: 6px; font-family: monospace; }
 .validate-issue { display: flex; align-items: center; gap: 8px; font-size: 12px; line-height: 1.7; color: rgba(255,255,255,0.75); }
+.models-dir-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.models-dir-hint { word-break: break-all; }
 
 .skills-title { justify-content: space-between; }
 

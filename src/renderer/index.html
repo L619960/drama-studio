@@ -3,10 +3,19 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>本地 AI 短剧工坊</title>
+  <!-- CSP（I-6）：阻断注入的外部脚本/远程资源。dev 模式 HMR 需 ws: 与 blob:；
+       Element Plus 运行时注入 style 需 unsafe-inline；媒体/图片走本地 file: 与 blob: -->
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: file: app-file:; media-src 'self' blob: file: app-file:; font-src 'self' data:; connect-src 'self' ws: wss: http://127.0.0.1:* http://localhost:* https:; object-src 'none'; frame-src 'none'" />
+  <title>短剧工坊 · Drama Studio</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { background: #0a0a0a; color: #e0e0e0; font-family: 'Segoe UI', 'PingFang SC', sans-serif; }
+    html, body { height: 100%; }
+    body {
+      background: #0a0e14;
+      color: #f0ebe3;
+      font-family: "Segoe UI Variable Text", "Segoe UI", "PingFang SC", "Microsoft YaHei UI", sans-serif;
+    }
   </style>
 </head>
 <body>

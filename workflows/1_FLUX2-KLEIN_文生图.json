@@ -1,0 +1,169 @@
+{
+  "1": {
+    "class_type": "RandomNoise",
+    "inputs": {
+      "noise_seed": 973725151244698
+    }
+  },
+  "2": {
+    "class_type": "CFGGuider",
+    "inputs": {
+      "model": [
+        20,
+        0
+      ],
+      "positive": [
+        3,
+        0
+      ],
+      "negative": [
+        4,
+        0
+      ],
+      "cfg": 4
+    }
+  },
+  "3": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        21,
+        0
+      ],
+      "text": [
+        19,
+        0
+      ]
+    }
+  },
+  "4": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        21,
+        0
+      ],
+      "text": ""
+    }
+  },
+  "5": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+      "noise": [
+        1,
+        0
+      ],
+      "guider": [
+        2,
+        0
+      ],
+      "sampler": [
+        6,
+        0
+      ],
+      "sigmas": [
+        7,
+        0
+      ],
+      "latent_image": [
+        15,
+        0
+      ]
+    }
+  },
+  "6": {
+    "class_type": "KSamplerSelect",
+    "inputs": {
+      "sampler_name": "euler"
+    }
+  },
+  "7": {
+    "class_type": "Flux2Scheduler",
+    "inputs": {
+      "width": [
+        23,
+        0
+      ],
+      "height": [
+        24,
+        0
+      ],
+      "steps": 8
+    }
+  },
+  "15": {
+    "class_type": "EmptyFlux2LatentImage",
+    "inputs": {
+      "width": [
+        23,
+        0
+      ],
+      "height": [
+        24,
+        0
+      ],
+      "batch_size": 1
+    }
+  },
+  "17": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        5,
+        0
+      ],
+      "vae": [
+        22,
+        0
+      ]
+    }
+  },
+  "18": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        17,
+        0
+      ],
+      "filename_prefix": "ComfyUI"
+    }
+  },
+  "19": {
+    "class_type": "CR Prompt Text",
+    "inputs": {
+      "prompt": "$PROMPT$"
+    }
+  },
+  "20": {
+    "class_type": "UNETLoader",
+    "inputs": {
+      "unet_name": "flux2_klein\\Flux2-Klein-9B-True-v2-fp8mixed.safetensors",
+      "weight_dtype": "default"
+    }
+  },
+  "21": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "flux2_klein\\qwen_3_8b_fp8mixed.safetensors",
+      "type": "flux2"
+    }
+  },
+  "22": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "flux2_klein\\flux2-vae.safetensors"
+    }
+  },
+  "23": {
+    "class_type": "INTConstant",
+    "inputs": {
+      "value": 576
+    }
+  },
+  "24": {
+    "class_type": "INTConstant",
+    "inputs": {
+      "value": 1024
+    }
+  }
+}

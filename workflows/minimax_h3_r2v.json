@@ -1,7 +1,11 @@
 {
-  "_comment": "MiniMax H3 本地参考生视频（REF2VA，参考图保身份 + 参考音频(TTS)驱动台词口型与音色，原生立体声）。占位符：$PROMPT$ $SEED$ $REF_IMAGE$ $AUDIO$ $WIDTH$ $HEIGHT$ $LENGTH$ $PREFIX$。prompt 内用 <Picture 1> 引用图、<Audio 1> 引用音频。",
+  "_comment": "MiniMax H3 本地参考生视频（REF2VA，参考图保身份 + 参考音频(TTS)驱动台词口型与音色，原生立体声）。占位符：$PROMPT$ $SEED$ $REF_IMAGE$ $SCENE_IMAGE$ $AUDIO$ $WIDTH$ $HEIGHT$ $LENGTH$ $PREFIX$。prompt 内用 <Picture 1> 引用人物图、<Picture 2> 引用场景图、<Audio 1> 引用音频。",
   "10": {
     "inputs": { "image": "$REF_IMAGE$" },
+    "class_type": "LoadImage"
+  },
+  "12": {
+    "inputs": { "image": "$SCENE_IMAGE$" },
     "class_type": "LoadImage"
   },
   "11": {
@@ -41,7 +45,7 @@
       "height": "$HEIGHT$",
       "length": "$LENGTH$",
       "ref_image_size": "match",
-      "ref_images": { "ref_image_1": ["10", 0] },
+      "ref_images": { "ref_image_1": ["10", 0], "ref_image_2": ["12", 0] },
       "ref_audios": { "ref_audio_1": ["11", 0] }
     },
     "class_type": "MiniMaxH3ReferenceToVideo"

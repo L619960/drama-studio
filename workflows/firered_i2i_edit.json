@@ -1,0 +1,177 @@
+{
+  "1": {
+    "inputs": {
+      "unet_name": "FireRed1.1\\FireRed-Image-Edit-1.1_fp8mixed_comfy.safetensors",
+      "weight_dtype": "fp8_e4m3fn"
+    },
+    "class_type": "UNETLoader",
+    "_meta": { "title": "UNet加载器" }
+  },
+  "2": {
+    "inputs": {
+      "vae_name": "Qwen\\qwen_image_vae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": { "title": "加载VAE" }
+  },
+  "3": {
+    "inputs": {
+      "clip_name": "Qwen\\qwen_2.5_vl_7b_fp8_scaled.safetensors",
+      "type": "qwen_image",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": { "title": "加载CLIP" }
+  },
+  "4": {
+    "inputs": {
+      "lora_name": "FireRed1.1\\FireRed-Image-Edit-1.0-Lightning-8steps-v1.0.safetensors",
+      "strength_model": 1,
+      "model": ["110", 0]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": { "title": "LoRA加载器（仅模型）" }
+  },
+  "5": {
+    "inputs": {
+      "prompt": "$PROMPT$",
+      "clip": ["112", 0],
+      "image1": ["15", 0]
+    },
+    "class_type": "TextEncodeQwenImageEditPlus",
+    "_meta": { "title": "文本编码 Qwen Image 编辑 Plus" }
+  },
+  "6": {
+    "inputs": {
+      "pixels": ["15", 0],
+      "vae": ["2", 0]
+    },
+    "class_type": "VAEEncode",
+    "_meta": { "title": "VAE编码" }
+  },
+  "7": {
+    "inputs": {
+      "conditioning": ["16", 0],
+      "latent": ["6", 0]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": { "title": "参考Latent（负）" }
+  },
+  "8": {
+    "inputs": {
+      "conditioning": ["5", 0],
+      "latent": ["6", 0]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": { "title": "参考Latent（正）" }
+  },
+  "9": {
+    "inputs": {
+      "strength": 1,
+      "pre_cfg": false,
+      "model": ["4", 0]
+    },
+    "class_type": "CFGNorm",
+    "_meta": { "title": "CFG归一化" }
+  },
+  "10": {
+    "inputs": {
+      "seed": "$SEED$",
+      "steps": 8,
+      "cfg": 1,
+      "sampler_name": "euler_ancestral",
+      "scheduler": "simple",
+      "denoise": 1,
+      "model": ["111", 0],
+      "positive": ["8", 0],
+      "negative": ["7", 0],
+      "latent_image": ["6", 0]
+    },
+    "class_type": "KSampler",
+    "_meta": { "title": "K采样器" }
+  },
+  "11": {
+    "inputs": {
+      "samples": ["10", 0],
+      "vae": ["2", 0]
+    },
+    "class_type": "VAEDecode",
+    "_meta": { "title": "VAE解码" }
+  },
+  "13": {
+    "inputs": {
+      "filename_prefix": "ComfyUI",
+      "images": ["11", 0]
+    },
+    "class_type": "SaveImage",
+    "_meta": { "title": "保存图像" }
+  },
+  "14": {
+    "inputs": {
+      "image": "$REF_IMAGE$"
+    },
+    "class_type": "LoadImage",
+    "_meta": { "title": "加载图像（参考/编辑对象）" }
+  },
+  "15": {
+    "inputs": {
+      "aspect_ratio": "original",
+      "proportional_width": 1,
+      "proportional_height": 1,
+      "fit": "crop",
+      "method": "lanczos",
+      "round_to_multiple": "8",
+      "scale_to_side": "longest",
+      "scale_to_length": 1280,
+      "background_color": "#000000",
+      "image": ["14", 0]
+    },
+    "class_type": "LayerUtility: ImageScaleByAspectRatio V2",
+    "_meta": { "title": "图层工具：按宽高比缩放 V2" }
+  },
+  "16": {
+    "inputs": {
+      "conditioning": ["5", 0]
+    },
+    "class_type": "ConditioningZeroOut",
+    "_meta": { "title": "条件零化" }
+  },
+  "107": {
+    "inputs": {
+      "anything": ["11", 0]
+    },
+    "class_type": "easy cleanGpuUsed",
+    "_meta": { "title": "清理显存占用" }
+  },
+  "110": {
+    "inputs": {
+      "sage_attention": "auto",
+      "allow_compile": false,
+      "model": ["1", 0]
+    },
+    "class_type": "PathchSageAttentionKJ",
+    "_meta": { "title": "Patch Sage Attention KJ" }
+  },
+  "111": {
+    "inputs": {
+      "reserved": 1,
+      "mode": "manual",
+      "seed": "$SEED$",
+      "auto_max_reserved": 0,
+      "clean_gpu_before": true,
+      "anything": ["9", 0]
+    },
+    "class_type": "ReservedVRAMSetter",
+    "_meta": { "title": "Set Reserved VRAM(GB) ⚙️" }
+  },
+  "112": {
+    "inputs": {
+      "offload_model": true,
+      "offload_cache": true,
+      "anything": ["3", 0]
+    },
+    "class_type": "VRAMCleanup",
+    "_meta": { "title": "🎈VRAM-Cleanup" }
+  },
+  "_comment": "FireRed Image Edit 1.1 单图编辑（图生图）：参考图=$REF_IMAGE$，编辑指令=$PROMPT$，seed=$SEED$。用于角色定妆图→场景融合首帧（保留脸/服装，注入场景与姿态）。"
+}

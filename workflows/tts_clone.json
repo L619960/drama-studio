@@ -1,0 +1,34 @@
+{
+  "1": {
+    "class_type": "VHS_LoadAudioUpload",
+    "inputs": { "audio": "$REF_AUDIO$", "start_time": 0, "duration": 0 },
+    "_meta": { "title": "参考音频（用户音色样本）" }
+  },
+  "2": {
+    "class_type": "FB_Qwen3TTSVoiceClone",
+    "inputs": {
+      "target_text": "$PROMPT$",
+      "model_choice": "1.7B",
+      "device": "cuda",
+      "precision": "bf16",
+      "language": "Chinese",
+      "ref_audio": ["1", 0],
+      "ref_text": "$REF_TEXT$",
+      "seed": "$SEED$",
+      "max_new_tokens": 2048,
+      "top_p": 0.8,
+      "top_k": 20,
+      "temperature": 0.9,
+      "repetition_penalty": 1.05,
+      "x_vector_only": "$X_VECTOR$",
+      "attention": "auto",
+      "unload_model_after_generate": false
+    },
+    "_meta": { "title": "Qwen3-TTS 语音克隆" }
+  },
+  "3": {
+    "class_type": "SaveAudioMP3",
+    "inputs": { "audio": ["2", 0], "filename_prefix": "drama_tts_clone", "quality": "V0" },
+    "_meta": { "title": "保存克隆语音" }
+  }
+}
