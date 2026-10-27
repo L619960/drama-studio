@@ -3,6 +3,7 @@ import * as path from 'node:path'
 import { createRequire } from 'node:module'
 import type { Project, Character, Shot, SceneBoard } from '../../shared/ipcTypes'
 import { mergeProtectedDoneShot, reviewedIsValid } from '../../shared/pipelineGuards'
+import { isPeriodGenre } from '../../shared/castAppearance'
 import { atomicWriteJson } from './fsUtil'
 
 // 延迟获取 electron：在 Electron 主进程内为真实对象；在纯 Node（测试）下
@@ -95,6 +96,26 @@ export class ProjectStore {
     if (!project.sceneBoards) project.sceneBoards = []
     for (const c of project.characters || []) {
       if (c.refImagePath && !c.faceImagePath) c.faceImagePath = c.refImagePath
+    }
+    // 旧数据迁移：现代剧（非古装/武侠）在 cecd961 之前被硬加持剑条款，
+    // 这些武器短语缓存在 appearanceLock/lookEn 里会导致旧项目重渲仍持剑。
+    // 加载时自动清掉，幂等。古装/武侠剧保留武器描述。
+    if (!isPeriodGenre(project.genre)) {
+      const WEAPON_CLAUSES = [
+        ', carrying one traditional chinese weapon, exactly one weapon, one hand empty',
+        'carrying one traditional chinese weapon, exactly one weapon, one hand empty',
+        'holding a single chinese straight jian sword, exactly one weapon, one hand empty, NO katana, NO curved japanese blade',
+        ', exactly one weapon, one hand empty',
+        'exactly one weapon, one hand empty',
+        ', NO katana, NO curved japanese blade',
+      ]
+      for (const c of project.characters || []) {
+        let v = c.appearanceLock
+        if (!v) continue
+        for (const clause of WEAPON_CLAUSES) v = v.replace(clause, '')
+        v = v.replace(/,\s*,/g, ',').replace(/\s{2,}/g, ' ').trim().replace(/,\s*$/, '')
+        c.appearanceLock = v
+      }
     }
     for (const s of project.shots || []) {
       if (s.reviewed && !reviewedIsValid(s.type, s.reviewed, s.firstFramePath)) s.reviewed = false
