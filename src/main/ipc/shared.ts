@@ -81,7 +81,9 @@ const rawIpcHandle = ipcMain.handle.bind(ipcMain)
  * 再原样透传。此前 65 个 handler 裸注册，底层异常原文直透渲染层且主进程无日志可查。
  * 注意：只做日志与透传，不改变错误类型——渲染层按 Error.message 展示。
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- IPC 边界：渲染层透传参数为不可信外部输入，各 handler 内部自行断言
 export function handleIpc(channel: string, fn: (...args: any[]) => unknown): void {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- IPC 边界：args 来自渲染层，类型在业务 handler 内收窄
   rawIpcHandle(channel, async (_event, ...args: any[]) => {
     try {
       // 必须回传 event：业务 handler 首形参是 invokeEvent 占位，

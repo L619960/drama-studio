@@ -3,7 +3,7 @@
  * 从 conversationTools.ts 按域拆分外移，行为不变。
  */
 import axios from 'axios'
-import type { ConversationToolsHost, ToolResult } from './conversationTools'
+import type { ToolResult } from './conversationTools'
 import { RESULT_LIMIT } from './conversationConstants'
 
 export async function tWebSearch(args: Record<string, unknown>): Promise<ToolResult> {

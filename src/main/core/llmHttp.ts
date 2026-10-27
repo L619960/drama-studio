@@ -140,7 +140,7 @@ export async function httpChat(
     max_tokens: maxTokens,
     thinking: { type: 'disabled' }
   }
-  let resp: { data: any } | undefined
+  let resp: { data: { choices?: Array<{ message?: { content?: string } }>; usage?: unknown } } | undefined
   // 429/5xx 瞬时错误：最多重试 2 次（共 3 次尝试），退避 300ms/600ms
   const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504])
   const MAX_ATTEMPTS = 3
@@ -160,7 +160,7 @@ export async function httpChat(
           break
         } catch (e2) {
           const detail = logLlmError(`chat(${s.llm.model})`, e2)
-          throw new Error(`LLM 请求失败：${detail}`)
+          throw new Error(`LLM 请求失败：${detail}`, { cause: e2 })
         }
       }
       if (RETRYABLE_STATUS.has(st ?? 0) && attempt < MAX_ATTEMPTS) {
@@ -168,7 +168,7 @@ export async function httpChat(
         continue
       }
       const detail = logLlmError(`chat(${s.llm.model})`, e)
-      throw new Error(`LLM 请求失败：${detail}`)
+      throw new Error(`LLM 请求失败：${detail}`, { cause: e })
     }
   }
   if (!resp) {

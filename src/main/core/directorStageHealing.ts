@@ -78,6 +78,7 @@ export async function withTransientRetry<T>(
       opts.notify?.(`遇到瞬时异常（${(e as Error).message.slice(0, 80)}），${delay / 1000}s 后自动重试（${i + 1}/${retries}）...`)
       const deadline = Date.now() + delay
       while (Date.now() < deadline) {
+        // eslint-disable-next-line preserve-caught-error -- CANCELLED 是重试等待期间的取消控制信号，非对捕获错误的包装
         if (opts.isCancelled?.()) throw new Error('CANCELLED')
         await new Promise(r => setTimeout(r, 200))
       }

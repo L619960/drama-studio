@@ -96,7 +96,7 @@ function pad(n: number): string { return String(n).padStart(2, '0') }
  * 这些不是台词——写进 SRT 会在成片烧出「（无台词）」字样（实测 5 处），
  * 也不能当作有台词去驱动口型/字幕时间轴。
  */
-const PLACEHOLDER_DIALOGUE_RE = /^[（(\[【]\s*(无台词|无对白|无|暂无|none|n\/?a)\s*[）)\]】]$/i
+const PLACEHOLDER_DIALOGUE_RE = /^[（([【]\s*(无台词|无对白|无|暂无|none|n\/?a)\s*[）)\]】]$/i
 function isPlaceholderDialogue(text: string): boolean {
   const t = (text || '').trim()
   if (!t) return true

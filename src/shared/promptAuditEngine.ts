@@ -1,6 +1,6 @@
 import type {
   Character, Project, PromptAuditField, PromptAuditIssue, PromptAuditReport,
-  PromptAuditStatus, PromptAuditTask, PropAsset, SceneBoard, Shot
+  PromptAuditTask, PropAsset, SceneBoard, Shot
 } from './ipcTypes'
 import {
   DISPLACEMENT_ACTION_RE, REALISM_NEGATIVE, mergeNegative,

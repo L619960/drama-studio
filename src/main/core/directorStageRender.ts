@@ -14,7 +14,7 @@ import {
 import { STAGE_LABELS, stageIndexOf } from './directorStageMeta'
 import { selfHealStage, withTransientRetry } from './directorStageHealing'
 import {
-  concatDoneShots, renderShotsWithAudit, auditSingleShot, approveShots
+  concatDoneShots, renderShotsWithAudit, approveShots
 } from './directorStageAudit'
 /**
  * 【2026-10-25 标注：死代码——流水线阶段化重构未完成，live 仍走 directorAgent.ts 的

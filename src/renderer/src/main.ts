@@ -20,7 +20,7 @@ import router from './router'
  *   success 2000ms / info 2000ms / warning 2500ms / error 3500ms。
  * 调用点若显式传入 duration 则以调用点为准（保留例外能力）。
  */
-type MessageOpts = string | { message?: string; duration?: number }
+/* eslint-disable @typescript-eslint/no-explicit-any -- patchType 对 ElMessage 做 monkeypatch：element-plus 重载调用签名难以静态收窄，属已知边界 */
 function patchType(type: 'success' | 'error' | 'warning' | 'info', defaultDuration: number) {
   const original = ElMessage[type] as (...args: any[]) => ReturnType<typeof ElMessage>
   const wrapped = ((...args: any[]) => {
@@ -34,6 +34,7 @@ function patchType(type: 'success' | 'error' | 'warning' | 'info', defaultDurati
   }) as typeof original
   ;(ElMessage as any)[type] = wrapped
 }
+/* eslint-enable @typescript-eslint/no-explicit-any */
 patchType('success', 2000)
 patchType('info', 2000)
 patchType('warning', 2500)

@@ -219,7 +219,6 @@ export class FFmpegService {
   ): Promise<void> {
     if (!images.length) throw new Error('tileImages: 无输入图片')
     const cols = Math.max(1, Math.floor(opts.cols))
-    const rows = Math.ceil(images.length / cols)
     const cellW = Math.max(32, Math.floor(opts.cellW))
     const cellH = Math.max(32, Math.floor(opts.cellH))
 

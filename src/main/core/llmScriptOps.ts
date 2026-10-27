@@ -376,7 +376,7 @@ export async function reviewScriptOp(
     parsed = JSON.parse(cleaned.slice(start, end + 1))
   } catch (e) {
     logLlmError('reviewScript.jsonParse', new Error(`JSON.parse 失败：${e instanceof Error ? e.message : String(e)}；片段: ${cleaned.slice(start, end + 1).slice(0, 500)}`))
-    throw new Error(`剧本医生 JSON 解析失败：${e instanceof Error ? e.message : String(e)}`)
+    throw new Error(`剧本医生 JSON 解析失败：${e instanceof Error ? e.message : String(e)}`, { cause: e })
   }
   const issues = ((Array.isArray(parsed.issues) ? parsed.issues : []) as Array<{ severity?: string; scene?: string; problem?: string; suggestion?: string }>)
     .filter(i => i && (i.problem || i.suggestion))
@@ -498,9 +498,10 @@ export async function analyzeOp(
             'utf-8'
           )
         } catch { /* 诊断落盘失败不阻断主流程 */ }
-        throw new Error(`LLM 分析输出 JSON 两次解析失败（${(firstErr as Error).message.slice(0, 80)}），原始输出已存 tmp/analyze-raw-dump.json 便于排查`)
+        throw new Error(`LLM 分析输出 JSON 两次解析失败（${(firstErr as Error).message.slice(0, 80)}），原始输出已存 tmp/analyze-raw-dump.json 便于排查`, { cause: firstErr })
       }
       // 第一次失败：剥离控制字符后重试（裸换行→空格）
+      // eslint-disable-next-line no-control-regex -- 有意清洗 LLM 输出中的裸控制字符（\x00-\x1f），修复 JSON 解析
       const sanitized = jsonText.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, ' ')
       if (sanitized === jsonText) {
         // 无控制字符可清 → 换修复指令重试一次
@@ -512,7 +513,7 @@ export async function analyzeOp(
         cleaned = retryRaw.replace(/```(?:json)?/g, '').trim()
         start = cleaned.indexOf('{')
         end = cleaned.lastIndexOf('}')
-        if (start === -1 || end === -1 || end <= start) throw new Error('LLM 修复输出仍非 JSON，无法解析分析结果')
+        if (start === -1 || end === -1 || end <= start) throw new Error('LLM 修复输出仍非 JSON，无法解析分析结果', { cause: firstErr })
         jsonText = cleaned.slice(start, end + 1)
       } else {
         jsonText = sanitized

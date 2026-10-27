@@ -1,7 +1,7 @@
 import type { DirectorState } from '../../shared/ipcTypes'
 import type { DirectorAgent } from './directorAgent'
 import {
-  freshStateImpl, logImpl, emitStateImpl, setStageImpl
+  freshStateImpl, logImpl, setStageImpl
 } from './directorStateMachine'
 
 /**

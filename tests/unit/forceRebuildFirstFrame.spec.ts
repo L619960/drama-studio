@@ -7,11 +7,12 @@
  * 用 ipcMain.handle 捕获注册的 listener，直接以 mock ctx 调用，不起 Electron。
  */
 import { describe, it, expect, vi } from 'vitest'
-import * as os from 'node:os'
-import * as path from 'node:path'
 
 const { handlers, userData } = vi.hoisted(() => {
+  // vi.hoisted 先于 ESM import 执行，只能用 require；此处为 vitest 官方既定写法
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const path = require('node:path')
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const os = require('node:os')
   return {
     handlers: new Map<string, (event: unknown, ...args: unknown[]) => unknown>(),

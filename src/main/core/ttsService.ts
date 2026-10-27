@@ -223,7 +223,7 @@ export class TTSService {
         { windowsHide: true, timeout: 60_000, label: 'tts-wav2mp3' }
       )
     } catch (e) {
-      throw new Error(`wav→mp3 转换失败：${String(e instanceof Error ? e.message : e).slice(0, 120)}`)
+      throw new Error(`wav→mp3 转换失败：${String(e instanceof Error ? e.message : e).slice(0, 120)}`, { cause: e })
     }
   }
 

@@ -28,14 +28,12 @@ export function appendMainErrorLog(kind: string, err: unknown, logDir: string): 
 
 /** unhandledRejection 处理器：console.error + 落盘。 */
 export function handleUnhandledRejection(reason: unknown, logDir: string): void {
-  // eslint-disable-next-line no-console
   console.error('[unhandledRejection]', reason)
   appendMainErrorLog('unhandledRejection', reason, logDir)
 }
 
 /** uncaughtException 处理器：console.error + 落盘。 */
 export function handleUncaughtException(err: unknown, logDir: string): void {
-  // eslint-disable-next-line no-console
   console.error('[uncaughtException]', err)
   appendMainErrorLog('uncaughtException', err, logDir)
 }

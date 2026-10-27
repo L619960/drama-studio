@@ -1,6 +1,6 @@
 ﻿import * as fs from 'node:fs/promises'
 import * as path from 'node:path'
-import { ImageService, ImageGenerateCancelled } from './imageService'
+import { ImageGenerateCancelled } from './imageService'
 import { mapPool } from './asyncPool'
 import type { AnalyzeResult, Character, Project } from '../../shared/ipcTypes'
 import { validateCharacterAssets } from './roleBinding'
@@ -193,7 +193,7 @@ export async function buildCharacters(
     }
   } catch (e) {
     if (e instanceof ImageGenerateCancelled) throw e
-    if (binding.conflicts.length > 0) throw new Error(binding.conflicts[0])
+    if (binding.conflicts.length > 0) throw new Error(binding.conflicts[0], { cause: e })
     // 保存失败由后续阶段暴露
   }
 

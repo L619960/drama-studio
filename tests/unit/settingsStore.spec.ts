@@ -10,7 +10,6 @@ vi.mock('electron', () => ({
 }))
 
 import { SettingsStore } from '../../src/main/core/settingsStore'
-import type { AppSettings } from '../../src/shared/ipcTypes'
 
 describe('SettingsStore（S-03 归一化回归）', () => {
   let dir: string

@@ -4,7 +4,7 @@ import type { Dirent } from 'node:fs'
 import * as path from 'node:path'
 import axios from 'axios'
 import { shell } from 'electron'
-import { LLMService, type ChatMessage, type ToolSpec } from './llmService'
+import { LLMService, type ChatMessage } from './llmService'
 import { SkillService } from './skillService'
 import type { ComfyMcpService } from './comfyMcpService'
 import type { MemoryStore } from './memoryStore'
@@ -18,12 +18,12 @@ import type { SkillLibrary } from './skillLibrary'
 import type { FFmpegService } from './ffmpegService'
 import type { SettingsStore } from './settingsStore'
 import type {
-  ConversationMessage, ConversationToolEvent, DirectorStage,
+  ConversationMessage, DirectorStage,
   MemoryKind, Project, Shot, Skill, ToolCallRecord
 } from '../../shared/ipcTypes'
 import { SELF_LEARN_PROMPT } from '../../shared/ipcTypes'
 import { atomicWriteJson } from './fsUtil'
-import { HISTORY_LIMIT, RESULT_LIMIT } from './conversationConstants'
+import { RESULT_LIMIT } from './conversationConstants'
 import {
   scopeFileImpl, listImpl, clearImpl, forgetProjectImpl, saveImpl
 } from './conversationSession'

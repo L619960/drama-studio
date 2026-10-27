@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- 测试用 as any 构造部分分镜/动作对象，属测试夹具，非产品代码 */
 import { describe, it, expect } from 'vitest'
 import { castPromptPoisoned } from '../../src/shared/promptDrift'
 import { COMBAT_ACTION_RE } from '../../src/shared/motion'

@@ -5,7 +5,7 @@ import type {
 } from '../../shared/ipcTypes'
 import { reviewedIsValid } from '../../shared/pipelineGuards'
 import { atomicWriteJson } from './fsUtil'
-import { STAGE_ORDER, STAGE_LABELS, stageIndexOf, LOG_LIMIT } from './directorConstants'
+import { STAGE_ORDER, STAGE_LABELS, LOG_LIMIT } from './directorConstants'
 import type { DirectorAgent } from './directorAgent'
 
 /**

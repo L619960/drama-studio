@@ -1,30 +1,14 @@
-import { app, BrowserWindow, ipcMain, dialog, shell, protocol } from 'electron'
-import { join, resolve, sep, isAbsolute, extname, dirname } from 'node:path'
-import * as fs from 'node:fs/promises'
+import { app, BrowserWindow, protocol } from 'electron'
+import { join, resolve, sep, isAbsolute } from 'node:path'
 import { realpathSync, existsSync } from 'node:fs'
-import { createHash } from 'node:crypto'
 import {
   IpcChannels,
-  type Project,
   type ProgressEvent,
-  type AppSettings,
   type DirectorProgressEvent,
-  type DirectorStage,
   type DirectorLogEvent,
-  type DirectorStartInput,
-  type ConversationToolEvent,
-  type Skill,
-  type MemoryItem,
-  type MemoryKind,
-  type AssetRegenerateInput,
-  type PromptAssistInput,
-  type PromptBulkFillInput,
-  type PromptBulkFillFieldResult,
-  type PromptBulkFillResult,
-  type PromptBulkFillProgress
+  type ConversationToolEvent
 } from '../shared/ipcTypes'
 import { ProjectStore } from './core/projectStore'
-import { reviewedIsValid } from '../shared/pipelineGuards'
 import { handleIpc } from './ipc/shared'
 import { registerProjectIpc } from './ipc/project'
 import { registerRenderIpc } from './ipc/render'
@@ -48,7 +32,7 @@ import { FFmpegService } from './core/ffmpegService'
 import { WorkflowLoader } from './core/workflowLoader'
 import { WorkflowLibrary } from './core/workflowLibrary'
 import { SettingsStore } from './core/settingsStore'
-import { LLMService, type FillPromptContext } from './core/llmService'
+import { LLMService } from './core/llmService'
 import { SubtitleService } from './core/subtitleService'
 import { ImageService } from './core/imageService'
 import { CandidatePickService } from './core/candidatePickService'
@@ -59,19 +43,7 @@ import { ConversationService } from './core/conversationService'
 import { ComfyMcpService } from './core/comfyMcpService'
 import { MemoryStore } from './core/memoryStore'
 import { SelfCheckService } from './core/selfCheckService'
-import { GENRE_TEMPLATES, normalizeSceneKey } from '../shared/ipcTypes'
-import {
-  faceCastingPrompt,
-  bodySheetPrompt,
-  scenePlatePrompt,
-  shotFramePrompt,
-  shotSizeCueFor,
-  sceneNegativeFor,
-  mergeNegative, REALISM_NEGATIVE,
-  stripDialogueDirections
-} from '../shared/imagePrompts'
-import { resolveCreation } from '../shared/creationSettings'
-import { applyAutoFixes, auditProjectPrompts, fillableFieldsOf, assignField } from '../shared/promptAudit'
+import { GENRE_TEMPLATES } from '../shared/ipcTypes'
 import { installGlobalErrorHandlers } from './core/errorHandler'
 import { childProcessManager } from './core/childProcessManager'
 
@@ -126,13 +98,6 @@ protocol.registerSchemesAsPrivileged([
   }
 ])
 
-/** 相对 DATA_ROOT 路径 → 窗口内 <video> 用的 app-file URL */
-function toAppFileUrl(relativePath: string): string {
-  const normalized = relativePath.replace(/\\/g, '/').replace(/^\/+/, '')
-  const pathPart = normalized.split('/').map(encodeURIComponent).join('/')
-  return `app-file://local/${pathPart}`
-}
-
 // 统一数据根目录：userData/drama-studio
 // ProjectStore 的 projects 目录 = DATA_ROOT/projects
 // 相对路径（如 projects/<id>/segments/x.mp4）一律相对 DATA_ROOT 解析
@@ -174,13 +139,6 @@ function resolveInsideRoot(inputPath: string): string {
   return abs
 }
 
-/** 会话标识白名单：scope 直接拼文件名，主进程入口先挡一轮（I-13，服务层另有兜底） */
-function assertScope(scope: string): void {
-  if (!/^[a-zA-Z0-9_-]{1,64}$/.test(scope)) {
-    throw new Error('非法会话标识')
-  }
-}
-
 let mainWindow: BrowserWindow | null = null
 
 /** 进度/日志等事件统一经此转发：窗口已销毁时静默丢弃，避免对已销毁窗口调用 send 抛错中断渲染任务 */
@@ -189,13 +147,6 @@ function sendToWindow(channel: string, payload: unknown): void {
     mainWindow.webContents.send(channel, payload)
   }
 }
-
-const rawIpcHandle = ipcMain.handle.bind(ipcMain)
-
-/**
- * IPC 统一包装见 ./ipc/shared.handleIpc（2026-10-25 合并：此处本地副本已删除，
- * 避免与 shared.ts:84 双份维护——专家A P2-4）。
- */
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -223,7 +174,7 @@ function createWindow(): void {
     mainWindow = null
   })
 
-  mainWindow.webContents.setWindowOpenHandler((details) => {
+  mainWindow.webContents.setWindowOpenHandler((_details) => {
     return { action: 'deny' }
   })
 
@@ -243,19 +194,6 @@ function createWindow(): void {
 
 // 初始化核心服务
 const projectStore = new ProjectStore() // projects 目录 = DATA_ROOT/projects
-
-/** 读取项目：参数非法/项目不存在时抛业务可读错误。
- *  直接 get() 会抛 ENOENT 并把数据根绝对路径透传到渲染层，这里统一兜住。 */
-async function loadProjectOrThrow(projectId: unknown): Promise<Project> {
-  if (typeof projectId !== 'string' || !projectId.trim()) throw new Error('非法项目标识')
-  try {
-    const project = await projectStore.get(projectId)
-    if (project) return project
-  } catch {
-    // project.json 不存在或不可读：一律按「项目不存在」处理
-  }
-  throw new Error('项目不存在或已被删除，请刷新项目列表后重试')
-}
 const settingsStore = new SettingsStore()
 // 资源目录（workflows/skills）：dev 下优先 app.getAppPath()（项目根，比 cwd 可靠），打包后优先 resources；
 // 多候选按存在性兜底——单一路径判定失准会让工作流/技能库整体找不到，进而整条渲染链全量失败。

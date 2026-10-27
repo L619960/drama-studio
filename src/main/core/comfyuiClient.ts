@@ -317,7 +317,7 @@ $procs | Select-Object -ExpandProperty ProcessId
       if (!data.name) throw new Error('upload rejected')
       return data.name
     } catch (e) {
-      if (!inputDir) throw new Error(`音频上传失败且未配置 ComfyUI input 目录: ${(e as Error).message}`)
+      if (!inputDir) throw new Error(`音频上传失败且未配置 ComfyUI input 目录: ${(e as Error).message}`, { cause: e })
       await fs.copyFile(localPath, path.join(inputDir, baseName))
       return baseName
     }

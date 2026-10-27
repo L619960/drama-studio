@@ -44,7 +44,15 @@ export default tseslint.config(
   {
     rules: {
       '@typescript-eslint/no-explicit-any': 'warn',
-      '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+      // 允许 _ 前缀变量/catch 形参故意留空（解构占位、cause 透传等）
+      '@typescript-eslint/no-unused-vars': [
+        'warn',
+        {
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          caughtErrorsIgnorePattern: '^_'
+        }
+      ],
       // explicit-function-return-type 在 electron-toolkit 里是 error；项目体量太大，降为 warn 避免阻塞
       '@typescript-eslint/explicit-function-return-type': 'off',
       '@typescript-eslint/no-empty-function': 'off',
@@ -73,6 +81,33 @@ export default tseslint.config(
       'vue/one-component-per-file': 'off',
       // 70+ 处 prop 直接 mutation（Element Plus 双向绑定模式），重构工作量大，降为 warn
       'vue/no-mutating-props': 'warn'
+    }
+  },
+
+  // 设置/面板类组件以 `:settings="settings"` 传入响应式对象，子组件就地编辑其属性
+  // （Element Plus v-model 双向绑定的既有约定）。这是项目已接受的模式，逐处改 emit
+  // 会重写业务逻辑，故对这些组件关闭该规则；其余 .vue 仍保持 warn。
+  {
+    files: [
+      'src/renderer/src/components/settings/**/*.vue',
+      'src/renderer/src/components/console/MemoryPanel.vue',
+      'src/renderer/src/components/console/SkillsPanel.vue',
+      'src/renderer/src/components/storyboard/ShotReviewDialog.vue'
+    ],
+    rules: {
+      'vue/no-mutating-props': 'off'
+    }
+  },
+
+  // scripts/ 是本地一次性开发/性能度量/归档修复脚本（非主进程/渲染进程产品代码），
+  // 其中空 catch 兜底、临时变量残留属工具脚本常态，不纳入产品代码 lint 治理。
+  {
+    files: ['scripts/**/*.{mjs,js,cjs}'],
+    rules: {
+      '@typescript-eslint/no-unused-vars': 'off',
+      'no-useless-assignment': 'off',
+      'no-empty': 'off',
+      '@typescript-eslint/no-unused-expressions': 'off'
     }
   }
 )
