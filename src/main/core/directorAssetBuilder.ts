@@ -27,10 +27,12 @@ import { notifyProjectUpdatedImpl } from './directorProgressBridge'
  * 每个函数接收 agent 作为上下文（this. → agent.）。
  */
 
-/** 单镜首帧 camera 净化：剥离镜头描述里的"第二人/背景人影"从句 */
+/** 单镜首帧 camera 净化：剥离镜头描述里的"第二人/背景人影"从句。
+ *  历史角色名（Su Wan/Lin Chuan/苏晚/林川/李强）已从硬编码正则移除——它们是旧项目
+ *  的特定角色名，新项目若同名会被误删。其他角色名由调用方 maskOtherIn 动态剥离。 */
 export function sanitizeCameraForFrameImpl(camera: string): string {
   const segs = camera.split(/[,，]/).map(s => s.trim()).filter(Boolean)
-  const keep = segs.filter(s => !/(?:Su Wan|Lin Chuan|李强|苏晚|林川|another|other person|second person|background figure|blurred figure|out of focus|路人|人影|另一位|另一人|剪影)/i.test(s))
+  const keep = segs.filter(s => !/(?:another|other person|second person|background figure|blurred figure|out of focus|路人|人影|另一位|另一人|剪影)/i.test(s))
   return keep.join(', ')
 }
 
@@ -426,7 +428,8 @@ export async function generateShotFirstFrameImpl(
       ...d.as,
       action: maskOtherIn(d.as.action?.trim() || ''),
       continuity: maskOtherIn(d.as.continuity?.trim() || ''),
-      camera: sanitizeCameraForFrameImpl(d.as.camera?.trim() || '')
+      // camera 也先动态屏蔽其他角色名（历史硬编码名单已移除），再做通用第二人从句剥离
+      camera: sanitizeCameraForFrameImpl(maskOtherIn(d.as.camera?.trim() || ''))
     }
   }
 
