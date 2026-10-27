@@ -1,6 +1,7 @@
 ﻿﻿import { EventEmitter } from 'node:events'
 import * as fs from 'node:fs/promises'
 import * as path from 'node:path'
+import * as os from 'node:os'
 import { ComfyUIClient, VRAM_TIERS, stepDownVramTier, type VramTier } from './comfyuiClient'
 import { WorkflowLoader } from './workflowLoader'
 import { TTSService } from './ttsService'
@@ -290,6 +291,8 @@ export class TaskQueue extends EventEmitter {
     // 避免后台继续渲染已作废镜头，浪费显存与时间。
     await this.comfyui.clearQueue().catch(() => undefined)
     await this.comfyui.interrupt().catch(() => undefined)
+    // 清理上次崩溃残留的临时文件（ffmpeg 中间产物 / RGB24 裸帧 / 拼接临时目录）
+    await this.cleanupOrphanTmp().catch(() => undefined)
     let recovered = 0
     try {
       const projects = await this.store.list()
@@ -327,6 +330,70 @@ export class TaskQueue extends EventEmitter {
       console.warn('[TaskQueue] 断点续渲扫描失败:', e instanceof Error ? e.message : String(e))
     }
     return recovered
+  }
+
+  /**
+   * 清理上次崩溃残留的临时文件：
+   * - baseDir/.tmp 下 rgb_*.rgb（一致性检测的 RGB24 裸帧，正常 dispose 会删；崩溃时留下）
+   * - os.tmpdir() 下 concatfit_*、smartconcat_*、concat_*.txt、ds_sub_*.ass、qc_*.png
+   *   （ffmpeg 拼接/字幕/质检的临时产物，正常 finally 会删；崩溃时留下）
+   * - 项目目录下 *.part.mp4 / *.part.png / *.part.mp3（fluent-ffmpeg 的中间产物，
+   *   成功后 rename 为正式产物；崩溃时残留半截文件）
+   * 只删匹配明确前缀/后缀的文件，不动其他数据。失败静默（不阻塞启动恢复）。
+   */
+  private async cleanupOrphanTmp(): Promise<void> {
+    // 1) baseDir/.tmp 下的 rgb_*.rgb
+    try {
+      const tmpDir = path.join(this.baseDir, '.tmp')
+      const entries = await fs.readdir(tmpDir).catch(() => [] as string[])
+      for (const name of entries) {
+        if (/^rgb_.*\.rgb$/.test(name)) {
+          await fs.unlink(path.join(tmpDir, name)).catch(() => undefined)
+        }
+      }
+    } catch { /* .tmp 不存在 */ }
+
+    // 2) os.tmpdir() 下本应用前缀的临时目录/文件
+    const osTmp = os.tmpdir()
+    const orphanPatterns = [
+      /^concatfit_/, /^smartconcat_/, /^concat_\d+\.txt$/, /^ds_sub_.*\.ass$/, /^qc_\d+_.*\.png$/
+    ]
+    try {
+      const entries = await fs.readdir(osTmp)
+      for (const name of entries) {
+        if (!orphanPatterns.some(re => re.test(name))) continue
+        const abs = path.join(osTmp, name)
+        const st = await fs.stat(abs).catch(() => null)
+        if (!st) continue
+        if (st.isDirectory()) {
+          await fs.rm(abs, { recursive: true, force: true }).catch(() => undefined)
+        } else {
+          await fs.unlink(abs).catch(() => undefined)
+        }
+      }
+    } catch { /* tmpdir 不可读 */ }
+
+    // 3) 项目目录下的 *.part.* 中间产物（崩溃时 ffmpeg 没来得及 rename）
+    try {
+      const projectsDir = path.join(this.baseDir, 'projects')
+      const projectDirs = await fs.readdir(projectsDir, { withFileTypes: true }).catch(() => [])
+      for (const dir of projectDirs) {
+        if (!dir.isDirectory()) continue
+        const projectRoot = path.join(projectsDir, dir.name)
+        // 递归扫两层（segments/ raw/ fit/ 等）
+        const subdirs = await fs.readdir(projectRoot, { withFileTypes: true }).catch(() => [])
+        for (const sub of subdirs) {
+          if (!sub.isDirectory()) continue
+          const subAbs = path.join(projectRoot, sub.name)
+          const files = await fs.readdir(subAbs).catch(() => [])
+          for (const name of files) {
+            if (/\.part\.(mp4|png|mp3|wav)$/.test(name)) {
+              await fs.unlink(path.join(subAbs, name)).catch(() => undefined)
+            }
+          }
+        }
+      }
+    } catch { /* projects 目录不可读 */ }
   }
 
   private async process(): Promise<void> {

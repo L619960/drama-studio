@@ -15,7 +15,7 @@ import { STAGE_ORDER, STAGE_LABELS, stageIndexOf } from './directorConstants'
 import {
   freshStateImpl, isCancelledImpl, currentStageImpl, setStageImpl, logImpl,
   emitStateImpl, persistImpl, maybeGateImpl, pauseUntilShotsReviewedImpl,
-  getStateImpl, getLatestStateImpl, clearStateImpl, hydrateImpl
+  getStateImpl, getLatestStateImpl, clearStateImpl, hydrateImpl, recoverAllImpl
 } from './directorStateMachine'
 import {
   ensureShadowStateImpl, emitProgressEventImpl, notifyProjectUpdatedImpl,
@@ -347,6 +347,14 @@ export class DirectorAgent extends EventEmitter {
   /** 崩溃/重启恢复：内存无状态且磁盘有 director-state.json 时回填 */
   async hydrate(projectId: string): Promise<DirectorState | null> {
     return hydrateImpl(this, projectId)
+  }
+
+  /**
+   * 启动时主动扫描全部项目的 director-state.json，把残留 running=true 的状态降级为 error。
+   * 不自动重启流水线；用户可在分镜页用「从此重跑」手动续传。
+   */
+  async recoverAll(): Promise<number> {
+    return recoverAllImpl(this)
   }
 
   /**

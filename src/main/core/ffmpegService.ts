@@ -1,14 +1,11 @@
 import * as fs from 'fs/promises'
 import * as path from 'node:path'
 import * as os from 'node:os'
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
 import ffmpeg from 'fluent-ffmpeg'
 import type { FfmpegCommand, FfprobeData } from 'fluent-ffmpeg'
 import ffmpegBinary from 'ffmpeg-static'
 import ffprobePackage from 'ffprobe-static'
-
-const execFileAsync = promisify(execFile)
+import { childProcessManager } from './childProcessManager'
 
 export interface SegmentProgress {
   (percent: number): void
@@ -81,7 +78,7 @@ export class FFmpegService {
 
   private async canRun(bin: string, args: string[]): Promise<boolean> {
     try {
-      await execFileAsync(bin, args, { timeout: 10000, windowsHide: true })
+      await childProcessManager.execFile(bin, args, { timeout: 10000, windowsHide: true, label: 'ffmpeg-canrun' })
       return true
     } catch (e) {
       const out = e as { stdout?: string; stderr?: string }
@@ -153,7 +150,7 @@ export class FFmpegService {
   /** 执行单条 ffmpeg 命令（等待完成）；10 分钟硬超时防进程挂死（任务 9b） */
   private async runFfmpeg(args: string[]): Promise<void> {
     const bin = this.ffmpegPath || 'ffmpeg'
-    await execFileAsync(bin, args, { timeout: 600_000, windowsHide: true })
+    await childProcessManager.execFile(bin, args, { timeout: 600_000, windowsHide: true, label: 'ffmpeg-run' })
   }
 
   /**
@@ -166,7 +163,11 @@ export class FFmpegService {
     const probeArgs = ['-hide_banner', '-i', inputPath]
     let duration = 0
     try {
-      const { stdout } = await execFileAsync(this.ffmpegPath || 'ffmpeg', [...probeArgs, '-f', 'null', '-'], { windowsHide: true })
+      const { stdout } = await childProcessManager.execFile(
+        this.ffmpegPath || 'ffmpeg',
+        [...probeArgs, '-f', 'null', '-'],
+        { windowsHide: true, label: 'ffmpeg-probe' }
+      )
       const m = /Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/.exec(stdout)
       if (m) duration = Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3])
     } catch {
@@ -708,11 +709,11 @@ export class FFmpegService {
   private async detectVoiceRange(inputPath: string): Promise<{ start: number; end: number } | null> {
     const bin = this.ffmpegPath || 'ffmpeg'
     try {
-      const { stdout } = await execFileAsync(bin, [
+      const { stdout } = await childProcessManager.execFile(bin, [
         '-i', inputPath,
         '-af', 'silencedetect=n=-35dB:d=0.3',
         '-f', 'null', '-'
-      ])
+      ], { windowsHide: true, label: 'ffmpeg-silencedetect' })
       const out = stdout + ''
       const silenceStarts = [...out.matchAll(/silence_start:\s*([\d.]+)/g)].map(m => parseFloat(m[1]))
       const silenceEnds = [...out.matchAll(/silence_end:\s*([\d.]+)/g)].map(m => parseFloat(m[1]))

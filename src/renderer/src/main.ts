@@ -1,6 +1,11 @@
 import { createApp } from 'vue'
-import ElementPlus, { ElMessage } from 'element-plus'
-import 'element-plus/dist/index.css'
+import { ElMessage } from 'element-plus'
+// Element Plus 已改为按需引入（vite unplugin-vue-components + ElementPlusResolver），
+// 模板里的 el-* 组件及其样式由插件自动注入。这里只手动引入“程序化调用”组件的样式，
+// 它们不会出现在模板里，插件无法感知（confirm.ts / ConsoleView / CharacterView / PresetBar）。
+import 'element-plus/es/components/message/style/css'
+import 'element-plus/es/components/message-box/style/css'
+import 'element-plus/es/components/loading/style/css'
 import 'element-plus/theme-chalk/dark/css-vars.css'
 import './assets/theme.css'
 import App from './App.vue'
@@ -57,5 +62,4 @@ app.config.errorHandler = (err) => {
   globalErrorTip(err instanceof Error ? err.message : String(err))
 }
 app.use(router)
-app.use(ElementPlus)
 app.mount('#app')

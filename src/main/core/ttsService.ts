@@ -1,11 +1,11 @@
 import * as fs from 'fs/promises'
 import * as path from 'node:path'
 import * as crypto from 'node:crypto'
-import { execFile } from 'node:child_process'
 import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts'
 import type { ComfyUIClient } from './comfyuiClient'
 import type { WorkflowLoader } from './workflowLoader'
 import { createLogger } from './logger'
+import { childProcessManager } from './childProcessManager'
 
 const log = createLogger('tts')
 
@@ -205,10 +205,9 @@ export class TTSService {
       `$s.Dispose()`
     ].join(' ')
     await new Promise<void>((resolve, reject) => {
-      execFile('powershell', ['-NoProfile', '-NonInteractive', '-Command', ps], { windowsHide: true, timeout: 60_000 }, (err) => {
-        if (err) reject(new Error(`SAPI 合成失败：${String(err.message).slice(0, 120)}`))
-        else resolve()
-      })
+      childProcessManager.execFile('powershell', ['-NoProfile', '-NonInteractive', '-Command', ps], { windowsHide: true, timeout: 60_000, label: 'tts-sapi' })
+        .then(() => resolve())
+        .catch((err) => reject(new Error(`SAPI 合成失败：${String(err.message).slice(0, 120)}`)))
     })
     const st = await fs.stat(outWavAbs).catch(() => null)
     if (!st || st.size < 1000) throw new Error('SAPI 未产出有效音频')
@@ -217,12 +216,15 @@ export class TTSService {
   /** ffmpeg-static wav → mp3 */
   private async wavToMp3(wavAbs: string, mp3Abs: string): Promise<void> {
     await fs.mkdir(path.dirname(mp3Abs), { recursive: true })
-    await new Promise<void>((resolve, reject) => {
-      execFile(FFMPEG_STATIC, ['-y', '-i', wavAbs, '-codec:a', 'libmp3lame', '-q:a', '4', mp3Abs], { windowsHide: true, timeout: 60_000 }, (err) => {
-        if (err) reject(new Error(`wav→mp3 转换失败：${String(err.message).slice(0, 120)}`))
-        else resolve()
-      })
-    })
+    try {
+      await childProcessManager.execFile(
+        FFMPEG_STATIC,
+        ['-y', '-i', wavAbs, '-codec:a', 'libmp3lame', '-q:a', '4', mp3Abs],
+        { windowsHide: true, timeout: 60_000, label: 'tts-wav2mp3' }
+      )
+    } catch (e) {
+      throw new Error(`wav→mp3 转换失败：${String(e instanceof Error ? e.message : e).slice(0, 120)}`)
+    }
   }
 
   /**

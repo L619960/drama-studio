@@ -16,9 +16,16 @@ files:
 
 # ffmpeg/ffprobe 二进制在 asar 内不可执行，必须解包到 app.asar.unpacked
 # （ffmpegService.unpackedPath 已做 app.asar -> app.asar.unpacked 路径映射）
+# onnxruntime-node 同理：onnxruntime_binding.node / onnxruntime.dll / DirectML.dll 是原生
+# 模块，require 时无法从 asar 内 dlopen（ERR_DLOPEN_FAILED）。faceDetector.ts 已按
+# "打包后在 app.asar.unpacked 内解析" 写死，这里必须同步解包，否则人脸检测/一致性比对
+# 在打包版直接不可用（dev 下走普通 node_modules 不受影响，故此前未暴露）。
+# @xenova/transformers 内部还嵌套了一份 onnxruntime-node（CLIP 用），同样要解包。
 asarUnpack:
   - node_modules/ffmpeg-static/**
   - node_modules/ffprobe-static/**
+  - node_modules/onnxruntime-node/**
+  - node_modules/@xenova/transformers/node_modules/onnxruntime-node/**
 
 # 工作流 JSON 随 resources 分发
 # （main/index.ts: app.isPackaged 时读取 process.resourcesPath/workflows）

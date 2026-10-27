@@ -45,3 +45,15 @@ tmp/
 
 # 运行时 pid
 *.pid
+
+# 测试覆盖率与运行产物（P2）
+coverage/
+test-results/
+playwright-report/
+html-report/
+
+# unplugin-vue-components 自动生成
+src/renderer/components.d.ts
+
+# E2E 运行截图
+e2e/*.png

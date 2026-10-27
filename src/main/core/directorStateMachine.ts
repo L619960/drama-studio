@@ -195,6 +195,43 @@ export function getLatestStateImpl(agent: DirectorAgent): DirectorState | null {
 }
 
 /**
+ * 启动时主动扫描全部项目的 director-state.json，把残留 running=true 的状态降级为 error。
+ * 与懒加载的 hydrate() 互补：hydrate 只在用户打开项目时才修复；本方法在应用启动后跑一次，
+ * 保证即使不打开项目，磁盘上的 director-state.json 也不会留下"假运行"状态。
+ * 不自动重启流水线（那需要 ComfyUI 在跑），只把 running 阶段标 error 让用户可手动 resumeFromStage。
+ * @returns 修复的项目数
+ */
+export async function recoverAllImpl(agent: DirectorAgent): Promise<number> {
+  let repaired = 0
+  let projectDir: string
+  try {
+    projectDir = path.join(agent.baseDir, 'projects')
+    const entries = await fs.readdir(projectDir, { withFileTypes: true })
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue
+      const projectId = entry.name
+      const file = path.join(projectDir, projectId, 'director-state.json')
+      try {
+        const raw = await fs.readFile(file, 'utf-8')
+        const state = JSON.parse(raw) as DirectorState
+        if (!state.running && !state.paused) continue
+        // 复用 hydrate 的修复逻辑（已在内存则 hydrate 直接返回 existing，不重复修复）
+        await hydrateImpl(agent, projectId)
+        repaired += 1
+      } catch {
+        // 目录无 director-state.json 或 JSON 损坏：跳过
+      }
+    }
+  } catch {
+    // projects 目录不存在：无项目可恢复
+  }
+  if (repaired > 0) {
+    console.warn(`[DirectorAgent] 启动恢复：${repaired} 个项目的残留运行状态已降级为中断`)
+  }
+  return repaired
+}
+
+/**
  * 清空某项目的全部运行时残留。
  * 前端切换/关闭项目时调用，防止幽灵流水线、渲染进度监听器、gate 等待器跨项目泄漏。
  */

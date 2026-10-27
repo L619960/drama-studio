@@ -73,6 +73,7 @@ import {
 import { resolveCreation } from '../shared/creationSettings'
 import { applyAutoFixes, auditProjectPrompts, fillableFieldsOf, assignField } from '../shared/promptAudit'
 import { installGlobalErrorHandlers } from './core/errorHandler'
+import { childProcessManager } from './core/childProcessManager'
 
 // ===== 全局异常兜底：未捕获的 Promise rejection / 同步异常落盘，防主进程静默崩溃 =====
 // 实现抽离到 ./core/errorHandler.ts（便于单测）；这里只负责接入 userData/logs 目录。
@@ -394,6 +395,9 @@ app.whenReady().then(() => {
     // recoverStaleRenders 内部会先清 ComfyUI 残留任务（应用重启但 ComfyUI 未重启时，
     // 上次提交的旧任务可能仍在排队/运行——统一中断+清队，避免后台白渲旧镜头）
     void taskQueue.recoverStaleRenders()
+    // 导演状态恢复：把 director-state.json 里残留 running=true 的项目降级为 error，
+    // 避免 UI 永久转圈、断点续跑入口被锁死。不自动重启流水线（需 ComfyUI 在跑）。
+    void directorAgent.recoverAll().catch(() => undefined)
     void skillLibrary.load().then((r) => {
       if (r) {
         const qb = [
@@ -466,6 +470,8 @@ app.on('before-quit', async (event) => {
     }
     await taskQueue.cancelAll().catch(() => undefined)
     comfyuiClient.disconnect()
+    // 统一 kill 所有登记的子进程（ffmpeg/TTS SAPI/转换），防退出后孤儿进程残留
+    childProcessManager.killAll('before-quit')
     await Promise.race([
       (async () => {
         await comfyMcpService.dispose().catch(() => undefined)

@@ -1,6 +1,9 @@
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import vue from '@vitejs/plugin-vue'
 import { resolve } from 'node:path'
+import { visualizer } from 'rollup-plugin-visualizer'
+import Components from 'unplugin-vue-components/vite'
+import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 
 export default defineConfig({
   main: {
@@ -36,6 +39,25 @@ export default defineConfig({
         '@': resolve('src/renderer/src')
       }
     },
-    plugins: [vue()]
+    plugins: [
+      vue(),
+      // Element Plus 按需引入：模板里的 el-* 组件自动按需注册并注入对应样式，
+      // 避免 app.use(ElementPlus) 全量打包（renderer 体积 54% 来自 element-plus）。
+      // 程序化组件（ElMessage/ElMessageBox/ElLoading）样式在 renderer/src/main.ts 手动引入。
+      Components({
+        resolvers: [ElementPlusResolver()]
+      }),
+      // 包体积分析：仅当 ANALYZE=1 时生成 renderer-stats.html，不影响常规 build
+      ...(process.env.ANALYZE
+        ? [
+            visualizer({
+              filename: 'out/renderer-stats.html',
+              open: false,
+              gzipSize: true,
+              brotliSize: true
+            })
+          ]
+        : [])
+    ]
   }
 })
