@@ -44,10 +44,12 @@ import {
 import { isPlaceholderDialogueText } from './subtitleService'
 import {
   selectEngineMode, computeWanDurationSec, computeH3NeedSec, computeH3Length,
-  applyOomLightDowngrade, applyOomTierDowngrade, shouldFallbackR2vToI2v,
+  applyOomLightDowngrade, applyOomTierDowngrade,
   computeWantedCandidates, computeLipProfile, isFlf2vWorkflow, resolveFlfWorkflowName,
   injectH3TurboLora, type EngineMode
 } from './taskQueueRender'
+import { deriveProjectStatus, isProjectQueueIdle, createCancellationWatcher } from './taskQueueScheduler'
+import { decideRetryAction } from './taskQueueRetry'
 
 const log = createLogger('TaskQueue')
 
@@ -251,8 +253,7 @@ export class TaskQueue extends EventEmitter {
       try {
         const project = await this.store.get(projectId)
         if (project.status === 'rendering') {
-          project.status = project.shots.some(s => s.status === 'failed') ? 'failed'
-            : project.shots.length > 0 && project.shots.every(s => s.status === 'done') ? 'done' : 'draft'
+          project.status = deriveProjectStatus(project)
           await this.store.save(project)
         }
       } catch {
@@ -315,9 +316,7 @@ export class TaskQueue extends EventEmitter {
           recovered += 1
         }
         if (project.status === 'rendering') {
-          const allDone = project.shots.length > 0 && project.shots.every(s => s.status === 'done')
-          const anyFailed = project.shots.some(s => s.status === 'failed')
-          project.status = allDone ? 'done' : anyFailed ? 'failed' : 'draft'
+          project.status = deriveProjectStatus(project)
         }
         await this.store.save(project)
       }
@@ -364,13 +363,7 @@ export class TaskQueue extends EventEmitter {
       for (const pid of finished) {
         try {
           const project = await this.store.get(pid)
-          if (this.cancelledProjects.has(pid) || project.shots.length === 0) {
-            project.status = 'draft'
-          } else {
-            const anyFailed = project.shots.some(s => s.status === 'failed')
-            const allDone = project.shots.every(s => s.status === 'done')
-            project.status = allDone ? 'done' : anyFailed ? 'failed' : 'draft'
-          }
+          project.status = deriveProjectStatus(project, { cancelled: this.cancelledProjects.has(pid) })
           await this.store.save(project)
         } catch {
           // 项目可能已被删除或落盘失败，跳过状态重算但仍需通知
@@ -418,8 +411,7 @@ export class TaskQueue extends EventEmitter {
 
   /** 该项目没有在跑、也没有排队。用于补上「完成事件早于监听注册」的空窗。 */
   private isProjectQueueIdle(projectId: string): boolean {
-    if (this.current?.projectId === projectId) return false
-    return !this.queue.some(t => t.projectId === projectId)
+    return isProjectQueueIdle(this.queue, this.current, projectId)
   }
 
   private emitProgress(e: Omit<ProgressEvent, 'type'>): void {
@@ -477,18 +469,13 @@ export class TaskQueue extends EventEmitter {
     promise: Promise<never>
     stop(): void
   } {
-    let timer: NodeJS.Timeout
-    const promise = new Promise<never>((_, reject) => {
-      timer = setInterval(() => {
-        if (this.cancelledProjects.has(projectId) || this.cancelledShotIds.has(TaskQueue.shotKey(projectId, shotId))) {
-          reject(new Error(CANCEL_ERROR))
-        }
-      }, 150)
-    })
-    // 立即挂空 catch：watcher 可能在首个 Promise.race 之前就 reject（如上传参考图期间取消），
-    // 无 handler 的拒绝会成为 unhandledRejection，Electron 主进程可因此崩溃
-    promise.catch(() => undefined)
-    return { promise, stop: () => clearInterval(timer) }
+    return createCancellationWatcher(
+      this.cancelledProjects,
+      this.cancelledShotIds,
+      (pid, sid) => TaskQueue.shotKey(pid, sid),
+      projectId,
+      shotId
+    )
   }
 
   /** 相对路径（新规范）或绝对路径（旧数据兼容）→ 绝对路径 */
@@ -999,43 +986,54 @@ export class TaskQueue extends EventEmitter {
             this.cancelledShotIds.has(TaskQueue.shotKey(projectId, shotId)) || this.cancelledProjects.has(projectId)
           if (cancelled) throw err
 
-          if (s0.render.oomRetry !== false && this.isOOMError(err)) {
+          const isOOM = this.isOOMError(err)
+          // 与原实现一致：OOM 错误（且未禁用 oomRetry）先中断 ComfyUI，再按决策动作重试
+          if (s0.render.oomRetry !== false && isOOM) {
             await this.comfyui.interrupt().catch(() => undefined)
-            if (!oomDowngraded) {
-              oomDowngraded = true
-              const downgraded = applyOomLightDowngrade(mode, { h3Length, h3Steps, wanDurationSec })
-              h3Length = downgraded.h3Length
-              h3Steps = downgraded.h3Steps
-              wanDurationSec = downgraded.wanDurationSec
-              this.emitProgress({
-                projectId, shotId, step: 'render', percent: 20,
-                message: `显存不足，已减负（${mode.startsWith('h3') ? `${h3Length}帧/8步` : `${wanDurationSec}秒`}）重试...`
-              })
-              continue
-            }
-            if (!resDowngraded) {
-              const lower = stepDownVramTier(tier)
-              if (lower) {
-                resDowngraded = true
-                tier = lower
-                const clamped = applyOomTierDowngrade(tier, h3Length, wanDurationSec)
-                h3Length = clamped.h3Length
-                wanDurationSec = clamped.wanDurationSec
-                this.emitProgress({
-                  projectId, shotId, step: 'render', percent: 20,
-                  message: `显存仍不足，降分辨率至 ${tier.width}×${tier.height}（${tier.label}）重试...`
-                })
-                continue
-              }
-            }
           }
-
-          if (shouldFallbackR2vToI2v({
-            isOom: this.isOOMError(err),
+          const decision = decideRetryAction({
+            err,
+            cancelled,
+            isOOM,
+            oomRetryEnabled: s0.render.oomRetry !== false,
+            oomDowngraded,
+            resDowngraded,
+            canStepDownTier: stepDownVramTier(tier) != null,
             mode,
             lipMode,
-            lipSyncEnabled: Boolean(s0.render.lipSync)
-          })) {
+            lipSyncEnabled: Boolean(s0.render.lipSync),
+            transientRetries,
+            isTransient: isTransientError(err)
+          })
+
+          if (decision.kind === 'oom-light') {
+            oomDowngraded = true
+            const downgraded = applyOomLightDowngrade(mode, { h3Length, h3Steps, wanDurationSec })
+            h3Length = downgraded.h3Length
+            h3Steps = downgraded.h3Steps
+            wanDurationSec = downgraded.wanDurationSec
+            this.emitProgress({
+              projectId, shotId, step: 'render', percent: 20,
+              message: `显存不足，已减负（${mode.startsWith('h3') ? `${h3Length}帧/8步` : `${wanDurationSec}秒`}）重试...`
+            })
+            continue
+          }
+
+          if (decision.kind === 'oom-tier') {
+            const lower = stepDownVramTier(tier)!
+            resDowngraded = true
+            tier = lower
+            const clamped = applyOomTierDowngrade(tier, h3Length, wanDurationSec)
+            h3Length = clamped.h3Length
+            wanDurationSec = clamped.wanDurationSec
+            this.emitProgress({
+              projectId, shotId, step: 'render', percent: 20,
+              message: `显存仍不足，降分辨率至 ${tier.width}×${tier.height}（${tier.label}）重试...`
+            })
+            continue
+          }
+
+          if (decision.kind === 'r2v-fallback') {
             mode = 'h3-i2v'
             audioName = undefined
             this.emitProgress({
@@ -1045,7 +1043,7 @@ export class TaskQueue extends EventEmitter {
             continue
           }
 
-          if (isTransientError(err) && transientRetries < 2) {
+          if (decision.kind === 'transient') {
             transientRetries++
             const delay = transientRetries * 4000
             this.emitProgress({
