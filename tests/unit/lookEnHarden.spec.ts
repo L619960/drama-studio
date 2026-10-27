@@ -77,4 +77,14 @@ describe('lookEn 硬门禁 v2：武器单械中式 + 结构校验 + 三角色趋
       expect(l.toLowerCase()).toMatch(/exactly one weapon/)
     }
   })
+
+  it('现代剧不被强加武器条款（医生/白领不应持剑）', () => {
+    const looks = [
+      'chinese man in his early 30s, short black hair, white doctor coat, stethoscope around neck'
+    ]
+    const { looks: out } = hardenLookEnList(looks, '现代')
+    expect(out[0].toLowerCase()).not.toMatch(/weapon|sword|jian|dao|blade/)
+    // 原文保留
+    expect(out[0]).toContain('white doctor coat')
+  })
 })

@@ -228,13 +228,16 @@ export function differentiateLooks(looks: string[]): { looks: string[]; notes: s
  */
 export function hardenLookEnList(looks: string[], genre?: string): { looks: string[]; notes: string[] } {
   const notes: string[] = []
+  const period = isPeriodGenre(genre)
   let prepared = looks.map((l, i) => {
-    const hardened = hardenLookWeapons(l)
+    // 武器硬门禁仅对古装/武侠等动作题材生效——现代剧（医生/白领/学生）无武器，
+    // 否则会被强加 "carrying one traditional chinese weapon" 把现代职业角色画成持剑人
+    const hardened = period ? hardenLookWeapons(l) : l
     const issues = lookEnStructureIssues(hardened)
     if (issues.length) notes.push(`角色 ${i + 1} lookEn 结构缺项：${issues.join('、')}（已尽力保留原文建档，首帧/渲染由 lookEn 锁+抽帧验收兜底）`)
     return hardened
   })
-  if (isPeriodGenre(genre)) prepared = prepared.map(l => stripModernWardrobe(l))
+  if (period) prepared = prepared.map(l => stripModernWardrobe(l))
   const diff = differentiateLooks(prepared)
   notes.push(...diff.notes)
   return { looks: diff.looks, notes }
