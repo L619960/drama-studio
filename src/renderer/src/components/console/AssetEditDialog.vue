@@ -33,7 +33,9 @@
               effect="plain"
               class="chip"
               @click="appendSnippet(s)"
-            >{{ s }}</el-tag>
+            >
+{{ s }}
+</el-tag>
           </div>
           <div class="prompt-label">追加负向提示词 <span class="prompt-hint">（追加到系统默认压制词之后，不会替换；留空仅用默认）</span></div>
           <PromptEditor v-model="assetEditing.negative" :rows="2" placeholder="追加要压制的元素，逗号分隔，如：crowd, vehicles（可留空）" kind="negative" />
@@ -52,7 +54,9 @@
         :loading="assetBusySet.has(assetEditingKey)"
         :disabled="!assetEditing?.prompt.trim()"
         @click="confirmAssetRegenerate"
-      >重新生成</el-button>
+      >
+重新生成
+</el-button>
     </template>
   </el-dialog>
 </template>

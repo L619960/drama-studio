@@ -47,7 +47,9 @@
                 type="primary"
                 class="resume-btn"
                 @click.stop="emit('resumeFrom', stage)"
-              >从此重跑</el-button>
+              >
+从此重跑
+</el-button>
             </div>
             <div v-if="state?.stages[stage]?.message" class="stage-msg" :title="state.stages[stage].message">{{ state.stages[stage].message }}</div>
             <el-progress

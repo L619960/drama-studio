@@ -269,7 +269,7 @@ export function registerAssetIpc(ctx: AssetIpcCtx): void {
         await stepLog(`face c${ci} done`)
         faceCandRels.push({ rel, seed })
       }
-      let faceRel = `projects/${input.projectId}/characters/${char.id}_face.png`
+      const faceRel = `projects/${input.projectId}/characters/${char.id}_face.png`
       let pickNote = '单候选'
       if (faceCount > 1) {
         const items = await Promise.all(faceCandRels.map(async (c, i) => {

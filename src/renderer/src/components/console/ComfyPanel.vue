@@ -10,7 +10,8 @@
       <div class="comfy-card">
         <div class="comfy-card-title">服务状态</div>
         <div v-if="comfyStats" class="comfy-card-body">
-          <div class="kv"><span class="k">连接</span>
+          <div class="kv">
+<span class="k">连接</span>
             <span class="v"><el-tag size="small" type="success" effect="dark">在线</el-tag></span>
           </div>
           <div class="kv"><span class="k">版本</span><span class="v">ComfyUI {{ comfyStats.version || '未知' }}</span></div>
@@ -60,7 +61,9 @@
           :type="n.toLowerCase() === nodeQuery.trim().toLowerCase() ? 'success' : 'info'"
           effect="plain"
           class="node-tag"
-        >{{ n }}</el-tag>
+        >
+{{ n }}
+</el-tag>
         <div v-if="!matchedNodes.length" class="muted">没有匹配的已安装节点（可能缺自定义节点包）</div>
         <div v-if="matchedNodes.length > 30" class="muted">…仅显示前 30 个（共 {{ matchedNodes.length }} 个匹配）</div>
       </div>

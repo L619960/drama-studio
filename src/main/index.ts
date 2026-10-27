@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain, dialog, shell, protocol } from 'electron'
 import { join, resolve, sep, isAbsolute, extname, dirname } from 'node:path'
 import * as fs from 'node:fs/promises'
-import { realpathSync, existsSync, appendFileSync, mkdirSync } from 'node:fs'
+import { realpathSync, existsSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import {
   IpcChannels,
@@ -72,25 +72,11 @@ import {
 } from '../shared/imagePrompts'
 import { resolveCreation } from '../shared/creationSettings'
 import { applyAutoFixes, auditProjectPrompts, fillableFieldsOf, assignField } from '../shared/promptAudit'
+import { installGlobalErrorHandlers } from './core/errorHandler'
 
 // ===== 全局异常兜底：未捕获的 Promise rejection / 同步异常落盘，防主进程静默崩溃 =====
-// 写日志用同步 API（进程可能正在退出，异步 fs 来不及 flush）；目录创建失败等全部静默吞掉。
-function appendMainErrorLog(kind: string, err: unknown): void {
-  try {
-    const logDir = join(app.getPath('userData'), 'logs')
-    mkdirSync(logDir, { recursive: true })
-    const stack = (err && typeof err === 'object' && 'stack' in err) ? String((err as { stack: unknown }).stack) : String(err)
-    appendFileSync(join(logDir, 'main-error.log'), `${new Date().toISOString()} ${kind}: ${stack}\n`)
-  } catch { /* 日志写失败不再二次抛出 */ }
-}
-process.on('unhandledRejection', (reason) => {
-  console.error('[unhandledRejection]', reason)
-  appendMainErrorLog('unhandledRejection', reason)
-})
-process.on('uncaughtException', (err) => {
-  console.error('[uncaughtException]', err)
-  appendMainErrorLog('uncaughtException', err)
-})
+// 实现抽离到 ./core/errorHandler.ts（便于单测）；这里只负责接入 userData/logs 目录。
+installGlobalErrorHandlers(join(app.getPath('userData'), 'logs'))
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged
 // 开发态开启 CDP 调试口，便于自动化测试工具（Playwright 等）连接操作窗口。

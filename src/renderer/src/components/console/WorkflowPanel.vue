@@ -24,7 +24,9 @@
           plain
           :icon="RefreshRight"
           @click="emit('retryFailed')"
-        >重试失败镜头 ({{ failedCount }})</el-button>
+        >
+重试失败镜头 ({{ failedCount }})
+</el-button>
       </div>
     </header>
 
@@ -56,7 +58,9 @@
           plain
           :icon="RefreshRight"
           @click="emit('retryFailed')"
-        >重试失败镜头 ({{ failedCount }})</el-button>
+        >
+重试失败镜头 ({{ failedCount }})
+</el-button>
         <el-button
           v-if="pendingCount > 0"
           size="small"
@@ -64,7 +68,9 @@
           plain
           :icon="VideoPlay"
           @click="emit('retryPending')"
-        >续渲待渲染 ({{ pendingCount }})</el-button>
+        >
+续渲待渲染 ({{ pendingCount }})
+</el-button>
       </div>
     </el-alert>
 

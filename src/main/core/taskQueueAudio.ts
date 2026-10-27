@@ -99,7 +99,11 @@ export async function prepareShotAudio(
       }
       try {
         audioRelPath = await Promise.race([
-          rt.tts.generate(shot.dialogue, voice, rel, rate, volume),
+          rt.tts.generate(shot.dialogue, voice, rel, rate, volume, () => {
+            // 同步探一次取消状态：取消时 checkCancelled 直接抛，轮询循环下一轮即中断
+            rt.checkCancelled(projectId, shot.id)
+            return false
+          }),
           watcher.promise
         ])
         shot.audioPath = audioRelPath

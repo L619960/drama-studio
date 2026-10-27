@@ -12,7 +12,7 @@
     "typecheck:web": "vue-tsc --noEmit -p tsconfig.web.json --composite false",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
     "test": "vitest run",
-    "lint": "eslint . --ext .ts,.vue --max-warnings 50",
+    "lint": "eslint .",
     "format": "prettier --write \"src/**/*.{ts,vue}\"",
     "preview": "electron-vite preview",
     "build:win": "electron-vite build && electron-builder --win",

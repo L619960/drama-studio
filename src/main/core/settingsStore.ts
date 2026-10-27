@@ -114,6 +114,12 @@ export class SettingsStore {
           void this.migrateApiKeyToEncrypted().catch(() => undefined)
         }
       }
+      // 旧配置迁移（merge 会用默认值填满字段，迁移必须在 merge 前做）：
+      // 无 finalReviewGate 字段时继承旧 render.reviewGate 取值
+      if (saved?.render && typeof saved.render === 'object' && !('finalReviewGate' in saved.render)
+        && typeof saved.render.reviewGate === 'string') {
+        saved.render.finalReviewGate = saved.render.reviewGate
+      }
       // 深合并，确保新字段有默认值
       return this.normalize(this.merge(DEFAULT_SETTINGS, saved))
     } catch {
@@ -233,13 +239,9 @@ export class SettingsStore {
         lipSyncMode: this.enumOf(s.render?.lipSyncMode, ['auto', 'latentsync', 'h3-native'], creation.edit.lipSyncMode),
         shotReviewGate: this.enumOf(s.render?.shotReviewGate, ['off', 'warn', 'block'], 'block'),
         // 旧镜像已删：render.reviewGate 不再被 creation.edit.reviewGate 覆盖（S-01 双字段解耦）。
-        // 成片复审门读 finalReviewGate；旧配置无 finalReviewGate 时兼容迁移旧 reviewGate 取值。
+        // 成片复审门读 finalReviewGate；旧配置无 finalReviewGate 时由 get() 在 merge 前迁移旧 reviewGate 取值。
         reviewGate: this.enumOf(s.render?.reviewGate, ['off', 'warn', 'block'], 'block'),
-        finalReviewGate: this.enumOf(
-          s.render?.finalReviewGate ?? s.render?.reviewGate,
-          ['off', 'warn', 'block'],
-          'block'
-        ),
+        finalReviewGate: this.enumOf(s.render?.finalReviewGate, ['off', 'warn', 'block'], 'block'),
         consistencyMode: this.enumOf(s.render?.consistencyMode, ['off', 'warn', 'rerender'], 'warn'),
         resolutionTier: this.enumOf(s.render?.resolutionTier, ['auto', 'low', 'mid', 'standard', 'high', 'ultra'], 'auto'),
         oomRetry: s.render?.oomRetry !== false,

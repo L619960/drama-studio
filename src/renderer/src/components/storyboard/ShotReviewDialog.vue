@@ -13,7 +13,8 @@
         <div class="review-right">
           <div class="review-meta">
             <div class="review-meta-row"><span class="meta-label">场景</span><span class="meta-value">{{ shot.scene || '（未填）' }}</span></div>
-            <div class="review-meta-row"><span class="meta-label">角色</span>
+            <div class="review-meta-row">
+<span class="meta-label">角色</span>
               <span class="meta-value">
                 <el-tag v-for="cid in shot.characterIds" :key="cid" size="small" style="margin-right:4px">
                   {{ getCharacterName(cid) }}
@@ -61,7 +62,9 @@
                 :model-value="shot ? !!shot.reviewed : false"
                 @update:model-value="onCheckUpdate"
                 @change="() => emit('reviewed')"
-              >我已核对本镜分镜图，确认无误</el-checkbox>
+              >
+我已核对本镜分镜图，确认无误
+</el-checkbox>
               <div class="form-tip">确认后渲染前可据此跳过；发现问题点「重出首帧」或点「编辑」修改</div>
             </div>
           </div>

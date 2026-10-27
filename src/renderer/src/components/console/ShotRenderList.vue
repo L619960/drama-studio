@@ -6,7 +6,9 @@
         <el-checkbox
           :model-value="allShotsSelected"
           @change="toggleSelectAll"
-        >全选</el-checkbox>
+        >
+全选
+</el-checkbox>
         <span class="batch-count">已选 {{ selectedShotIds.length }} / {{ project?.shots.length }} 镜</span>
         <el-select v-model="batchWorkflow" placeholder="统一工作流（留空不改）" clearable size="small" style="width: 220px">
           <el-option v-for="w in videoWorkflows" :key="w.name" :label="wfLabel(w)" :value="w.name" />
@@ -18,7 +20,9 @@
           :disabled="batchRerendering"
           :loading="batchRerendering"
           @click="rerenderSelected"
-        >批量重渲 ({{ selectedShotIds.length }})</el-button>
+        >
+批量重渲 ({{ selectedShotIds.length }})
+</el-button>
         <el-button size="small" link @click="selectedShotIds = []">清空选择</el-button>
       </div>
       <div v-for="shot in project.shots" :key="shot.id" class="shot-card" :class="[`st-${shot.status}`, { 'is-selected': selectedShotIds.includes(shot.id) }]">
@@ -96,7 +100,9 @@
               :loading="rerenderingShotId === shot.id"
               :disabled="!!rerenderingShotId && rerenderingShotId !== shot.id"
               @click="rerenderShot(shot)"
-            >重渲此镜</el-button>
+            >
+重渲此镜
+</el-button>
           </div>
         </div>
       </div>

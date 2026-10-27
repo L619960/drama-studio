@@ -22,7 +22,9 @@
           class="ctx-item ctx-history"
           :title="item"
           @click="pickHistory(item)"
-        >{{ item }}</div>
+        >
+{{ item }}
+</div>
         <div class="ctx-item ctx-muted" @click="clearHistory">清除本框历史</div>
       </template>
     </div>

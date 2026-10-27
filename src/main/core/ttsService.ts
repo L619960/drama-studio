@@ -21,6 +21,8 @@ export interface SynthesizeOptions {
   outputPath: string
   rate?: string
   volume?: string
+  /** 取消探测：轮询循环每轮调用，返回 true 则中断 Qwen 克隆等待（对齐 generateClone） */
+  shouldAbort?: () => boolean
 }
 
 export interface CloneOptions {
@@ -61,10 +63,11 @@ export class TTSService {
     voice: string,
     relativePath: string,
     rate?: string,
-    volume?: string
+    volume?: string,
+    shouldAbort?: () => boolean
   ): Promise<string> {
     const outputPath = path.join(this.baseDir, relativePath)
-    await this.synthesize({ text, voice, rate, volume, outputPath })
+    await this.synthesize({ text, voice, rate, volume, outputPath, shouldAbort })
     return relativePath
   }
 
@@ -161,6 +164,7 @@ export class TTSService {
     const deadline = Date.now() + 600_000
     let output: { filename: string; subfolder: string; type: string } | null = null
     while (Date.now() < deadline) {
+      if (options.shouldAbort?.()) throw new Error('TTS 已取消')
       await new Promise(r => setTimeout(r, 1500))
       const history = await this.comfyui.getHistory(promptId)
       if (!history) continue

@@ -56,7 +56,9 @@
           :disabled="comfyuiConnected"
           style="margin-left: 8px"
           @click="startComfyUI"
-        >启动 ComfyUI</el-button>
+        >
+启动 ComfyUI
+</el-button>
         <el-button size="small" type="danger" plain :loading="stoppingComfy" :disabled="!comfyuiConnected || comfyuiStarting" style="margin-left: 8px" @click="stopComfyUI">
           {{ stoppingComfy ? '停止中...' : '停止 ComfyUI' }}
         </el-button>

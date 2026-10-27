@@ -74,7 +74,9 @@
               :key="id"
               type="danger"
               size="small"
-            >{{ shotIndexById(id) }}</el-tag>
+            >
+{{ shotIndexById(id) }}
+</el-tag>
             <el-button size="small" type="danger" plain :loading="retrying" @click="retryFailed">
               重试失败镜头 ({{ state.failedShotIds.length }})
             </el-button>
@@ -95,7 +97,9 @@
               :key="id"
               type="danger"
               size="small"
-            >{{ shotIndexById(id) }}</el-tag>
+            >
+{{ shotIndexById(id) }}
+</el-tag>
             <el-button size="small" type="danger" plain :loading="retrying" @click="retryFailed">
               重试失败镜头 ({{ state.failedShotIds.length }})
             </el-button>
@@ -106,7 +110,9 @@
               v-for="(issue, i) in state.reviewIssues"
               :key="i"
               class="review-issue"
-            >{{ issue }}</div>
+            >
+{{ issue }}
+</div>
           </div>
         </template>
       </div>
@@ -116,16 +122,22 @@
         v-if="state?.running"
         type="danger"
         @click="cancelDirector"
-      >取消制作</el-button>
+      >
+取消制作
+</el-button>
       <template v-else>
         <el-button
           v-if="state?.finalPath"
           @click="locateFinal"
-        >在文件夹中显示</el-button>
+        >
+在文件夹中显示
+</el-button>
         <el-button
           type="primary"
           @click="goResult"
-        >前往成片页</el-button>
+        >
+前往成片页
+</el-button>
       </template>
     </template>
   </el-dialog>

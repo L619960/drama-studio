@@ -27,7 +27,9 @@
             class="quick-chip"
             effect="plain"
             @click="emit('useQuick', q)"
-          >{{ q }}</el-tag>
+          >
+{{ q }}
+</el-tag>
         </div>
       </div>
 

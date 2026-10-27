@@ -96,7 +96,9 @@
           type="primary"
           :disabled="!revisedScript"
           @click="applyRevision"
-        >应用修改后剧本</el-button>
+        >
+应用修改后剧本
+</el-button>
       </template>
     </el-dialog>
 

@@ -108,21 +108,27 @@
             size="small"
             :loading="retryingId === row.id"
             @click.stop="retryShot(row)"
-          >重试</el-button>
+          >
+重试
+</el-button>
           <el-button
             v-if="row.status === 'rendering'"
             link
             type="danger"
             size="small"
             @click.stop="cancelShot(row)"
-          >取消</el-button>
+          >
+取消
+</el-button>
           <el-button
             v-if="row.status === 'done' && row.segmentPath"
             link
             type="success"
             size="small"
             @click.stop="previewShot(row)"
-          >预览</el-button>
+          >
+预览
+</el-button>
         </template>
       </el-table-column>
     </el-table>
