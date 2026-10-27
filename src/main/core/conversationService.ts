@@ -5,15 +5,15 @@ import * as path from 'node:path'
 import axios from 'axios'
 import { shell } from 'electron'
 import { LLMService, type ChatMessage, type ToolSpec } from './llmService'
-import { SkillService, BUILTIN_TOOL_SPECS, customToolSpec } from './skillService'
-import { COMFY_MCP_PREFIX, type ComfyMcpService } from './comfyMcpService'
+import { SkillService } from './skillService'
+import type { ComfyMcpService } from './comfyMcpService'
 import type { MemoryStore } from './memoryStore'
 import type { DirectorAgent } from './directorAgent'
 import type { TaskQueue } from './taskQueue'
 import type { ProjectStore } from './projectStore'
 import type { ComfyUIClient } from './comfyuiClient'
 import type { WorkflowLoader } from './workflowLoader'
-import type { WorkflowLibrary, LibraryWorkflowItem } from './workflowLibrary'
+import type { WorkflowLibrary } from './workflowLibrary'
 import type { SkillLibrary } from './skillLibrary'
 import type { FFmpegService } from './ffmpegService'
 import type { SettingsStore } from './settingsStore'
@@ -23,24 +23,15 @@ import type {
 } from '../../shared/ipcTypes'
 import { SELF_LEARN_PROMPT } from '../../shared/ipcTypes'
 import { atomicWriteJson } from './fsUtil'
-
-/** 工具循环不设业务步数上限（重渲 20 镜需 60+ 轮）；此值仅为防失控的绝对保险，正常任务远达不到 */
-const MAX_TOOL_ROUNDS = 1000
-/** 连续多轮完全相同的工具调用（同工具+同参数）判定死循环，强制收尾总结 */
-const SAME_CALL_LIMIT = 20
-const HISTORY_LIMIT = 80 // 只携带最近 80 条，控制 token
-const RESULT_LIMIT = 24000 // 工具结果截断阈值（保证 20+ 镜项目信息不被腰斩）
-/** token 优化：重建历史时仅最近 N 条工具结果保留全文，更早的压缩为短摘要（LLM 已消费过其内容，关键结论在后续 assistant 消息里） */
-const FULL_TOOL_RESULTS = 16
-const OLD_RESULT_KEEP = 320
-/** token 优化：工作上下文（不含 system/工具描述）字符预算，超出按「消息组」从最旧丢弃，防长任务平方级膨胀。
- *  40K → 80K（2026-10 放宽 agent 自由度：长任务多镜改造要求跨更长历史的连贯记忆，
- *  预算 80K 字符 ≈ 6 万 tokens/轮，覆盖最近 16 条工具结果全文 + 更长的对话上下文） */
-const CONTEXT_CHAR_BUDGET = 80000
-
-function mid(): string {
-  return `m_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
-}
+import { HISTORY_LIMIT, RESULT_LIMIT } from './conversationConstants'
+import {
+  scopeFileImpl, listImpl, clearImpl, forgetProjectImpl, saveImpl
+} from './conversationSession'
+import {
+  doSendImpl, emitToolImpl, toolLabelImpl, prettyArgsImpl,
+  toLlmMessagesImpl, trimByBudgetImpl
+} from './conversationAgentLoop'
+import { executeToolImpl, runCustomSkillImpl } from './conversationToolDispatcher'
 
 /**
  * 导演对话服务：
@@ -50,73 +41,54 @@ function mid(): string {
  */
 export class ConversationService extends EventEmitter {
   /** 全局对话里最近操作过的项目（开拍后自动绑定，后续项目类工具默认作用于它） */
-  private lastProjectId?: string
+  lastProjectId?: string
 
   constructor(
-    private baseDir: string,
-    private llm: LLMService,
-    private skills: SkillService,
-    private director: DirectorAgent,
-    private queue: TaskQueue,
-    private projects: ProjectStore,
-    private comfy: ComfyUIClient,
-    private workflows: WorkflowLoader,
-    private memory: MemoryStore,
-    private ffmpeg: FFmpegService,
-    private settings: SettingsStore,
-    private skillLibrary?: SkillLibrary,
-    private workflowLibrary?: WorkflowLibrary,
-    private comfyMcp?: ComfyMcpService
+    public baseDir: string,
+    public llm: LLMService,
+    public skills: SkillService,
+    public director: DirectorAgent,
+    public queue: TaskQueue,
+    public projects: ProjectStore,
+    public comfy: ComfyUIClient,
+    public workflows: WorkflowLoader,
+    public memory: MemoryStore,
+    public ffmpeg: FFmpegService,
+    public settings: SettingsStore,
+    public skillLibrary?: SkillLibrary,
+    public workflowLibrary?: WorkflowLibrary,
+    public comfyMcp?: ComfyMcpService
   ) {
     super()
   }
 
-  private scopeFile(scope: string): string {
-    const safe = /^[a-zA-Z0-9_-]+$/.test(scope) ? scope : 'global'
-    return path.join(this.baseDir, 'conversations', `${safe}.json`)
+  // ===== 会话持久化（委托 conversationSession.ts） =====
+
+  scopeFile(scope: string): string {
+    return scopeFileImpl(this, scope)
   }
 
   async list(scope: string): Promise<ConversationMessage[]> {
-    const file = this.scopeFile(scope)
-    let raw: string
-    try {
-      raw = await fs.readFile(file, 'utf8')
-    } catch {
-      return [] // 文件不存在/读取失败：视为空历史
-    }
-    try {
-      const parsed = JSON.parse(raw) as unknown
-      if (!Array.isArray(parsed)) throw new Error('历史文件不是消息数组')
-      return parsed as ConversationMessage[]
-    } catch (e) {
-      // C6：历史文件损坏时先备份再按空历史处理，防止 save 直接覆盖清零导致无法找回
-      const bak = `${file}.corrupt-${Date.now()}.bak`
-      await fs.writeFile(bak, raw, 'utf8').catch(() => undefined)
-      console.warn(`[conversationService] 会话历史解析失败，已备份到 ${bak}:`, e instanceof Error ? e.message : e)
-      return []
-    }
+    return listImpl(this, scope)
   }
 
   async clear(scope: string): Promise<void> {
-    await fs.rm(this.scopeFile(scope), { force: true })
+    return clearImpl(this, scope)
   }
 
   /** 项目被删除时清理主进程内存指针，防止「幽灵项目」残留 */
   forgetProject(id: string): void {
-    if (this.lastProjectId === id) this.lastProjectId = undefined
+    return forgetProjectImpl(this, id)
   }
 
-  private async save(scope: string, msgs: ConversationMessage[]): Promise<void> {
-    const file = this.scopeFile(scope)
-    await fs.mkdir(path.dirname(file), { recursive: true })
-    await atomicWriteJson(file, msgs.slice(-200))
+  async save(scope: string, msgs: ConversationMessage[]): Promise<void> {
+    return saveImpl(this, scope, msgs)
   }
 
-  /** 发送一条用户消息，执行工具调用循环，返回更新后的完整消息列表 */
   /** 每个对话 scope 一条 Promise 链：并发 send 串行执行，避免历史读-改-写互相覆盖 */
-  private sendChains = new Map<string, Promise<unknown>>()
+  sendChains = new Map<string, Promise<unknown>>()
   /** 每个对话 scope 的 AbortController 集合：运行中与排队中的发送都在册，stop 一并取消（C5） */
-  private aborts = new Map<string, Set<AbortController>>()
+  aborts = new Map<string, Set<AbortController>>()
 
   async send(scope: string, text: string): Promise<ConversationMessage[]> {
     const prev = this.sendChains.get(scope) ?? Promise.resolve()
@@ -159,511 +131,46 @@ export class ConversationService extends EventEmitter {
     return kept
   }
 
-  private async doSend(scope: string, text: string, controller: AbortController): Promise<ConversationMessage[]> {
-    // C5：排队期被取消的发送直接返回现状（不落用户消息、不启动 LLM）
-    if (controller.signal.aborted) return this.list(scope)
-    const history = await this.list(scope)
-    history.push({ id: mid(), role: 'user', content: text, ts: Date.now() })
-    await this.save(scope, history)
+  // ===== agent loop（委托 conversationAgentLoop.ts） =====
 
-    const system = await this.buildSystemPrompt(scope)
-    const allSkills = await this.skills.list()
-    const enabled = allSkills.filter(s => s.enabled)
-    const tools: ToolSpec[] = [
-      // 注意：BUILTIN_TOOL_SPECS 是按工具名索引的查表，skill 配置里可能出现
-      // 已下线的 tool 名，查不到会混入 undefined 导致 LLM 工具描述损坏（M-11）
-      ...enabled.filter(s => s.kind === 'tool' && s.tool && BUILTIN_TOOL_SPECS[s.tool])
-        .map(s => BUILTIN_TOOL_SPECS[s.tool!]),
-      ...enabled.filter(s => s.kind === 'prompt').map(customToolSpec),
-      // comfy-mcp：一对多动态展开（tool==='comfy_mcp' 的技能开启时注入全量 MCP 工具）
-      // 未安装 venv 时 listToolSpecs 抛错——吞掉并让 LLM 走内置工具，不阻断对话
-      ...(enabled.some(s => s.tool === 'comfy_mcp') && this.comfyMcp
-        ? await this.comfyMcp.listToolSpecs().catch(() => [])
-        : [])
-    ]
-
-    // 工作消息序列：system + 历史重建（assistant 工具调用与其结果严格配对）
-    // token 优化：先压缩历史工具结果，再按预算裁剪
-    const converted = this.toLlmMessages(history.slice(-HISTORY_LIMIT))
-    // C1：钉住目标为本轮用户指令（converted 末尾即刚推入的 user 消息），而非窗口内最旧 user
-    const currentInstruction = converted[converted.length - 1]
-    const working: ChatMessage[] = [
-      { role: 'system', content: system },
-      ...this.trimByBudget(converted, currentInstruction)
-    ]
-
-    const signal = controller.signal
-
-    try {
-      let lastCallSig = ''
-      let sameCallCount = 0
-      let stopReason: string | null = null // 非空 = 达到保险上限或死循环，需总结收尾而非硬截断
-
-      for (let round = 0; ; round++) {
-        if (round >= MAX_TOOL_ROUNDS) {
-          stopReason = `工具调用已达 ${MAX_TOOL_ROUNDS} 轮保险上限（防失控设计，正常任务远达不到）`
-          break
-        }
-        // token 优化：每轮开跑前做一次预算裁剪。工具循环持续变长，早期轮次的工具
-        // 结果 LLM 已消费，超预算时从最旧的消息组丢弃（配对完整性由分组保证）
-        if (round > 0) {
-          const trimmed = this.trimByBudget(working.slice(1), currentInstruction)
-          if (trimmed.length !== working.length - 1) {
-            working.length = 1
-            working.push(...trimmed)
-          }
-        }
-        // 高推理档 + 稍高温度：导演对话需要深层规划与创意，不再压到最低档
-        const reply = await this.llm.chatCompletion(working, { tools, temperature: 0.7, signal, timeoutMs: 300000, effort: 'high' })
-
-        if (!reply.tool_calls?.length) {
-          history.push({
-            id: mid(), role: 'assistant',
-            content: reply.content || '（导演没有返回内容，请重试）',
-            ts: Date.now()
-          })
-          await this.save(scope, history)
-          return history
-        }
-
-        // 死循环保险：连续多轮发起完全相同的调用（参数始终不变）大概率卡死，第 SAME_CALL_LIMIT 轮拦截
-        const sig = reply.tool_calls.map(c => `${c.function.name}:${c.function.arguments}`).join('|')
-        sameCallCount = sig === lastCallSig ? sameCallCount + 1 : 0
-        lastCallSig = sig
-        if (sameCallCount >= SAME_CALL_LIMIT - 1) {
-          stopReason = `连续 ${SAME_CALL_LIMIT} 轮发起完全相同的工具调用且参数从未变化（疑似死循环）`
-          break // 这条 reply 不入列、不再重复执行
-        }
-
-        // API 原始 assistant 消息直接进工作序列（保留原始 call id 与 arguments）
-        working.push(reply)
-
-        // 面板展示用的工具调用记录
-        const records: ToolCallRecord[] = reply.tool_calls.map(c => ({
-          id: c.id,
-          name: c.function.name,
-          label: this.toolLabel(c.function.name, enabled),
-          argsText: this.prettyArgs(c.function.arguments),
-          argsJson: c.function.arguments,
-          status: 'running'
-        }))
-        const assistantMsg: ConversationMessage = {
-          id: mid(), role: 'assistant',
-          content: reply.content || '',
-          toolCalls: records,
-          ts: Date.now()
-        }
-        history.push(assistantMsg)
-        await this.save(scope, history)
-
-        for (let i = 0; i < reply.tool_calls.length; i++) {
-          if (signal.aborted) throw new Error('aborted')
-          const call = reply.tool_calls[i]
-          this.emitTool(scope, assistantMsg.id, records[i])
-          const result = await this.executeTool(scope, call.function.name, call.function.arguments, signal)
-          const updated: ToolCallRecord = {
-            ...records[i],
-            status: result.ok ? 'done' : 'error',
-            result: result.text
-          }
-          assistantMsg.toolCalls![i] = updated
-          this.emitTool(scope, assistantMsg.id, updated)
-          await this.save(scope, history)
-          working.push({
-            role: 'tool',
-            tool_call_id: call.id,
-            content: result.text.slice(0, RESULT_LIMIT)
-          })
-        }
-      }
-      // 触发保险上限/死循环时：注入系统提示让 LLM 基于已有结果总结，而不是硬截断
-      if (stopReason) {
-        working.push({
-          role: 'user',
-          content: `（系统提示：${stopReason}。请基于以上已执行的工具结果，总结当前进度、已完成与未完成事项，并给出下一步建议；不要再调用工具。）`
-        })
-        const final = await this.llm.chatCompletion(working, { temperature: 0.7, signal, timeoutMs: 300000, effort: 'high' })
-        history.push({
-          id: mid(), role: 'assistant',
-          content: final.content || '（执行中断，请查看上方工具结果；可让我继续。）',
-          ts: Date.now()
-        })
-      }
-    } catch (e) {
-      if (axios.isCancel(e) || signal.aborted) {
-        // C3：停止时把仍处于 running 的工具记录回填为已中断，避免面板永久转圈、
-        // 历史重建时产出「工具未执行完成」的假配对
-        for (const m of history) {
-          if (m.role !== 'assistant' || !m.toolCalls) continue
-          for (const c of m.toolCalls) {
-            if (c.status === 'running') {
-              c.status = 'error'
-              c.result = '（本轮已停止，工具未执行完成）'
-              this.emitTool(scope, m.id, c)
-            }
-          }
-        }
-        // 用户主动停止：落一条轻提示，不按错误处理
-        history.push({
-          id: mid(), role: 'assistant',
-          content: '（本轮操作已停止，可继续补充指令或点消息旁的回退重新来）',
-          ts: Date.now()
-        })
-      } else {
-        history.push({
-          id: mid(), role: 'assistant',
-          content: `出错了：${e instanceof Error ? e.message : String(e)}`,
-          ts: Date.now(), error: true
-        })
-      }
-    } finally {
-      const set = this.aborts.get(scope)
-      if (set) {
-        set.delete(controller)
-        if (set.size === 0) this.aborts.delete(scope)
-      }
-    }
-    await this.save(scope, history)
-    return history
+  async doSend(scope: string, text: string, controller: AbortController): Promise<ConversationMessage[]> {
+    return doSendImpl(this, scope, text, controller)
   }
 
-  private emitTool(scope: string, messageId: string, toolCall: ToolCallRecord): void {
-    const e: ConversationToolEvent = { type: 'conversation:tool', scope, messageId, toolCall }
-    this.emit('tool', e)
+  emitTool(scope: string, messageId: string, toolCall: ToolCallRecord): void {
+    return emitToolImpl(this, scope, messageId, toolCall)
   }
 
-  private toolLabel(name: string, skills: Skill[]): string {
-    if (name.startsWith('custom_')) {
-      return skills.find(s => `custom_${s.id}` === name)?.name || '自定义技能'
-    }
-    return skills.find(s => s.tool === name)?.name || name
+  toolLabel(name: string, skills: Skill[]): string {
+    return toolLabelImpl(this, name, skills)
   }
 
-  private prettyArgs(raw: string): string {
-    try {
-      const obj = JSON.parse(raw) as Record<string, unknown>
-      return Object.entries(obj)
-        .map(([k, v]) => `${k}=${typeof v === 'string' ? v : JSON.stringify(v)}`)
-        .join('，')
-    } catch {
-      return raw
-    }
+  prettyArgs(raw: string): string {
+    return prettyArgsImpl(this, raw)
   }
 
-  /**
-   * 持久化消息 → OpenAI 消息序列。
-   * 含工具调用的 assistant 消息后，严格按顺序补配对的 role=tool 结果消息。
-   * token 优化：工具结果是最重的上下文（单条可达 RESULT_LIMIT=12KB），逐轮原样
-   * 重发是消耗主因。仅最近 FULL_TOOL_RESULTS 条保留全文，更早的截为短摘要——
-   * 其内容 LLM 已消费过，关键结论沉淀在后续 assistant 回复里；需要完整数据可重调工具。
-   */
-  private toLlmMessages(history: ConversationMessage[]): ChatMessage[] {
-    // 先从末尾向前标记最近 N 条工具结果（全文保留）
-    const fullSet = new Set<string>()
-    let remaining = FULL_TOOL_RESULTS
-    for (let i = history.length - 1; i >= 0 && remaining > 0; i--) {
-      const m = history[i]
-      if (m.role === 'assistant' && m.toolCalls?.length) {
-        for (let j = m.toolCalls.length - 1; j >= 0 && remaining > 0; j--) {
-          fullSet.add(`${i}:${j}`)
-          remaining--
-        }
-      }
-    }
-
-    const out: ChatMessage[] = []
-    for (let i = 0; i < history.length; i++) {
-      const m = history[i]
-      if (m.role === 'user') {
-        out.push({ role: 'user', content: m.content })
-      } else if (m.role === 'assistant' && m.toolCalls?.length) {
-        out.push({
-          role: 'assistant',
-          content: m.content || '',
-          tool_calls: m.toolCalls.map(c => ({
-            id: c.id,
-            type: 'function' as const,
-            function: { name: c.name, arguments: c.argsJson || '{}' }
-          }))
-        })
-        for (let j = 0; j < m.toolCalls.length; j++) {
-          const c = m.toolCalls[j]
-          const raw = (c.status === 'running' ? '工具未执行完成' : c.result) || '（无返回）'
-          const content = fullSet.has(`${i}:${j}`) || raw.length <= OLD_RESULT_KEEP
-            ? raw
-            : `${raw.slice(0, OLD_RESULT_KEEP)}…（早期工具结果已压缩：结论见后续回复，需要完整数据请重新调用工具）`
-          out.push({ role: 'tool', tool_call_id: c.id, content })
-        }
-      } else if (m.role === 'assistant') {
-        out.push({ role: 'assistant', content: m.content })
-      }
-    }
-    return out
+  toLlmMessages(history: ConversationMessage[]): ChatMessage[] {
+    return toLlmMessagesImpl(this, history)
   }
 
-  /** 估算单条消息字符量（content + 工具调用参数），预算裁剪用 */
-  private static msgChars(m: ChatMessage): number {
-    let n = (m.content || '').length
-    if (m.tool_calls) {
-      for (const c of m.tool_calls) n += c.function.name.length + c.function.arguments.length
-    }
-    return n
-  }
-
-  /**
-   * 上下文预算裁剪：总字符量超 CONTEXT_CHAR_BUDGET 时，从最旧的「消息组」开始丢弃。
-   * 消息组 = assistant-with-tools 与其全部 tool 结果整体，保证不拆散 OpenAI 严格配对；
-   * 最新一组无条件保留；本轮用户指令（pinTarget）钉住不丢且计入预算——长任务中裁掉
-   * 任务目标会让 agent 迷失乱调工具，反而更烧 token（C1：钉本轮指令而非窗口最旧 user；
-   * C2：钉住的消息占用预算额度，不再免费搭车）。
-   */
-  private trimByBudget(msgs: ChatMessage[], pinTarget?: ChatMessage): ChatMessage[] {
-    const total = msgs.reduce((n, m) => n + ConversationService.msgChars(m), 0)
-    if (total <= CONTEXT_CHAR_BUDGET) return msgs
-
-    // 从末尾向前分组
-    const groups: ChatMessage[][] = []
-    let i = msgs.length - 1
-    while (i >= 0) {
-      if (msgs[i].role === 'tool') {
-        let j = i
-        while (j >= 0 && msgs[j].role === 'tool') j--
-        if (j >= 0 && msgs[j].tool_calls?.length) {
-          groups.push(msgs.slice(j, i + 1))
-          i = j - 1
-        } else {
-          i-- // 孤儿 tool 消息（异常场景）：直接丢弃
-        }
-      } else {
-        groups.push([msgs[i]])
-        i--
-      }
-    }
-
-    // C1/C2：本轮指令所在组先从轮换中取出，作为强制保留项预先计入预算
-    let pinGroup: ChatMessage[] | null = null
-    if (pinTarget) {
-      const idx = groups.findIndex(g => g.includes(pinTarget))
-      if (idx >= 0) pinGroup = groups.splice(idx, 1)[0]
-    }
-
-    // 从最新往最旧累积，超预算即停（至少保留最新一组）
-    const kept: ChatMessage[][] = []
-    let acc = pinGroup ? pinGroup.reduce((n, m) => n + ConversationService.msgChars(m), 0) : 0
-    for (const g of groups) {
-      const size = g.reduce((n, m) => n + ConversationService.msgChars(m), 0)
-      if (kept.length > 0 && acc + size > CONTEXT_CHAR_BUDGET) break
-      kept.push(g)
-      acc += size
-    }
-    const ordered = kept.reverse().flat()
-
-    // 钉住的本轮指令置于最前（目标提醒位）：不影响其后消息的相对时序
-    if (pinGroup) ordered.unshift(...pinGroup)
-    return ordered
+  trimByBudget(msgs: ChatMessage[], pinTarget?: ChatMessage): ChatMessage[] {
+    return trimByBudgetImpl(this, msgs, pinTarget)
   }
 
   // ===== 工具执行 =====
 
-  private async executeTool(scope: string, name: string, argsJson: string, signal?: AbortSignal): Promise<{ ok: boolean; text: string }> {
-    let args: Record<string, unknown> = {}
-    try {
-      args = argsJson ? JSON.parse(argsJson) as Record<string, unknown> : {}
-    } catch {
-      return { ok: false, text: `参数不是合法 JSON：${argsJson}` }
-    }
-    // C4：工具执行前置取消检查——长耗时工具（自定义技能 LLM 调用等）透传 signal
-    if (signal?.aborted) return { ok: false, text: '（本轮已停止，工具未执行）' }
-    const pid = scope === 'global' ? undefined : scope
-    try {
-      if (name.startsWith(COMFY_MCP_PREFIX)) {
-        if (!this.comfyMcp) return { ok: false, text: 'ComfyUI-MCP 技能未启用或未安装' }
-        return await this.comfyMcp.callTool(name, args, signal)
-      }
-      if (name.startsWith('custom_')) return await this.runCustomSkill(name, args, signal)
-      switch (name) {
-        case 'start_director': return await this.tStart(pid, args)
-        case 'pause_director': return await this.tSimple(await this.resolvePid(pid), 'pause')
-        case 'resume_director': return await this.tSimple(await this.resolvePid(pid), 'resume')
-        case 'cancel_director': return await this.tSimple(await this.resolvePid(pid), 'cancel')
-        case 'get_director_status': return await this.tStatus(await this.resolvePid(pid))
-        case 'list_shots': return await this.tListShots(await this.resolvePid(pid))
-        case 'rerender_shots': return await this.tRerender(await this.resolvePid(pid), args)
-        case 'rebuild_frames': {
-          const pid2 = await this.resolvePid(pid)
-          const shotIndexes = Array.isArray(args.shot_indexes) ? (args.shot_indexes as number[]).map(Number) : []
-          if (!shotIndexes.length) return { ok: false, text: '未指定镜号（shot_indexes）' }
-          return await this.director.rebuildShotFirstFrames(pid2, shotIndexes)
-        }
-        case 'rerun_casting': return await this.director.rerunCasting(await this.resolvePid(pid))
-        case 'render_sample': return await this.tRenderSample(await this.resolvePid(pid), args)
-        case 'make_trailer': return await this.tMakeTrailer(await this.resolvePid(pid), args)
-        case 'get_comfyui_status': {
-          const ok = await this.comfy.healthCheck()
-          return { ok: true, text: JSON.stringify({ online: ok }) }
-        }
-        case 'list_workflows': {
-          const list = await this.workflows.list()
-          const s = await this.settings.get()
-          const p = pid ? await this.projects.get(pid).catch(() => null) : null
-          let library: unknown = null
-          if (this.workflowLibrary) {
-            const items = await this.workflowLibrary.list()
-            const byCat = new Map<string, LibraryWorkflowItem[]>()
-            for (const it of items) {
-              const arr = byCat.get(it.category) ?? []
-              arr.push(it)
-              byCat.set(it.category, arr)
-            }
-            library = {
-              total: items.length,
-              uiCount: items.filter(i => i.format === 'ui').length,
-              apiCount: items.filter(i => i.format === 'api').length,
-              categories: [...byCat.entries()].map(([category, list]) => ({
-                category,
-                count: list.length,
-                files: list.map(it => it.relPath)
-              }))
-            }
-          }
-          return { ok: true, text: JSON.stringify({
-            globalDefault: s.workflow.default,
-            projectDefault: p?.defaultWorkflow || null,
-            available: list.map(w => ({ name: w.name, placeholders: w.placeholders, capability: w.capability, hasImageInput: w.hasImageInput })),
-            // 工作流库（用户收集的 ComfyUI 工作流全集，多为 UI 格式）：
-            // 需用 import_library_workflow 转换导入后才能跑
-            library
-          }) }
-        }
-        case 'import_library_workflow': {
-          const rel = String(args.path || '').trim()
-          if (!rel) return { ok: false, text: '缺少 path（工作流库内相对路径，先用 list_workflows 查看 library）' }
-          if (!this.workflowLibrary) return { ok: false, text: '工作流库未配置（settings.comfyui.workflowLibraryDir）' }
-          try {
-            const objectInfo = await this.comfy.getObjectInfo()
-            const conv = this.workflowLibrary.convertToApi(rel, objectInfo)
-            const baseName = rel.split(/[\\/]/).pop()!.replace(/\.json$/i, '').replace(/[^\w一-龥-]/g, '_') || 'library_workflow'
-            const finalName = await this.workflows.createWorkflow(baseName, JSON.stringify(conv.graph))
-            const meta = await this.workflows.getMeta(finalName)
-            return { ok: true, text: JSON.stringify({
-              imported: finalName,
-              nodeCount: conv.nodeCount,
-              placeholders: meta.placeholders,
-              capability: meta.capability,
-              // 缺节点/缺模型请用 validate_workflows 校验；提示词/种子/参考图等动态字段用 get_workflow_params 查后 update_workflow_param 改
-              unknownNodeTypes: conv.unknownNodeTypes,
-              note: '已从工作流库导入为应用模板，可直接在渲染中使用；动态字段建议换成 $PROMPT$/$SEED$/$REF_IMAGE$ 占位符以复用流水线变量'
-            }) }
-          } catch (e) {
-            return { ok: false, text: `导入失败：${e instanceof Error ? e.message : String(e)}` }
-          }
-        }
-        case 'render_quick': {
-          // 快速生成入口：导演按用户意图自动选择工作流（t2v/i2v/flf2v/t2i/i2i）
-          // 用户给参考图 → 选 i2v/i2i 并把 ref_image 传绝对路径；纯文字 → t2v/t2i 不传图
-          const workflowName = String(args.workflow_name || '')
-          const prompt = String(args.prompt || '')
-          if (!workflowName || !prompt) return { ok: false, text: '缺少 workflow_name/prompt' }
-          try {
-            const out = await this.queue.quickRender({
-              workflowName,
-              prompt,
-              refImageAbs: args.ref_image ? String(args.ref_image) : undefined,
-              endImageAbs: args.end_image ? String(args.end_image) : undefined,
-              seed: typeof args.seed === 'number' ? args.seed : undefined,
-              durationSec: typeof args.duration_sec === 'number' ? args.duration_sec : undefined,
-              width: typeof args.width === 'number' ? args.width : undefined,
-              height: typeof args.height === 'number' ? args.height : undefined
-            })
-            return { ok: true, text: JSON.stringify({
-              workflow: workflowName,
-              output: out.outputAbs,
-              promptId: out.promptId,
-              note: '产物已保存，可直接打开观看；要改提示词/换参考图再生成就说「换个提示词再来一条」'
-            }) }
-          } catch (e) {
-            return { ok: false, text: `生成失败：${e instanceof Error ? e.message : String(e)}` }
-          }
-        }
-        case 'choose_workflow': return await this.tChooseWorkflow(pid, args)
-        case 'get_workflow_params': {
-          const name = String(args.workflow_name || '')
-          if (!name) return { ok: false, text: '缺少 workflow_name' }
-          // 工具层二次校验：load() 的名称白名单挡路径穿越，这里挡"不存在的名称"
-          //（否则底层 ENOENT 会以原始英文报错直透 LLM）（M-9）
-          if (!await this.workflowExists(name)) return { ok: false, text: `工作流不存在：${name}` }
-          const params = await this.workflows.getEditableParams(name)
-          return { ok: true, text: JSON.stringify(params.slice(0, 80)).slice(0, RESULT_LIMIT) }
-        }
-        case 'update_workflow_param': {
-          const name = String(args.workflow_name || '')
-          const nodeId = String(args.node_id || '')
-          const key = String(args.key || '')
-          if (!name || !nodeId || !key) return { ok: false, text: '缺少 workflow_name/node_id/key' }
-          if (!await this.workflowExists(name)) return { ok: false, text: `工作流不存在：${name}` }
-          const v = args.value
-          if (typeof v !== 'string' && typeof v !== 'number' && typeof v !== 'boolean') {
-            return { ok: false, text: 'value 必须是字符串/数字/布尔' }
-          }
-          await this.workflows.updateParam(name, nodeId, key, v)
-          return { ok: true, text: `已更新 ${name} 节点 ${nodeId} 的 ${key}` }
-        }
-        case 'create_workflow': {
-          const name = String(args.name || '')
-          const content = String(args.content || '')
-          if (!name || !content) return { ok: false, text: '缺少 name/content' }
-          const finalName = await this.workflows.createWorkflow(name, content)
-          return { ok: true, text: `工作流已创建：${finalName}（可在设置→工作流中查看）` }
-        }
-        case 'list_memories':
-          return await this.tListMemories(args.kind as MemoryKind | undefined)
-        case 'save_memory':
-          return await this.tSaveMemory(args)
-        case 'list_characters': return await this.tListCharacters(await this.resolvePid(pid))
-        case 'update_character': return await this.tUpdateCharacter(await this.resolvePid(pid), args)
-        case 'update_shot': return await this.tUpdateShot(await this.resolvePid(pid), args)
-        case 'add_shot': return await this.tAddShot(await this.resolvePid(pid), args)
-        case 'delete_shot': return await this.tDeleteShot(await this.resolvePid(pid), args)
-        case 'move_shot': return await this.tMoveShot(await this.resolvePid(pid), args)
-        case 'list_projects': return await this.tListProjects()
-        case 'open_project': return await this.tOpenProject(args)
-        case 'get_settings': return await this.tGetSettings()
-        case 'set_settings': return await this.tSetSettings(args)
-        case 'set_project_bgm': return await this.tSetProjectBgm(await this.resolvePid(pid), args)
-        case 'list_project_files': return await this.tListProjectFiles(await this.resolvePid(pid))
-        case 'open_file': return await this.tOpenFile(args)
-        case 'web_search': return await this.tWebSearch(args)
-        case 'fetch_url': return await this.tFetchUrl(args)
-        case 'create_skill': return await this.tCreateSkill(args)
-        case 'list_skills': return await this.tListSkills()
-        case 'update_skill': return await this.tUpdateSkill(args)
-        default:
-          return { ok: false, text: `未知工具：${name}` }
-      }
-    } catch (e) {
-      return { ok: false, text: `执行失败：${e instanceof Error ? e.message : String(e)}` }
-    }
+  // ===== 工具分发（委托 conversationToolDispatcher.ts） =====
+
+  async executeTool(scope: string, name: string, argsJson: string, signal?: AbortSignal): Promise<{ ok: boolean; text: string }> {
+    return executeToolImpl(this, scope, name, argsJson, signal)
   }
 
-  private async runCustomSkill(name: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<{ ok: boolean; text: string }> {
-    const skillId = name.replace(/^custom_/, '')
-    const all = await this.skills.list()
-    const skill = all.find(s => s.id === skillId)
-    if (!skill || !skill.enabled) return { ok: false, text: '技能不存在或已停用' }
-    const userText = String(args.user_text || '')
-    const system = (skill.promptTemplate || '').replace(/\{\{\s*input\s*\}\}/g, () => userText) || userText
-    const reply = await this.llm.chatCompletion(
-      [
-        { role: 'system', content: system },
-        { role: 'user', content: userText || '请按技能说明执行' }
-      ],
-      { temperature: 0.7, signal }
-    )
-    return { ok: true, text: reply.content }
+  async runCustomSkill(name: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<{ ok: boolean; text: string }> {
+    return runCustomSkillImpl(this, name, args, signal)
   }
 
   /** 解析项目 ID：优先用传入的；全局对话回退到最近操作的项目；再回退到最近更新的项目 */
-  private async resolvePid(pid: string | undefined): Promise<string> {
+  async resolvePid(pid: string | undefined): Promise<string> {
     if (pid) { this.lastProjectId = pid; return pid }
     if (this.lastProjectId) {
       // 校验主进程内存指针指向的项目仍存在，防止「幽灵项目」导致 ENOENT
@@ -678,7 +185,7 @@ export class ConversationService extends EventEmitter {
     return latest.id
   }
 
-  private async tStart(pid: string | undefined, args: Record<string, unknown>): Promise<{ ok: boolean; text: string }> {
+  async tStart(pid: string | undefined, args: Record<string, unknown>): Promise<{ ok: boolean; text: string }> {
     const title = String(args.title || '').trim()
     const genre = String(args.genre || '').trim()
     const script = String(args.script || '').trim()
@@ -700,7 +207,7 @@ export class ConversationService extends EventEmitter {
     return { ok: true, text: JSON.stringify({ started: true, projectId: newId, title, gateStages }) }
   }
 
-  private async tSimple(pid: string | undefined, action: 'pause' | 'resume' | 'cancel'): Promise<{ ok: boolean; text: string }> {
+  async tSimple(pid: string | undefined, action: 'pause' | 'resume' | 'cancel'): Promise<{ ok: boolean; text: string }> {
     if (!pid) return { ok: false, text: '当前没有打开的项目，无法执行该操作' }
     const st = this.director.getState(pid)
     if (!st) return { ok: false, text: '当前项目没有任务记录' }
@@ -717,7 +224,7 @@ export class ConversationService extends EventEmitter {
     return { ok: true, text: JSON.stringify({ action, accepted: true, projectId: pid, projectTitle: p.title }) }
   }
 
-  private async tStatus(pid: string | undefined): Promise<{ ok: boolean; text: string }> {
+  async tStatus(pid: string | undefined): Promise<{ ok: boolean; text: string }> {
     if (!pid) return { ok: false, text: '当前没有打开的项目' }
     const st = this.director.getState(pid)
     if (!st) return { ok: true, text: JSON.stringify({ hasTask: false, projectId: pid }) }
@@ -742,7 +249,7 @@ export class ConversationService extends EventEmitter {
     }
   }
 
-  private async tListShots(pid: string | undefined): Promise<{ ok: boolean; text: string }> {
+  async tListShots(pid: string | undefined): Promise<{ ok: boolean; text: string }> {
     if (!pid) return { ok: false, text: '当前没有打开的项目' }
     const p = await this.projects.get(pid)
     const shots = p.shots.slice(0, 60).map(s => ({
@@ -769,7 +276,7 @@ export class ConversationService extends EventEmitter {
     }
   }
 
-  private async tRerender(pid: string | undefined, args: Record<string, unknown>): Promise<{ ok: boolean; text: string }> {
+  async tRerender(pid: string | undefined, args: Record<string, unknown>): Promise<{ ok: boolean; text: string }> {
     if (!pid) return { ok: false, text: '当前没有打开的项目' }
     const indexes = Array.isArray(args.shot_indexes) ? (args.shot_indexes as number[]).map(Number) : []
     if (!indexes.length) return { ok: false, text: '未指定镜号' }
@@ -805,7 +312,7 @@ export class ConversationService extends EventEmitter {
    * - scope='project' → 改 project.defaultWorkflow 并 save
    * - scope='shot' → 改指定分镜的 workflow 字段并 save
    */
-  private async tChooseWorkflow(pid: string | undefined, args: Record<string, unknown>): Promise<{ ok: boolean; text: string }> {
+  async tChooseWorkflow(pid: string | undefined, args: Record<string, unknown>): Promise<{ ok: boolean; text: string }> {
     const scope = String(args.scope || 'project')
     const workflowName = String(args.workflow_name || '')
     if (!workflowName) return { ok: false, text: '缺少 workflow_name' }
@@ -839,7 +346,7 @@ export class ConversationService extends EventEmitter {
   }
 
   // ---------------------------------------------------------------- 试片与预告片
-  private async tRenderSample(pid: string | undefined, args: Record<string, unknown>): Promise<{ ok: boolean; text: string }> {
+  async tRenderSample(pid: string | undefined, args: Record<string, unknown>): Promise<{ ok: boolean; text: string }> {
     if (!pid) return { ok: false, text: '当前没有打开的项目' }
     const p = await this.projects.get(pid)
     const hasRendered = p.shots.some(s => s.segmentPath)
@@ -907,7 +414,7 @@ export class ConversationService extends EventEmitter {
     }
   }
 
-  private async tMakeTrailer(pid: string | undefined, args: Record<string, unknown>): Promise<{ ok: boolean; text: string }> {
+  async tMakeTrailer(pid: string | undefined, args: Record<string, unknown>): Promise<{ ok: boolean; text: string }> {
     if (!pid) return { ok: false, text: '当前没有打开的项目' }
     const p = await this.projects.get(pid)
     const rendered = p.shots.filter(s => s.segmentPath)
@@ -969,7 +476,7 @@ export class ConversationService extends EventEmitter {
     }
   }
 
-  private async tListMemories(kind?: MemoryKind): Promise<{ ok: boolean; text: string }> {
+  async tListMemories(kind?: MemoryKind): Promise<{ ok: boolean; text: string }> {
     const valid: MemoryKind[] = ['preference', 'rule', 'lesson']
     const filter = kind && valid.includes(kind) ? kind : undefined
     const items = await this.memory.list(filter)
@@ -982,7 +489,7 @@ export class ConversationService extends EventEmitter {
     }
   }
 
-  private async tSaveMemory(args: Record<string, unknown>): Promise<{ ok: boolean; text: string }> {
+  async tSaveMemory(args: Record<string, unknown>): Promise<{ ok: boolean; text: string }> {
     const kind = String(args.kind || '') as MemoryKind
     const title = String(args.title || '').trim()
     const content = String(args.content || '').trim()
@@ -996,7 +503,7 @@ export class ConversationService extends EventEmitter {
 
   // ===== 全功能操作：角色 / 分镜 / 项目 / 设置 / BGM / 文件 =====
 
-  private async tListCharacters(pid: string | undefined): Promise<{ ok: boolean; text: string }> {
+  async tListCharacters(pid: string | undefined): Promise<{ ok: boolean; text: string }> {
     if (!pid) return { ok: false, text: '当前没有打开的项目' }
     const p = await this.projects.get(pid)
     if (!p.characters.length) return { ok: true, text: JSON.stringify({ empty: true, message: '项目还没有角色，可开拍自动建档' }) }
@@ -1013,7 +520,7 @@ export class ConversationService extends EventEmitter {
     }
   }
 
-  private async tUpdateCharacter(pid: string | undefined, args: Record<string, unknown>): Promise<{ ok: boolean; text: string }> {
+  async tUpdateCharacter(pid: string | undefined, args: Record<string, unknown>): Promise<{ ok: boolean; text: string }> {
     if (!pid) return { ok: false, text: '当前没有打开的项目' }
     const name = String(args.character_name || '').trim()
     if (!name) return { ok: false, text: '缺少 character_name' }
@@ -1054,19 +561,19 @@ export class ConversationService extends EventEmitter {
   }
 
   /** 工具层工作流存在性校验（M-9）：名称白名单在 workflowLoader.load()，这里只挡不存在 */
-  private async workflowExists(name: string): Promise<boolean> {
+  async workflowExists(name: string): Promise<boolean> {
     return (await this.workflows.list()).some(w => w.name === name)
   }
 
   /** 镜头被 agent 改动后同步重算项目状态（渲染中除外，由 TaskQueue 收尾统一重算） */
-  private recalcProjectStatus(p: Project): void {
+  recalcProjectStatus(p: Project): void {
     if (p.status === 'rendering') return
     const anyFailed = p.shots.some(s => s.status === 'failed')
     const allDone = p.shots.length > 0 && p.shots.every(s => s.status === 'done')
     p.status = allDone ? 'done' : anyFailed ? 'failed' : 'draft'
   }
 
-  private async tUpdateShot(pid: string | undefined, args: Record<string, unknown>): Promise<{ ok: boolean; text: string }> {
+  async tUpdateShot(pid: string | undefined, args: Record<string, unknown>): Promise<{ ok: boolean; text: string }> {
     if (!pid) return { ok: false, text: '当前没有打开的项目' }
     const idx = Number(args.shot_index || 0)
     if (!idx) return { ok: false, text: '缺少 shot_index' }
@@ -1116,7 +623,7 @@ export class ConversationService extends EventEmitter {
     return { ok: true, text: `第 ${idx} 镜已更新：${changes.join('；')}${renderingNote}` }
   }
 
-  private async tAddShot(pid: string | undefined, args: Record<string, unknown>): Promise<{ ok: boolean; text: string }> {
+  async tAddShot(pid: string | undefined, args: Record<string, unknown>): Promise<{ ok: boolean; text: string }> {
     if (!pid) return { ok: false, text: '当前没有打开的项目' }
     const scene = String(args.scene || '').trim()
     const action = String(args.action || '').trim()
@@ -1152,7 +659,7 @@ export class ConversationService extends EventEmitter {
     return { ok: true, text: `已新增第 ${shot.index} 镜「${scene}」（${type}），后续镜头已自动重新编号` }
   }
 
-  private async tDeleteShot(pid: string | undefined, args: Record<string, unknown>): Promise<{ ok: boolean; text: string }> {
+  async tDeleteShot(pid: string | undefined, args: Record<string, unknown>): Promise<{ ok: boolean; text: string }> {
     if (!pid) return { ok: false, text: '当前没有打开的项目' }
     const idx = Number(args.shot_index || 0)
     if (!idx) return { ok: false, text: '缺少 shot_index' }
@@ -1166,7 +673,7 @@ export class ConversationService extends EventEmitter {
     return { ok: true, text: `已删除第 ${idx} 镜「${removed.scene}」，共剩 ${p.shots.length} 镜，镜号已重新编号` }
   }
 
-  private async tMoveShot(pid: string | undefined, args: Record<string, unknown>): Promise<{ ok: boolean; text: string }> {
+  async tMoveShot(pid: string | undefined, args: Record<string, unknown>): Promise<{ ok: boolean; text: string }> {
     if (!pid) return { ok: false, text: '当前没有打开的项目' }
     const from = Number(args.shot_index || 0)
     const to = Number(args.to_index || 0)
@@ -1182,7 +689,7 @@ export class ConversationService extends EventEmitter {
     return { ok: true, text: `「${shot.scene}」已移到第 ${shot.index} 镜位置，镜号已重新编号` }
   }
 
-  private async tListProjects(): Promise<{ ok: boolean; text: string }> {
+  async tListProjects(): Promise<{ ok: boolean; text: string }> {
     const list = await this.projects.list()
     if (!list.length) return { ok: true, text: JSON.stringify({ empty: true, message: '还没有任何项目' }) }
     return {
@@ -1199,7 +706,7 @@ export class ConversationService extends EventEmitter {
     }
   }
 
-  private async tOpenProject(args: Record<string, unknown>): Promise<{ ok: boolean; text: string }> {
+  async tOpenProject(args: Record<string, unknown>): Promise<{ ok: boolean; text: string }> {
     const title = String(args.title || '').trim()
     if (!title) return { ok: false, text: '缺少 title' }
     const list = await this.projects.list()
@@ -1217,7 +724,7 @@ export class ConversationService extends EventEmitter {
     }
   }
 
-  private async tGetSettings(): Promise<{ ok: boolean; text: string }> {
+  async tGetSettings(): Promise<{ ok: boolean; text: string }> {
     const s = await this.settings.get()
     return {
       ok: true,
@@ -1232,7 +739,7 @@ export class ConversationService extends EventEmitter {
   }
 
   /** 白名单合并写入设置：只接受已知字段，未传字段保持不变；LLM/ComfyUI 每次请求实时读配置，改完即生效 */
-  private async tSetSettings(args: Record<string, unknown>): Promise<{ ok: boolean; text: string }> {
+  async tSetSettings(args: Record<string, unknown>): Promise<{ ok: boolean; text: string }> {
     const s = await this.settings.get()
     const applied: string[] = []
     const put = (obj: Record<string, unknown>, key: string, value: unknown): void => {
@@ -1281,7 +788,7 @@ export class ConversationService extends EventEmitter {
     }
   }
 
-  private async tSetProjectBgm(pid: string | undefined, args: Record<string, unknown>): Promise<{ ok: boolean; text: string }> {
+  async tSetProjectBgm(pid: string | undefined, args: Record<string, unknown>): Promise<{ ok: boolean; text: string }> {
     if (!pid) return { ok: false, text: '当前没有打开的项目' }
     const abs = String(args.absolute_path || '').trim()
     if (!abs) return { ok: false, text: '缺少 absolute_path（BGM 音频在本机的绝对路径）' }
@@ -1299,7 +806,7 @@ export class ConversationService extends EventEmitter {
     return { ok: true, text: `BGM 已导入项目并设音量 ${volume}%：${rel}（可在生成预告片或 BGM 混音时使用）` }
   }
 
-  private async tListProjectFiles(pid: string | undefined): Promise<{ ok: boolean; text: string }> {
+  async tListProjectFiles(pid: string | undefined): Promise<{ ok: boolean; text: string }> {
     if (!pid) return { ok: false, text: '当前没有打开的项目' }
     const root = path.join(this.baseDir, 'projects', pid)
     const files: Array<{ path: string; sizeKB: number }> = []
@@ -1326,7 +833,7 @@ export class ConversationService extends EventEmitter {
     return { ok: true, text: JSON.stringify({ projectId: pid, files }).slice(0, RESULT_LIMIT) }
   }
 
-  private async tOpenFile(args: Record<string, unknown>): Promise<{ ok: boolean; text: string }> {
+  async tOpenFile(args: Record<string, unknown>): Promise<{ ok: boolean; text: string }> {
     const rel = String(args.relative_path || '').trim()
     if (!rel) return { ok: false, text: '缺少 relative_path' }
     const abs = path.resolve(this.baseDir, rel)
@@ -1343,7 +850,7 @@ export class ConversationService extends EventEmitter {
 
   // ===== 网络自主学习 =====
 
-  private async tWebSearch(args: Record<string, unknown>): Promise<{ ok: boolean; text: string }> {
+  async tWebSearch(args: Record<string, unknown>): Promise<{ ok: boolean; text: string }> {
     const query = String(args.query || '').trim()
     if (!query) return { ok: false, text: '缺少 query' }
     const url = `https://www.bing.com/search?q=${encodeURIComponent(query)}&count=10&mkt=zh-CN`
@@ -1372,7 +879,7 @@ export class ConversationService extends EventEmitter {
     return { ok: true, text: JSON.stringify({ query, results }) }
   }
 
-  private async tFetchUrl(args: Record<string, unknown>): Promise<{ ok: boolean; text: string }> {
+  async tFetchUrl(args: Record<string, unknown>): Promise<{ ok: boolean; text: string }> {
     const url = String(args.url || '').trim()
     if (!/^https?:\/\//i.test(url)) return { ok: false, text: 'url 必须以 http/https 开头' }
     const resp = await axios.get<string>(url, {
@@ -1402,7 +909,7 @@ export class ConversationService extends EventEmitter {
     return { ok: true, text: `【${url} 的正文${truncated ? '（已截断）' : ''}】\n${text.slice(0, RESULT_LIMIT)}` }
   }
 
-  private async tCreateSkill(args: Record<string, unknown>): Promise<{ ok: boolean; text: string }> {
+  async tCreateSkill(args: Record<string, unknown>): Promise<{ ok: boolean; text: string }> {
     const name = String(args.name || '').trim()
     const description = String(args.description || '').trim()
     const promptTemplate = String(args.prompt_template || '').trim()
@@ -1416,7 +923,7 @@ export class ConversationService extends EventEmitter {
     return { ok: true, text: `新技能「${skill.name}」已沉淀（id=${skill.id}），用户在技能管理面板可见；之后对话中可直接按其 description 调用` }
   }
 
-  private async tListSkills(): Promise<{ ok: boolean; text: string }> {
+  async tListSkills(): Promise<{ ok: boolean; text: string }> {
     const all = await this.skills.list()
     const custom = all.filter(s => !s.builtin)
     return {
@@ -1429,7 +936,7 @@ export class ConversationService extends EventEmitter {
     }
   }
 
-  private async tUpdateSkill(args: Record<string, unknown>): Promise<{ ok: boolean; text: string }> {
+  async tUpdateSkill(args: Record<string, unknown>): Promise<{ ok: boolean; text: string }> {
     const id = String(args.skill_id || '').trim()
     if (!id) return { ok: false, text: '缺少 skill_id（先用 list_skills 查询）' }
     const patch: { name?: string; description?: string; promptTemplate?: string } = {}
@@ -1482,7 +989,7 @@ export class ConversationService extends EventEmitter {
 
   // ===== 上下文组装 =====
 
-  private async buildSystemPrompt(scope: string): Promise<string> {
+  async buildSystemPrompt(scope: string): Promise<string> {
     const lines: string[] = [
       '你是「短剧工坊」的 AI 导演助理，代号导演。你拥有本应用所有功能模块的完整操作权限，通过技能工具直接执行：项目管理（查看/切换项目库）、角色库（查看/修改姓名音色简介）、分镜编辑（查看/新增/修改/删除/调序）、渲染任务（开拍/暂停/继续/取消/重渲/试片/预告片）、工作流（查看/选择/调参/自建）、BGM 配置、项目产物文件（查看/资源管理器定位）、应用设置（查看/修改，含渲染参数、默认工作流、LLM 与 ComfyUI 地址、TTS 音色）、长期记忆与技能沉淀、网络搜索学习。',
       '行为规则：',
