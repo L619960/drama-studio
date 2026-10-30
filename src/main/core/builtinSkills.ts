@@ -14,7 +14,7 @@ export const BUILTIN_SKILLS: Skill[] = [
   {
     id: 'builtin-resume', name: '继续任务', enabled: true, builtin: true, kind: 'tool',
     tool: 'resume_director', createdAt: 0,
-    description: '让停在阶段确认点的任务继续执行下一阶段。用户说"继续/接着跑/没问题继续"时使用。'
+    description: '让任务继续执行。停在阶段确认点时直接继续下一阶段；若任务因应用重启/崩溃中断或某阶段失败（并非停在确认点），会从中断/失败阶段断点续跑，此前已完成的阶段不会重跑。用户说"继续/接着跑/没问题继续"时使用。'
   },
   {
     id: 'builtin-cancel', name: '取消任务', enabled: true, builtin: true, kind: 'tool',
