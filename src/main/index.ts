@@ -367,13 +367,10 @@ app.on('before-quit', async (event) => {
   event.preventDefault()
   quitting = true
   try {
-    // 优雅退出：先取消运行中的导演流水线与渲染队列（写盘状态落稳），
+    // 优雅退出：先取消所有运行中的导演流水线与渲染队列（写盘状态落稳），
     // 再断 ComfyUI WebSocket，最后 MCP 子进程。5s 超时仍未收尾则强制退出——
     // 不能让渲染中断不干净把用户锁死在退出流程里。
-    const latest = directorAgent.getLatestState()
-    if (latest && latest.running) {
-      await directorAgent.cancel(latest.projectId).catch(() => undefined)
-    }
+    await directorAgent.cancelAll().catch(() => undefined)
     await taskQueue.cancelAll().catch(() => undefined)
     comfyuiClient.disconnect()
     // 统一 kill 所有登记的子进程（ffmpeg/TTS SAPI/转换），防退出后孤儿进程残留

@@ -238,6 +238,14 @@ export class DirectorAgent extends EventEmitter {
     }
   }
 
+  /** 退出/重启前取消所有仍在运行（或停在确认点）的任务：并行项目可能同时在渲染，不能只收尾最近一个 */
+  async cancelAll(): Promise<void> {
+    const ids = Array.from(this.states.values())
+      .filter(s => s.running || s.paused)
+      .map(s => s.projectId)
+    await Promise.all(ids.map(id => this.cancel(id).catch(() => undefined)))
+  }
+
   /** 请求暂停：已在确认点则无操作；否则在当前阶段结束后停下 */
   async pause(projectId: string): Promise<void> {
     const state = this.states.get(projectId)
