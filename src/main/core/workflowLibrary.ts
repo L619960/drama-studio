@@ -93,7 +93,7 @@ export class WorkflowLibrary {
           const parsed = JSON.parse(content)
           const item = this.describe(relPath, parsed)
           out.push(item)
-        } catch (err) {
+        } catch (_err) {
           out.push({
             relPath,
             category: rel || '未分类',

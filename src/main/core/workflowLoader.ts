@@ -379,7 +379,7 @@ export class WorkflowLoader {
   private inspect(
     graph: WorkflowGraph,
     objectInfo: Record<string, ObjectNodeInfo>,
-    workflowName = ''
+    _workflowName = ''
   ): WorkflowCheckIssue[] {
     const issues: WorkflowCheckIssue[] = []
     for (const [nodeId, node] of Object.entries(graph)) {

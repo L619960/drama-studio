@@ -4,7 +4,7 @@ import * as path from 'node:path'
 import { spawn } from 'node:child_process'
 import { execFileSync } from 'node:child_process'
 import type WebSocket from 'ws'
-import type { ComfyStartResult, ComfyWSMessage, ComfyUIHistoryOutput, ComfyUIOutputItem } from '../../shared/ipcTypes'
+import type { ComfyStartResult, ComfyWSMessage, ComfyUIHistoryOutput, ComfyUIOutputItem, ComfySystemStats } from '../../shared/ipcTypes'
 import type { ObjectNodeInfo as ObjectInfoLike } from './workflowLoader'
 import { createLogger } from './logger'
 
@@ -203,7 +203,7 @@ $procs | Select-Object -ExpandProperty ProcessId
   }
 
   /** 系统/GPU 状态（控制面板用） */
-  async getSystemStats(): Promise<import('../../shared/ipcTypes').ComfySystemStats | null> {
+  async getSystemStats(): Promise<ComfySystemStats | null> {
     try {
       const res = await axios.get(`${this.baseUrl}/system_stats`, { timeout: 8000 })
       const d = res.data

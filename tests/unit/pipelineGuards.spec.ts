@@ -6,7 +6,13 @@ import {
   reviewFailureStops,
   shotsInCut,
   trimmedDurationSec,
-  unreviewedI2vShots
+  unreviewedI2vShots,
+  clampShotList,
+  shouldFallbackToWan,
+  orientVideoSize,
+  shouldPauseAfterAudit,
+  CATASTROPHIC_CONSISTENCY_SCORE,
+  reviewedIsValid
 } from '../../src/shared/pipelineGuards'
 import { extractKeyProps, propLockFromAction, validateNarrativeContinuity } from '../../src/shared/narrativeBeats'
 import { audioTailSecFor } from '../../src/shared/shotDoctrine'
@@ -97,5 +103,101 @@ describe('音频收尾与道具', () => {
       { type: 'i2v', action: 'stands still', dialogue: '' }
     ])
     expect(warnings.some(w => w.includes('手机'))).toBe(true)
+  })
+})
+
+// ====== 2026-10-30 补 pipelineGuards 未覆盖函数 ======
+describe('pipelineGuards · 流水线契约补测', () => {
+  describe('clampShotList：按上限截断', () => {
+    it('shots ≤ max → 原样返回，trimmed = 0', () => {
+      const v = clampShotList([1, 2, 3], 5)
+      expect(v.shots).toEqual([1, 2, 3])
+      expect(v.trimmed).toBe(0)
+    })
+    it('shots > max → slice(0, max)，trimmed = len - max', () => {
+      const v = clampShotList([1, 2, 3, 4, 5], 3)
+      expect(v.shots).toEqual([1, 2, 3])
+      expect(v.trimmed).toBe(2)
+    })
+    it('maxShots = 0 → 强制 max = 1（Math.max(1, ...)）', () => {
+      const v = clampShotList([1, 2, 3], 0)
+      expect(v.shots.length).toBe(1)
+      expect(v.trimmed).toBe(2)
+    })
+    it('maxShots = -3 → 同样强制 max = 1', () => {
+      const v = clampShotList([1, 2, 3], -3)
+      expect(v.shots.length).toBe(1)
+    })
+    it('maxShots 小数 → round', () => {
+      const v = clampShotList([1, 2, 3, 4], 2.6)
+      // round(2.6) = 3
+      expect(v.shots.length).toBe(3)
+    })
+    it('空数组 → trimmed = 0', () => {
+      const v = clampShotList([], 5)
+      expect(v.shots).toEqual([])
+      expect(v.trimmed).toBe(0)
+    })
+  })
+
+  describe('shouldFallbackToWan：H3 极低分切 Wan', () => {
+    it("consistencyMode = 'off' → false", () => {
+      expect(shouldFallbackToWan('off', 'h3-r2v', 0.01, 0.5)).toBe(false)
+    })
+    it('非 H3 引擎 → false', () => {
+      expect(shouldFallbackToWan('rerender', 'wan2-remix', 0.01, 0.5)).toBe(false)
+    })
+    it("consistencyMode = 'rerender' → score < threshold 才 true", () => {
+      expect(shouldFallbackToWan('rerender', 'h3-r2v', 0.3, 0.5)).toBe(true)
+      expect(shouldFallbackToWan('rerender', 'h3-r2v', 0.6, 0.5)).toBe(false)
+    })
+    it("consistencyMode = 'warn' + score < 灾难阈值(0.15) → true", () => {
+      expect(shouldFallbackToWan('warn', 'h3-i2v', 0.1, 0.5)).toBe(true)
+      expect(shouldFallbackToWan('warn', 'h3-i2v', 0.2, 0.5)).toBe(false)
+    })
+    it('h3-i2v 也是 H3', () => {
+      expect(shouldFallbackToWan('warn', 'h3-i2v', 0.1, 0.5)).toBe(true)
+    })
+    it('CATASTROPHIC_CONSISTENCY_SCORE = 0.15', () => {
+      expect(CATASTROPHIC_CONSISTENCY_SCORE).toBe(0.15)
+    })
+  })
+
+  describe('orientVideoSize：按参考图方向确定横竖屏', () => {
+    it('tierPortrait 且 portrait 需求 → 原样', () => {
+      expect(orientVideoSize(720, 1280, true)).toEqual({ width: 720, height: 1280 })
+    })
+    it('tierLandscape 且 landscape 需求 → 原样', () => {
+      expect(orientVideoSize(1920, 1080, false)).toEqual({ width: 1920, height: 1080 })
+    })
+    it('竖屏需求 + tier 是横屏 → 对调', () => {
+      expect(orientVideoSize(1920, 1080, true)).toEqual({ width: 1080, height: 1920 })
+    })
+    it('横屏需求 + tier 是竖屏 → 对调', () => {
+      expect(orientVideoSize(720, 1280, false)).toEqual({ width: 1280, height: 720 })
+    })
+    it('正方形 tier → tierPortrait = true（height >= width）', () => {
+      expect(orientVideoSize(1080, 1080, true)).toEqual({ width: 1080, height: 1080 })
+    })
+  })
+
+  describe('shouldPauseAfterAudit：硬失败才暂停', () => {
+    it('failCount > 0 → true', () => { expect(shouldPauseAfterAudit(5, 1)).toBe(true) })
+    it('failCount = 0 → false（不管 hintCount）', () => {
+      expect(shouldPauseAfterAudit(5, 0)).toBe(false)
+      expect(shouldPauseAfterAudit(0, 0)).toBe(false)
+      expect(shouldPauseAfterAudit(0, 0)).toBe(false)
+    })
+  })
+
+  describe('reviewedIsValid 补测：边界', () => {
+    it('reviewed = undefined → false', () => { expect(reviewedIsValid('t2v', undefined)).toBe(false) })
+    it('reviewed = false → false', () => { expect(reviewedIsValid('t2v', false)).toBe(false) })
+    it('i2v + reviewed + firstFramePath 全空白 → false', () => {
+      expect(reviewedIsValid('i2v', true, '   ')).toBe(false)
+    })
+    it('i2v + reviewed + firstFramePath 非空 → true', () => {
+      expect(reviewedIsValid('i2v', true, 'projects/f.png')).toBe(true)
+    })
   })
 })

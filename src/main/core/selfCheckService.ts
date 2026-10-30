@@ -76,7 +76,7 @@ export class SelfCheckService {
     const dir = path.join(this.baseDir, 'conversations')
     let broken = 0
     const names: string[] = []
-    let entries: Dirent[] = []
+    let entries: Dirent[]
     try {
       entries = await fs.readdir(dir, { withFileTypes: true })
     } catch {
@@ -111,7 +111,7 @@ export class SelfCheckService {
     const names: string[] = []
     let orphanRendering = 0
     let total = 0
-    let entries: Dirent[] = []
+    let entries: Dirent[]
     try {
       entries = await fs.readdir(root, { withFileTypes: true })
     } catch {

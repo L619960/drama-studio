@@ -3,7 +3,7 @@ import type { DirectorStartInput, DirectorStage, DirectorState, DirectorProgress
 import type { WorkflowMeta, WorkflowParam, WorkflowCheckReport } from './workflow'
 import type { AppSettings, PreviewAssetInput, PreviewAssetResult } from './settings'
 import type { ComfySystemStats, ComfyStartResult } from './comfy'
-import type { PromptAssistInput, PromptAuditReport, PromptAuditFixInput, PromptAuditFixResult, PromptBulkFillInput, PromptBulkFillResult, PromptBulkFillProgress } from './prompt-audit'
+import type { PromptAssistInput, PromptAuditReport, PromptAuditFixInput, PromptAuditFixResult, PromptBulkFillInput, PromptBulkFillResult, PromptBulkFillProgress } from './promptAuditTypes'
 import type { ConversationMessage, UploadedFilePayload, ConversationToolEvent } from './conversation'
 import type { Skill } from './skill'
 import type { MemoryKind, MemoryItem } from './memory'

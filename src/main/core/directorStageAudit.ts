@@ -124,7 +124,7 @@ export async function auditSingleShot(
   }
 
   // 技术项
-  let dur = 0
+  let dur: number
   try {
     dur = await rt.ffmpeg.getDuration(abs)
   } catch {

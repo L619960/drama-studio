@@ -7,6 +7,9 @@ import { reviewedIsValid } from '../../shared/pipelineGuards'
 import { atomicWriteJson } from './fsUtil'
 import { STAGE_ORDER, STAGE_LABELS, LOG_LIMIT } from './directorConstants'
 import type { DirectorAgent } from './directorAgent'
+import { createLogger } from './logger'
+
+const log = createLogger('DirState')
 
 /**
  * 导演状态机：13 个 Map/Set 持有在 DirectorAgent 实例上，
@@ -157,6 +160,7 @@ export async function pauseUntilShotsReviewedImpl(
   const settings = await agent.settings.get()
   // 本项目"一口气跑到底"临时关闭分镜审核门禁
   const projState = agent.states.get(projectId)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- JSON.parse 动态字段读取，与 directorAgent.ts 写入对称
   if ((projState as any)?.noShotGate) return true
   const gate = settings.render?.shotReviewGate ?? 'block'
   if (gate === 'off') return true
@@ -231,7 +235,7 @@ export async function recoverAllImpl(agent: DirectorAgent): Promise<number> {
     // projects 目录不存在：无项目可恢复
   }
   if (repaired > 0) {
-    console.warn(`[DirectorAgent] 启动恢复：${repaired} 个项目的残留运行状态已降级为中断`)
+    log.warn(`启动恢复：${repaired} 个项目的残留运行状态已降级为中断`)
   }
   return repaired
 }

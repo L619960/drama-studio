@@ -7,6 +7,9 @@ import * as path from 'node:path'
 import type { ConversationMessage } from '../../shared/ipcTypes'
 import { atomicWriteJson } from './fsUtil'
 import type { ConversationService } from './conversationService'
+import { createLogger } from './logger'
+
+const log = createLogger('ConvSession')
 
 export function scopeFileImpl(agent: ConversationService, scope: string): string {
   const safe = /^[a-zA-Z0-9_-]+$/.test(scope) ? scope : 'global'
@@ -29,7 +32,7 @@ export async function listImpl(agent: ConversationService, scope: string): Promi
     // C6：历史文件损坏时先备份再按空历史处理，防止 save 直接覆盖清零导致无法找回
     const bak = `${file}.corrupt-${Date.now()}.bak`
     await fs.writeFile(bak, raw, 'utf8').catch(() => undefined)
-    console.warn(`[conversationService] 会话历史解析失败，已备份到 ${bak}:`, e instanceof Error ? e.message : e)
+    log.warn(`会话历史解析失败，已备份到 ${bak}: ${e instanceof Error ? e.message : e}`)
     return []
   }
 }

@@ -41,7 +41,7 @@ export async function tFetchUrl(args: Record<string, unknown>): Promise<ToolResu
   // P3 SSRF 受限防护：拒绝回环/私网/链路本地/未指定地址（含云元数据 169.254.169.254）。
   // 仅校验初始 URL 的主机名；跟随重定向后的目标不复查（普通域名不做 DNS 解析，
   // DNS rebinding 属深度防御未覆盖）。URL 解析失败时放行给 axios 报错，行为与原来一致。
-  let blocked = false
+  let blocked: boolean
   try {
     blocked = isBlockedFetchHost(new URL(url).hostname)
   } catch {

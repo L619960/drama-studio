@@ -1,0 +1,98 @@
+<html style="margin:0;padding:0;">
+<title>Drama Studio 开发进度盘点 2026-10-30</title>
+<div style="width:100%;box-sizing:border-box;font-family:'Segoe UI','Microsoft YaHei',system-ui,sans-serif;color:#1A1B1C;background:#F7F7F5;padding:20px 24px;line-height:1.5;">
+
+  <!-- 标题区 -->
+  <div style="border-bottom:1px solid #E4E3DD;padding-bottom:12px;margin-bottom:16px;">
+    <div style="font-size:22px;font-weight:700;">Drama Studio 开发进度盘点</div>
+    <div style="font-size:13px;color:#5F6670;margin-top:4px;">本地 AI 短剧工坊 · 剧本→拆镜→渲染→字幕→成片 · 盘点日期 2026-10-30</div>
+  </div>
+
+  <!-- 总览指标 -->
+  <div style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:18px;">
+    <div style="flex:1 1 200px;background:#fff;border:1px solid #E4E3DD;border-radius:8px;padding:12px 14px;">
+      <div style="font-size:12px;color:#5F6670;">核心功能完整度（审计）</div>
+      <div style="font-size:26px;font-weight:700;color:#35705A;">5 / 5</div>
+      <div style="font-size:12px;color:#35705A;">全流程已跑通 · 综合评分 3.95/5</div>
+    </div>
+    <div style="flex:1 1 200px;background:#fff;border:1px solid #E4E3DD;border-radius:8px;padding:12px 14px;">
+      <div style="font-size:12px;color:#5F6670;">开发补全整改（需求文档）</div>
+      <div style="font-size:26px;font-weight:700;color:#35705A;">8 / 22</div>
+      <div style="font-size:12px;color:#9A6A2F;">已完成 8 项 · 进行中 2 项 · 未开始 12 项</div>
+    </div>
+    <div style="flex:1 1 200px;background:#fff;border:1px solid #E4E3DD;border-radius:8px;padding:12px 14px;">
+      <div style="font-size:12px;color:#5F6670;">技术审计整改（Phase 1-4）</div>
+      <div style="font-size:26px;font-weight:700;color:#9A6A2F;">≈30%</div>
+      <div style="font-size:12px;color:#5F6670;">Phase1 基本完成 · Phase 2-4 未开始</div>
+    </div>
+    <div style="flex:1 1 200px;background:#fff;border:1px solid #A14E50;border-radius:8px;padding:12px 14px;">
+      <div style="font-size:12px;color:#5F6670;">测试覆盖率（当前风险）</div>
+      <div style="font-size:26px;font-weight:700;color:#A14E50;">25.21% &lt; 30%</div>
+      <div style="font-size:12px;color:#A14E50;">阈值已提高，实际未达标 → 现在跑 npm run test 会失败</div>
+    </div>
+  </div>
+
+  <!-- 工作区状态 -->
+  <div style="background:#FFF8EC;border:1px solid #9A6A2F;border-radius:8px;padding:10px 14px;margin-bottom:18px;font-size:13px;">
+    ⚠️ <b>工作区状态：38 个文件有未提交改动</b>（今日审计整改进行中，处于半成品状态）；另有 1 个已提交 commit：face_restore workflow + asset/image 服务增强。
+  </div>
+
+  <!-- 三态清单 -->
+  <div style="display:flex;flex-wrap:wrap;gap:14px;">
+
+    <!-- 已完成 -->
+    <div style="flex:1 1 320px;background:#fff;border:1px solid #E4E3DD;border-radius:8px;padding:14px 16px;min-width:280px;">
+      <div style="font-size:15px;font-weight:700;color:#35705A;margin-bottom:10px;">✓ 已完成</div>
+      <div style="font-size:13px;margin-bottom:6px;color:#35705A;">▍全流程功能（审计 5/5）</div>
+      <div style="font-size:13px;color:#1A1B1C;padding-left:14px;border-left:3px solid #35705A;margin-bottom:8px;">项目管理 / 剧本处理 / 角色场景 / 渲染流水线 / 一致性 / 后处理 / AI 对话 / 自检 / 导出</div>
+      <div style="font-size:13px;margin-bottom:6px;color:#35705A;">▍开发补全整改 8 项</div>
+      <div style="font-size:12px;color:#5F6670;padding-left:14px;border-left:3px solid #35705A;">交互引导 4 项（继续任务按钮/续渲按钮/resume 工具/一口气跑到底开关）· 图片质量 2 项（Klein cfg=4 负向词/首帧一致性）· 工程健壮性 2 项（seed 日志/t2i cfg 统一）</div>
+      <div style="font-size:13px;margin-bottom:6px;color:#35705A;">▍技术审计 Phase 1</div>
+      <div style="font-size:12px;color:#5F6670;padding-left:14px;border-left:3px solid #35705A;">S-01 硬编码路径消除（settings 读取工作流目录 + python 动态解析）· A-01 resolveInsideRoot 去重（仅剩 1 处）· 覆盖率阈值 20%→30%（配置已改）</div>
+    </div>
+
+    <!-- 进行中 -->
+    <div style="flex:1 1 320px;background:#fff;border:1px solid #E4E3DD;border-radius:8px;padding:14px 16px;min-width:280px;">
+      <div style="font-size:15px;font-weight:700;color:#9A6A2F;margin-bottom:10px;">⟳ 进行中（未提交）</div>
+      <div style="font-size:12px;color:#5F6670;padding-left:14px;border-left:3px solid #9A6A2F;margin-bottom:8px;"><b>Q-01</b> shared 文件命名统一：prompt-audit.ts → promptAuditTypes.ts 拆分，import 引用更新中</div>
+      <div style="font-size:12px;color:#5F6670;padding-left:14px;border-left:3px solid #9A6A2F;margin-bottom:8px;"><b>P0-1</b> 分镜审核门禁 ×"一口气跑到底"联动 — 端到端验证中（verify43 已见 noGates 生效）</div>
+      <div style="font-size:12px;color:#5F6670;padding-left:14px;border-left:3px solid #9A6A2F;margin-bottom:8px;"><b>P1-1</b> 首帧-定妆照自动相似度比对（face_sim 脚本今天已生成）</div>
+      <div style="font-size:12px;color:#5F6670;padding-left:14px;border-left:3px solid #9A6A2F;margin-bottom:8px;"><b>Q-02 补测试</b>：新增 asyncPool / candidatePickService / fsUtil / memoryStore 4 个单测 + roleBinding 扩展 120 行</div>
+      <div style="font-size:12px;color:#5F6670;padding-left:14px;border-left:3px solid #9A6A2F;"><b>P1-4 部分</b>：negatives.ts 已追加 wall lamp / wet floor 等负向词（按阶段统一管理未完）</div>
+    </div>
+
+    <!-- 未完成 -->
+    <div style="flex:1 1 420px;background:#fff;border:1px solid #E4E3DD;border-radius:8px;padding:14px 16px;min-width:280px;">
+      <div style="font-size:15px;font-weight:700;color:#A14E50;margin-bottom:10px;">⬜ 未完成（14 项补全 + 审计 Phase 2-4）</div>
+      <div style="font-size:12px;color:#5F6670;margin-bottom:8px;">
+        <b style="color:#A14E50;">P0 核心流程（2）</b>：P0-2 导演对话"继续"指令覆盖率 · P0-3 应用重启后残留任务恢复
+      </div>
+      <div style="font-size:12px;color:#5F6670;margin-bottom:8px;">
+        <b style="color:#9A6A2F;">P1 图片质量（3）</b>：P1-2 场景图跨镜一致性缓存 · P1-3 角色跨帧一致性强化 · P1-4 负面词库统一管理收尾
+      </div>
+      <div style="font-size:12px;color:#5F6670;margin-bottom:8px;">
+        <b style="color:#5F6670;">P2 工程健壮性（4）</b>：P2-1 ComfyUI 断连引导与一键启动 · P2-2 生成失败自动重抽 · P2-3 磁盘空间与产物清理 · P2-4 日志分级与查看
+      </div>
+      <div style="font-size:12px;color:#5F6670;margin-bottom:8px;">
+        <b style="color:#5F6670;">P3 体验优化（4）</b>：P3-1 导演控制台常驻状态条 · P3-2 分镜审核面板优化 · P3-3 导演对话快捷指令 · P3-4 项目列表搜索排序
+      </div>
+      <div style="font-size:12px;color:#5F6670;">
+        <b style="color:#4F6B9A;">审计 Phase 2-4</b>：Q-02 覆盖率达标（25.21%→30%）· L-01 日志统一 · Q-03 ESLint 清理 · D-02/D-03 CI/CD+签名 · T-01 type-imports · P-01 代码分割 · F-01/F-02 Pinia · E-01 跨平台打包
+      </div>
+    </div>
+  </div>
+
+  <!-- 图例与建议 -->
+  <div style="display:flex;flex-wrap:wrap;gap:14px;margin-top:18px;">
+    <div style="flex:1 1 420px;background:#fff;border:1px solid #E4E3DD;border-radius:8px;padding:12px 16px;">
+      <div style="font-size:14px;font-weight:700;margin-bottom:6px;">下一步建议（按文档建议顺序）</div>
+      <div style="font-size:13px;color:#1A1B1C;">1. 先补测试让覆盖率 ≥30%，解锁 <b>npm run test</b> 门禁 → 2. 完成 P0-2 + P0-3（继续指令 + 重启恢复，用户最易卡点）→ 3. 提交当前 38 个文件整改，固化 Phase 1 成果 → 4. 按 P1 → P2 → P3 顺序推进</div>
+    </div>
+    <div style="flex:1 1 260px;background:#fff;border:1px solid #E4E3DD;border-radius:8px;padding:12px 16px;">
+      <div style="font-size:14px;font-weight:700;margin-bottom:6px;">口径说明</div>
+      <div style="font-size:12px;color:#5F6670;">已完成/进行中/未完成状态依据：开发补全需求文档（2026-10-30）、技术审计报告（2026-10-30）、git 工作区改动与覆盖率报告实测。估算部分（审计整改 ≈30%）为按 Phase 加权估算，非精确值。</div>
+    </div>
+  </div>
+
+</div>
+</html>

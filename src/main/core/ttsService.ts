@@ -110,7 +110,6 @@ export class TTSService {
       return
     } catch (localErr) {
       log.warn(`本机 Qwen3-TTS 克隆失败：${localErr instanceof Error ? localErr.message.slice(0, 120) : String(localErr)}`)
-      lastErr = localErr
     }
 
     // ③ Windows SAPI 直出（最后兜底，零依赖）

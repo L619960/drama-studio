@@ -90,7 +90,7 @@ export async function runConsistencyCheck(
     shot.consistencyScore = Math.round(score * 1000) / 1000
     log.info(`一致性 ${shot.id}：${method === 'face' ? '人脸' : '全图'}相似度 ${score.toFixed(3)}（3帧平均）【${service.lastMethodTrace}】`)
   } catch (e) {
-    console.warn('[TaskQueue] 一致性校验跳过:', e instanceof Error ? e.message : String(e))
+    log.warn(`一致性校验跳过: ${e instanceof Error ? e.message : String(e)}`)
   }
 
   if (score === undefined) return renderSeed
@@ -226,7 +226,7 @@ export async function recheckProjectConsistency(
       }
     } catch (e) {
       skipped++
-      console.warn('[TaskQueue] 一致性复评跳过:', shot.id, e instanceof Error ? e.message : String(e))
+      log.warn(`一致性复评跳过 shot=${shot.id}: ${e instanceof Error ? e.message : String(e)}`)
     }
   }
   await rt.store.save(project)

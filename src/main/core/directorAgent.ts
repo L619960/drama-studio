@@ -7,8 +7,10 @@ import { SubtitleService } from './subtitleService'
 import { ProjectStore } from './projectStore'
 import { SettingsStore } from './settingsStore'
 import type {
-  DirectorState, DirectorStage, StageStatus, DirectorStartInput
+  DirectorState, DirectorStage, StageStatus, DirectorStartInput,
+  Shot, AnalyzeResult, SceneBoard, Character, Project
 } from '../../shared/ipcTypes'
+import type { AuditCheckItem } from './skillLibrary'
 import { CandidatePickService } from './candidatePickService'
 import { SkillLibrary } from './skillLibrary'
 import { STAGE_ORDER, STAGE_LABELS, stageIndexOf } from './directorConstants'
@@ -123,25 +125,25 @@ export class DirectorAgent extends EventEmitter {
   withTransientRetry<T>(fn: () => Promise<T>, opts: { retries?: number; notify?: (msg: string) => void; isCancelled?: () => boolean } = {}) {
     return withTransientRetryImpl(this, fn, opts)
   }
-  concatDoneShots(projectId: string, doneShots: import('../../shared/ipcTypes').Shot[], outputRel: string) {
+  concatDoneShots(projectId: string, doneShots: Shot[], outputRel: string) {
     return concatDoneShotsImpl(this, projectId, doneShots, outputRel)
   }
-  buildCharacters(projectId: string, analysis: import('../../shared/ipcTypes').AnalyzeResult) {
+  buildCharacters(projectId: string, analysis: AnalyzeResult) {
     return buildCharactersImpl(this, projectId, analysis)
   }
-  buildPropAssets(projectId: string, analysis: import('../../shared/ipcTypes').AnalyzeResult) {
+  buildPropAssets(projectId: string, analysis: AnalyzeResult) {
     return buildPropAssetsImpl(this, projectId, analysis)
   }
   generateShotFirstFrame(
     projectId: string,
-    d: { id: string; index: number; as: import('../../shared/ipcTypes').AnalyzeResult['shots'][number]; board?: import('../../shared/ipcTypes').SceneBoard; characterIds: string[]; character?: import('../../shared/ipcTypes').Character; firstFramePath?: string },
+    d: { id: string; index: number; as: AnalyzeResult['shots'][number]; board?: SceneBoard; characterIds: string[]; character?: Character; firstFramePath?: string },
     sc: { frameWidth: number; frameHeight: number },
     abort: () => boolean,
     allCharacterNames: string[] = []
   ) {
     return generateShotFirstFrameImpl(this, projectId, d, sc, abort, allCharacterNames)
   }
-  buildShots(projectId: string, analysis: import('../../shared/ipcTypes').AnalyzeResult, characterMap: Map<string, import('../../shared/ipcTypes').Character>) {
+  buildShots(projectId: string, analysis: AnalyzeResult, characterMap: Map<string, Character>) {
     return buildShotsImpl(this, projectId, analysis, characterMap)
   }
   sanitizeCameraForFrame(camera: string) { return sanitizeCameraForFrameImpl(camera) }
@@ -158,7 +160,7 @@ export class DirectorAgent extends EventEmitter {
   renderShotsWithAudit(projectId: string, shotDurations: Map<string, number>) {
     return renderShotsWithAuditImpl(this, projectId, shotDurations)
   }
-  auditSingleShot(projectId: string, shot: import('../../shared/ipcTypes').Shot, project: import('../../shared/ipcTypes').Project, checklist: import('./skillLibrary').AuditCheckItem[], skipVision = false) {
+  auditSingleShot(projectId: string, shot: Shot, project: Project, checklist: AuditCheckItem[], skipVision = false) {
     return auditSingleShotImpl(this, projectId, shot, project, checklist, skipVision)
   }
   approveShots(projectId: string) { return approveShotsImpl(this, projectId) }
@@ -186,6 +188,7 @@ export class DirectorAgent extends EventEmitter {
     const gateList = (input.gateStages || []).filter(g => g !== 'done')
     state.gateStages = gateList
     // "一口气跑到底"：无 gateStages 时同时临时关闭分镜审核门禁（仅本项目生命周期）
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- JSON.parse 动态字段注入，运行时约定
     ;(state as any).noShotGate = gateList.length === 0
     this.states.set(project.id, state)
     this.gates.set(project.id, new Set(gateList))

@@ -142,7 +142,7 @@ export function registerPromptIpc(ctx: PromptIpcCtx): void {
           const { task, guide, current } = plan[idx]
           const issue = task.issues.find(is => is.field === guide.field)?.message || ''
           const c = buildCtx(task, current, issue)
-          let status: PromptBulkFillFieldResult['status'] = 'failed'
+          let status: PromptBulkFillFieldResult['status']
           let after: string | undefined
           let error: string | undefined
           try {

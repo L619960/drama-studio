@@ -1,7 +1,7 @@
 import * as fs from 'node:fs/promises'
 import * as path from 'node:path'
 import type {
-  DirectorStartInput, AnalyzeResult, Character, Shot, Project
+  DirectorStartInput, AnalyzeResult, Character, Shot, Project, DirectorStage
 } from '../../shared/ipcTypes'
 import { ImageGenerateCancelled } from './imageService'
 import { clampShotList, shouldPauseAfterAudit } from '../../shared/pipelineGuards'
@@ -25,7 +25,7 @@ import { subscribeRenderProgressImpl, unsubscribeRenderProgressImpl } from './di
 export async function selfHealStageImpl(
   agent: DirectorAgent,
   projectId: string,
-  stage: import('../../shared/ipcTypes').DirectorStage,
+  stage: DirectorStage,
   stageLabel: string,
   errors: string[],
   retry: () => Promise<void>
@@ -129,7 +129,7 @@ export async function runPipelineImpl(
   agent: DirectorAgent,
   projectId: string,
   input: DirectorStartInput,
-  from: import('../../shared/ipcTypes').DirectorStage = 'analyze'
+  from: DirectorStage = 'analyze'
 ): Promise<void> {
   const state = agent.states.get(projectId)
   if (!state) return

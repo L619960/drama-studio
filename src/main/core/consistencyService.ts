@@ -9,6 +9,9 @@
  * - 任一依赖/模型不可用：available()=false 或自动回退，调用方静默跳过，绝不阻塞渲染
  */
 import { FaceDetector, FACE_INPUT_SIZE } from './faceDetector'
+import { createLogger } from './logger'
+
+const log = createLogger('Consistency')
 
 const MODEL_ID = 'Xenova/clip-vit-base-patch32'
 const REC_SIZE = 112
@@ -160,7 +163,7 @@ export class ConsistencyService {
       return this.extractor
     } catch (e) {
       this.initFailed = true
-      console.warn('[Consistency] 一致性校验已禁用（依赖或模型不可用）:', (e as Error).message)
+      log.warn(`一致性校验已禁用（依赖或模型不可用）: ${(e as Error).message}`)
       throw e
     }
   }
@@ -206,7 +209,7 @@ export class ConsistencyService {
           this.lastMethodTrace = 'detector不可用'
         }
       } catch (e) {
-        console.warn('[Consistency] 人脸比对失败，回退全图 CLIP:', (e as Error).message)
+        log.warn(`人脸比对失败，回退全图 CLIP: ${(e as Error).message}`)
       }
 
       // 全图 CLIP 回退（至少一侧无人脸 / 模型不可用）
@@ -237,7 +240,7 @@ export class ConsistencyService {
       try {
         results.push(await this.compare(referenceImagePath, targetPath, t))
       } catch (e) {
-        console.warn(`[Consistency] 帧 ${t.toFixed(2)}s 比对失败已跳过:`, (e as Error).message)
+        log.warn(`帧 ${t.toFixed(2)}s 比对失败已跳过: ${(e as Error).message}`)
       }
     }
     if (results.length === 0) {

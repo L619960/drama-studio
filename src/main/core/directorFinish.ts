@@ -144,7 +144,7 @@ export async function auditSingleShotImpl(
     return { passed: false, reason: '产物文件不存在', fixHint: undefined, durationSec: -1, vision: false }
   }
 
-  let dur = 0
+  let dur: number
   try {
     dur = await agent.ffmpeg.getDuration(abs)
   } catch {

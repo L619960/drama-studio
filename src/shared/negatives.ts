@@ -121,7 +121,7 @@ export function emptySceneNegativeFor(lock: 'standard' | 'strong' = 'standard', 
  *  背景出现雨夜现代街景）——背景压制必须走负向通道，正向只写「要什么」。 */
 const CASTING_BG_NEGATIVE =
   'street, city, cityscape, road, vehicles, outdoor scenery, rain, snow, crowd, background people, window view, detailed background, textured backdrop, ' +
-  'street lamp, floor lamp, standing lamp, light stand, studio light, tripod, lantern, candle, ' +
+  'street lamp, floor lamp, standing lamp, light stand, studio light, tripod, lantern, candle, wall lamp, vintage wall lantern, gas lamp, ' +
   'wet ground, puddle, water reflection on ground, stone pavement, wet pavement, outdoor floor, wooden floor, carpet';
 
 export function castingNegativeFor(lock: 'standard' | 'strong' = 'standard', genre?: string): string {

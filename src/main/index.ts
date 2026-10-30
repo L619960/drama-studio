@@ -1,6 +1,6 @@
 import { app, BrowserWindow, protocol } from 'electron'
-import { join, resolve, sep, isAbsolute } from 'node:path'
-import { realpathSync, existsSync } from 'node:fs'
+import { join } from 'node:path'
+import { existsSync } from 'node:fs'
 import {
   IpcChannels,
   type ProgressEvent,
@@ -9,7 +9,7 @@ import {
   type ConversationToolEvent
 } from '../shared/ipcTypes'
 import { ProjectStore } from './core/projectStore'
-import { handleIpc } from './ipc/shared'
+import { handleIpc, resolveInsideRoot, DATA_ROOT, setMainWindow } from './ipc/shared'
 import { registerProjectIpc } from './ipc/project'
 import { registerRenderIpc } from './ipc/render'
 import { registerComfyIpc, validateWorkflowTemplates } from './ipc/comfy'
@@ -46,6 +46,9 @@ import { SelfCheckService } from './core/selfCheckService'
 import { GENRE_TEMPLATES } from '../shared/ipcTypes'
 import { installGlobalErrorHandlers } from './core/errorHandler'
 import { childProcessManager } from './core/childProcessManager'
+import { createLogger } from './core/logger'
+
+const log = createLogger('Main')
 
 // ===== 全局异常兜底：未捕获的 Promise rejection / 同步异常落盘，防主进程静默崩溃 =====
 // 实现抽离到 ./core/errorHandler.ts（便于单测）；这里只负责接入 userData/logs 目录。
@@ -98,46 +101,7 @@ protocol.registerSchemesAsPrivileged([
   }
 ])
 
-// 统一数据根目录：userData/drama-studio
-// ProjectStore 的 projects 目录 = DATA_ROOT/projects
-// 相对路径（如 projects/<id>/segments/x.mp4）一律相对 DATA_ROOT 解析
-const DATA_ROOT = join(app.getPath('userData'), 'drama-studio')
-const DATA_ROOT_RESOLVED = resolve(DATA_ROOT)
-// 真实根路径：DATA_ROOT 若在磁盘上是 symlink/junction，词法比对会被绕过（I-8）
-const DATA_ROOT_REAL = (() => {
-  try {
-    return resolve(realpathSync(DATA_ROOT_RESOLVED))
-  } catch {
-    return DATA_ROOT_RESOLVED
-  }
-})()
-
-const normPath = (p: string): string => (process.platform === 'win32' ? p.toLowerCase() : p)
-
-/**
- * 安全路径解析：相对路径相对 DATA_ROOT；绝对路径（旧数据兼容）也必须位于
- * DATA_ROOT 之内。防止目录穿越访问数据目录之外的文件。
- * I-8：已存在的路径用 realpath 比对识别符号链接逃逸（不存在则词法比对）；
- * Windows 下大小写不敏感。
- */
-function resolveInsideRoot(inputPath: string): string {
-  const abs = resolve(
-    isAbsolute(inputPath) ? inputPath : join(DATA_ROOT, inputPath)
-  )
-  let real = abs
-  try {
-    real = resolve(realpathSync(abs))
-  } catch {
-    // 目标尚不存在（待创建的输出文件）：按词法路径校验
-  }
-  const target = normPath(real)
-  const root = normPath(DATA_ROOT_REAL)
-  const rootPrefix = root.endsWith(sep) ? root : root + sep
-  if (target !== root && !target.startsWith(rootPrefix)) {
-    throw new Error('非法路径：已拒绝数据根目录之外的访问')
-  }
-  return abs
-}
+// DATA_ROOT / resolveInsideRoot / normPath 统一来自 ./ipc/shared（单一事实源）
 
 let mainWindow: BrowserWindow | null = null
 
@@ -164,6 +128,9 @@ function createWindow(): void {
       sandbox: true
     }
   })
+  // 同步到 shared.ts 单例，使 IPC 层 sendToWindow 也能向该窗口推送事件
+  // （此前未调用 setMainWindow，promptBulkFillProgress 等通道事件永远无法送达）
+  setMainWindow(mainWindow)
 
   mainWindow.on('ready-to-show', () => {
     mainWindow?.show()
@@ -172,6 +139,7 @@ function createWindow(): void {
   // 关闭后置空引用，配合 sendToWindow 防止对已销毁窗口发事件
   mainWindow.on('closed', () => {
     mainWindow = null
+    setMainWindow(null)
   })
 
   mainWindow.webContents.setWindowOpenHandler((_details) => {
@@ -208,9 +176,9 @@ const resolveResourceDir = (sub: string): string => {
 }
 const workflowDir = resolveResourceDir('workflows')
 const workflowLoader = new WorkflowLoader(workflowDir)
-// ComfyUI 工作流库（用户收集的 UI 格式工作流全集）：目录可配置（settings.comfyui.workflowLibraryDir），
-// 默认本机秋叶整合包工作流库路径；扫描不到时降级为空库（不影响其他功能）
-const workflowLibrary = new WorkflowLibrary('D:\\ComfyUI-V20\\ComfyUI\\user\\default\\was-node-suite\\workflows')
+// ComfyUI 工作流库（用户收集的 UI 格式工作流全集）：默认空库，启动后从 settings 读取配置路径
+// 扫描不到时降级为空库（不影响其他功能；用户可在设置页配置本机路径）
+const workflowLibrary = new WorkflowLibrary('')
 // 从设置中读取 ComfyUI 地址（启动时异步加载，先默认后覆盖）
 const comfyuiClient = new ComfyUIClient({ baseUrl: 'http://127.0.0.1:8188', clientId: 'drama-studio' })
 // 仅初始化时序：原先下方两次 settingsStore.get() 各读一次 settings.json，合并为一次读取，
@@ -375,7 +343,7 @@ app.whenReady().then(() => {
         const reports = await validateWorkflowTemplates(comfyuiClient, workflowLoader)
         for (const r of reports) {
           for (const issue of r.issues) {
-            console.warn(`[环境自检] ${r.workflow}: ${issue.message}`)
+            log.warn(`环境自检 ${r.workflow}: ${issue.message}`)
           }
         }
       } catch {

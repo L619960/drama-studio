@@ -3,6 +3,9 @@ import type { WorkflowLoader } from './workflowLoader'
 import { REALISM_NEGATIVE, CINEMATIC_QUALITY_BLOCK } from '../../shared/imagePrompts'
 import { isTransientError } from './errorClassify'
 import path from 'node:path'
+import { createLogger } from './logger'
+
+const log = createLogger('ImageService')
 
 export class ImageGenerateCancelled extends Error {
   constructor() {
@@ -58,13 +61,13 @@ export class ImageService {
     try {
       const dir = path.dirname(absOutput)
       // diskUsage 是 Node 19+ API，无 @types/node 时用 any 绕过类型检查
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-require-imports -- diskUsage 是 Node 19+ 专有 API，require 规避静态 import 路径解析；as any 补偿 @types/node 缺失
       const diskUsage = (require('node:fs') as any).diskUsage as (p: string, cb: (err: unknown, stats?: { free: number }) => void) => void
       await new Promise<void>((resolve) => {
         diskUsage(dir, (_err: unknown, stats?: { free: number }) => {
           if (stats) {
             const freeGB = stats.free / 1024 / 1024 / 1024
-            if (freeGB < 5) console.warn(`[P2-3] 磁盘剩余 ${freeGB.toFixed(1)}GB < 5GB，建议清理`)
+            if (freeGB < 5) log.warn(`磁盘剩余 ${freeGB.toFixed(1)}GB < 5GB，建议清理`)
           }
           resolve()
         })
@@ -137,7 +140,7 @@ export class ImageService {
         ? Math.floor(options.seed) >>> 0
         : Math.floor(Math.random() * 0xffffffff)
     const negative = options?.negative || REALISM_NEGATIVE
-    console.log(`[ImageService] wf=${name} seed=${seed} ${options?.width}x${options?.height} out=${path.basename(absOutput)}`)
+    log.info(`wf=${name} seed=${seed} ${options?.width}x${options?.height} out=${path.basename(absOutput)}`)
 
     const checkpoints = await this.comfyui.getCheckpoints()
     if (checkpoints.length === 0) {
@@ -228,7 +231,7 @@ export class ImageService {
     try {
       const listed = await this.workflow.list()
       if (!listed.some((w) => w.name === 'face_restore')) {
-        console.warn('[ImageService] face_restore workflow 不存在，跳过 face restore')
+        log.warn('face_restore workflow 不存在，跳过 face restore')
         return
       }
       const inputName = await this.comfyui.uploadImage(absInput)
@@ -244,9 +247,9 @@ export class ImageService {
       } else {
         await this.comfyui.download(img.filename, img.subfolder, img.type, absOutput)
       }
-      console.log(`[ImageService] face restore done: ${path.basename(absOutput)}`)
+      log.info(`face restore done: ${path.basename(absOutput)}`)
     } catch (err) {
-      console.warn(`[ImageService] face restore 失败（不阻塞）:`, err instanceof Error ? err.message : err)
+      log.warn(`face restore 失败（不阻塞）: ${err instanceof Error ? err.message : err}`)
     }
   }
 

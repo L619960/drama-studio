@@ -327,7 +327,7 @@ export class TaskQueue extends EventEmitter {
         log.info(`断点续渲：${recovered} 个中断镜头已恢复为待渲染`)
       }
     } catch (e) {
-      console.warn('[TaskQueue] 断点续渲扫描失败:', e instanceof Error ? e.message : String(e))
+      log.warn(`断点续渲扫描失败: ${e instanceof Error ? e.message : String(e)}`)
     }
     return recovered
   }
@@ -622,7 +622,7 @@ export class TaskQueue extends EventEmitter {
       }
     } catch (e) {
       if (e instanceof Error && e.message.includes('磁盘余量不足')) throw e
-      console.warn('[taskQueue] 磁盘预检不可用（不阻断）:', e)
+      log.warn(`磁盘预检不可用（不阻断）: ${e}`)
     }
 
     const watcher = this.cancellationWatcher(projectId, shotId)

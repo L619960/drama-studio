@@ -11,6 +11,7 @@
  * directorAgent / conversationService / index.ts 等调用方无需改动。
  */
 import type { AppSettings, GeneratedShot, GenreTemplate, AnalyzeResult } from '../../shared/ipcTypes'
+import type { FieldFillGuide } from '../../shared/promptAudit'
 import { httpChatCompletion, httpTest, type ChatMessage, type ToolSpec } from './llmHttp'
 import {
   pickCandidateOp,
@@ -76,7 +77,7 @@ export class LLMService {
   }
 
   /** 批量 AI 补写·字段级补写器：按字段指南 + 镜头上下文调用 LLM 重写 */
-  fillPromptField(guide: import('../../shared/promptAudit').FieldFillGuide, ctx: FillPromptContext): Promise<string> {
+  fillPromptField(guide: FieldFillGuide, ctx: FillPromptContext): Promise<string> {
     return fillPromptFieldOp(this.getSettings, guide, ctx)
   }
 

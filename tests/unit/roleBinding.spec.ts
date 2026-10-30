@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
+  castNameVariants,
   validateCharacterAssets,
   extractLookAnchors,
   detectRoleConfusion
@@ -183,6 +184,123 @@ describe('roleBinding · 角色资产绑定与防混淆（2026-10-23 角色混�
         margin: 0.1
       })
       expect(v.confused).toBe(false)
+    })
+
+    it('otherScores 多角色同分时取先入者（稳定行为）', () => {
+      const v = detectRoleConfusion({
+        selfScore: 0.5,
+        otherScores: [
+          { characterId: 'b', name: '反派', score: 0.7 },
+          { characterId: 'c', name: '配角', score: 0.7 }
+        ]
+      })
+      expect(v.confused).toBe(true)
+      expect(v.withCharacter).toBe('b')
+    })
+  })
+
+  describe('castNameVariants：中文名 → 拼音空格名/首字母大写名（2026-10-30 补缺口）', () => {
+    it('空字符串 → 空数组', () => {
+      expect(castNameVariants('')).toEqual([])
+    })
+
+    it('纯空格 → 空数组', () => {
+      expect(castNameVariants('   ')).toEqual([])
+    })
+
+    it('undefined 等价输入（空）→ 空数组', () => {
+      // castNameVariants 签名是 (name: string)，但防御性编程 trim 后再判空
+      expect(castNameVariants('\t\n')).toEqual([])
+    })
+
+    it('正常中文名 → 包含原文 + 拼音空格 + 小写拼音 + 首字母大写 + 无空格拼音', () => {
+      const v = castNameVariants('张三')
+      expect(v.length).toBeGreaterThanOrEqual(2)
+      expect(v).toContain('张三')
+    })
+
+    it('英文名 → 原样返回（不依赖拼音结果）', () => {
+      const v = castNameVariants('John Smith')
+      expect(v).toContain('John Smith')
+    })
+  })
+
+  describe('validateCharacterAssets 边界：单角色 / 空数组 / 多角色多图共享', () => {
+    it('单角色 → 无冲突无趋同', () => {
+      const a = mkChar({ id: 'a', name: '主角', faceImagePath: 'p/a.png' })
+      const { conflicts, similarLooks } = validateCharacterAssets([a])
+      expect(conflicts).toEqual([])
+      expect(similarLooks).toEqual([])
+    })
+
+    it('空数组 → 全空', () => {
+      const { conflicts, similarLooks } = validateCharacterAssets([])
+      expect(conflicts).toEqual([])
+      expect(similarLooks).toEqual([])
+    })
+
+    it('三角色循环共享 → 每个 pair 都检出', () => {
+      const a = mkChar({ id: 'a', name: '甲', faceImagePath: 'p/shared.png' })
+      const b = mkChar({ id: 'b', name: '乙', refImagePath: 'p/shared.png' })
+      const c = mkChar({ id: 'c', name: '丙', bodySheetPath: 'p/shared.png' })
+      const { conflicts } = validateCharacterAssets([a, b, c])
+      // 3 对 pair (a,b),(a,c),(b,c) 各共享一张图 → 3 条
+      expect(conflicts.length).toBe(3)
+    })
+
+    it('两角色 appearanceLock 和 description 都空 → 无趋同（锚点为空集交集为空）', () => {
+      const a = mkChar({ id: 'a', name: '甲', faceImagePath: 'p/a.png' })
+      const b = mkChar({ id: 'b', name: '乙', faceImagePath: 'p/b.png' })
+      const { similarLooks } = validateCharacterAssets([a, b])
+      expect(similarLooks).toEqual([])
+    })
+  })
+
+  describe('extractLookAnchors 边界：无 appearanceLock/description', () => {
+    it('全空输入 → 两个空数组', () => {
+      const c = mkChar({ id: 'x', name: '无名', faceImagePath: 'p/x.png' })
+      const { colors, hairs } = extractLookAnchors(c)
+      expect(colors).toEqual([])
+      expect(hairs).toEqual([])
+    })
+  })
+
+  describe('detectRoleConfusion 边界：未传 selfScore / 负数 / margin 边界', () => {
+    it('未传 selfScore → 默认 0 比较', () => {
+      const v = detectRoleConfusion({
+        otherScores: [{ characterId: 'b', name: '反派', score: 0.06 }]
+      })
+      // best(0.06) > 0 + 0.05 → confused
+      expect(v.confused).toBe(true)
+      expect(v.selfScore).toBe(0)
+    })
+
+    it('self 恰好等于 other + margin 边界 → 不判混淆（严格大于）', () => {
+      const v = detectRoleConfusion({
+        selfScore: 0.6,
+        otherScores: [{ characterId: 'b', name: '反派', score: 0.65 }],
+        margin: 0.05
+      })
+      // 0.65 > 0.6 + 0.05 → 0.65 > 0.65 是 false → 不混淆
+      expect(v.confused).toBe(false)
+    })
+
+    it('self 正好小于 other + margin ε → 判混淆', () => {
+      const v = detectRoleConfusion({
+        selfScore: 0.6,
+        otherScores: [{ characterId: 'b', name: '反派', score: 0.651 }],
+        margin: 0.05
+      })
+      expect(v.confused).toBe(true)
+    })
+
+    it('otherScores 只有一项且分数为负 → 不混淆', () => {
+      const v = detectRoleConfusion({
+        selfScore: 0.5,
+        otherScores: [{ characterId: 'b', name: '反派', score: -0.1 }]
+      })
+      expect(v.confused).toBe(false)
+      expect(v.bestOther).toBe(-0.1)
     })
   })
 })

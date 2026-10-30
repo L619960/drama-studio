@@ -182,7 +182,7 @@ export class FaceDetector {
         }
         this.recAvailable = true
       } catch (e) {
-        console.warn('[FaceDetector] ArcFace 不可用，人脸比对回退全图 CLIP:', (e as Error).message)
+        log.warn(`ArcFace 不可用，人脸比对回退全图 CLIP: ${(e as Error).message}`)
       }
     }
     return this.recAvailable
@@ -265,7 +265,7 @@ export class FaceDetector {
         if (settled) return
         settled = true
         child.kill()
-        console.warn('[FaceDetector] 子进程超时')
+        log.warn('子进程超时')
         resolve(null)
       }, CHILD_TIMEOUT_MS)
       child.stdout.on('data', d => { stdout += d.toString() })
@@ -305,9 +305,9 @@ export class FaceDetector {
   private fail(permanent: boolean, reason: string): void {
     if (permanent) {
       this.initFailed = true
-      console.warn('[FaceDetector] 人脸检测已禁用（回退全图比对）:', reason)
+      log.warn(`人脸检测已禁用（回退全图比对）: ${reason}`)
     } else {
-      console.warn('[FaceDetector] 本次人脸识别失败（回退全图比对）:', reason)
+      log.warn(`本次人脸识别失败（回退全图比对）: ${reason}`)
     }
   }
 }

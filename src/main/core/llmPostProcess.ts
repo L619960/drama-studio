@@ -12,6 +12,9 @@ import type { AppSettings, AnalyzeResult, AnalyzeScene, AnalyzedCharacter, Analy
 import { DISPLACEMENT_ACTION_RE } from '../../shared/imagePrompts'
 import { CROSS_SOURCE } from '../../shared/promptAuditRules'
 import { httpChat } from './llmHttp'
+import { createLogger } from './logger'
+
+const log = createLogger('LLM')
 
 /** 名称归一化键：去空白并小写（中文不受影响） */
 export function foldName(s: string): string {
@@ -221,7 +224,7 @@ export async function enforcePromptLengths(
       })
     } catch (e) {
       // 整改失败不阻塞：保留原值（记录留痕便于排障；确定性收尾仍会补 transitionEn/截断上限）
-      console.warn('[enforcePromptLengths] 整改调用失败，保留原值:', e instanceof Error ? e.message : String(e))
+      log.warn(`整改调用失败，保留原值: ${e instanceof Error ? e.message : String(e)}`)
       break
     }
     // 复验：补写仍不达标（LLM 二次打折/漏霓虹）则进入下一轮，2 轮后放弃

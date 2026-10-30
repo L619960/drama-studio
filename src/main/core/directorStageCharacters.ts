@@ -98,7 +98,7 @@ export async function buildCharacters(
         const items = await Promise.all(candRels.map(async (c, i) => {
           const abs = path.join(rt.baseDir, c.rel)
           let score = 0.5
-          let note = '生成成功'
+          let note: string
           try {
             const st = await fs.stat(abs)
             // 文件更大通常细节更足；轻微拉开分差供 LLM 参考
@@ -227,7 +227,7 @@ export async function buildPropAssets(rt: DirectorStageRuntime, projectId: strin
 
   rt.log(projectId, 'casting', 'info',
     `生成道具资产 0/${props.length}（${props.map(p => p.zh).join('、')}）...`)
-  await mapPool(props, concurrency, async (prop, i) => {
+  await mapPool(props, concurrency, async (prop, _i) => {
     if (abort()) throw new ImageGenerateCancelled()
     const propsDir = path.join(rt.baseDir, 'projects', projectId, 'props')
     const propAbs = path.join(propsDir, `${prop.id}.png`)

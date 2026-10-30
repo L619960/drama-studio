@@ -87,7 +87,7 @@ export function registerAssetIpc(ctx: AssetIpcCtx): void {
     // 否则渲染层失陷后可把磁盘任意图片上传 ComfyUI（图床外发）。
     const refList = [referenceImagePath, ...(referenceImagePaths || [])].filter((p): p is string => Boolean(p && typeof p === 'string'))
     for (const ref of refList) {
-      let inside = false
+      let inside: boolean
       try {
         resolveInsideRoot(ref)
         inside = true
@@ -133,7 +133,7 @@ export function registerAssetIpc(ctx: AssetIpcCtx): void {
       return { relOut, previousRel }
     }
 
-    let outRel = ''
+    let outRel: string
     let previousRel: string | undefined
     if (input.kind === 'charFace' || input.kind === 'charBody') {
       const char = project.characters.find(c => c.id === input.characterId)
@@ -253,7 +253,7 @@ export function registerAssetIpc(ctx: AssetIpcCtx): void {
       // 负向词被完全忽略，会把 grey wall 画成雨夜街道。
       const wfName = 'klein_t2i_clean'
       const neg = { negative: castingNegativeFor(ch.realismLock, project.genre) }
-      const baseDir = DATA_ROOT
+      const _baseDir = DATA_ROOT
       const faceCandRels: Array<{ rel: string; seed: number }> = []
       await stepLog(`faceCount=${faceCount} seedMode=${ch.seedMode} seed=${ch.seed} wf=${wfName || 'default'}`)
       for (let ci = 0; ci < faceCount; ci++) {
@@ -268,7 +268,7 @@ export function registerAssetIpc(ctx: AssetIpcCtx): void {
           : `projects/${input.projectId}/characters/${char.id}_face_c${ci}.png`
         await stepLog(`face c${ci} seed=${seed} start`)
         const fullPrompt = faceCastingPrompt(look, { realismLock: ch.realismLock })
-        try { await fs.appendFile(join(DATA_ROOT, 'tmp', 'last-casting-prompt.txt'), `=== ${new Date().toISOString()} char=${char.id} seed=${seed} ===\nPOS: ${fullPrompt}\nNEG: ${neg.negative}\n\n`, 'utf8') } catch {}
+        try { await fs.appendFile(join(DATA_ROOT, 'tmp', 'last-casting-prompt.txt'), `=== ${new Date().toISOString()} char=${char.id} seed=${seed} ===\nPOS: ${fullPrompt}\nNEG: ${neg.negative}\n\n`, 'utf8') } catch { /* 失败不阻塞 */ }
         await ctx.imageService.generate(
           fullPrompt,
           resolveInsideRoot(rel),
@@ -283,7 +283,7 @@ export function registerAssetIpc(ctx: AssetIpcCtx): void {
         const items = await Promise.all(faceCandRels.map(async (c, i) => {
           const abs = resolveInsideRoot(c.rel)
           let score = 0.5
-          let note = '生成成功'
+          let note: string
           try {
             const st = await fs.stat(abs)
             score = Math.min(0.95, 0.4 + Math.log10(Math.max(1000, st.size)) / 10)

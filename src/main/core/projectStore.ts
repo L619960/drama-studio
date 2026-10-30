@@ -5,6 +5,9 @@ import type { Project, Character, Shot, SceneBoard } from '../../shared/ipcTypes
 import { mergeProtectedDoneShot, reviewedIsValid } from '../../shared/pipelineGuards'
 import { isPeriodGenre } from '../../shared/castAppearance'
 import { atomicWriteJson } from './fsUtil'
+import { createLogger } from './logger'
+
+const log = createLogger('ProjectStore')
 
 // 延迟获取 electron：在 Electron 主进程内为真实对象；在纯 Node（测试）下
 // require('electron') 返回可执行路径字符串，解构得到 undefined 而不抛错。
@@ -193,7 +196,7 @@ export class ProjectStore {
         }
       }
       if (restored > 0) {
-        console.warn(`[ProjectStore] 已拦截 ${restored} 个已完成镜头被旧快照退化覆盖（保护性恢复为 done）`)
+        log.warn(`已拦截 ${restored} 个已完成镜头被旧快照退化覆盖（保护性恢复为 done）`)
       }
     }
     project.updatedAt = Date.now()

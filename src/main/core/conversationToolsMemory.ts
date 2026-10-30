@@ -128,7 +128,7 @@ export async function tSetSettings(host: ConversationToolsHost, args: Record<str
       'api.aliyun.com', 'dashscope.aliyuncs.com', 'ark.cn-beijing.volces.com',
       'api.x.ai', 'generativelanguage.googleapis.com'
     ]
-    let host = ''
+    let host: string
     try {
       host = new URL(base).hostname.toLowerCase()
     } catch {

@@ -58,6 +58,17 @@ export default defineConfig({
             })
           ]
         : [])
-    ]
+    ],
+    build: {
+      rollupOptions: {
+        output: {
+          // 代码分割：vendor 库独立 chunk，便于长期缓存和并行加载
+          manualChunks: {
+            'vue-vendor': ['vue', 'vue-router'],
+            'element-plus': ['element-plus', '@element-plus/icons-vue']
+          }
+        }
+      }
+    }
   }
 })

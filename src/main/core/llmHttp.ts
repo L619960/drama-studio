@@ -11,6 +11,9 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { AppSettings } from '../../shared/ipcTypes'
 import { logLlmError } from './llmRequest'
+import { createLogger } from './logger'
+
+const log = createLogger('LLM')
 
 /** OpenAI 兼容对话消息（含 function calling 与多模态图片输入） */
 export interface ChatMessage {
@@ -95,7 +98,7 @@ export async function httpChatCompletion(
   if (elapsed && Number(elapsed) > 30) {
     try {
       const charLen = JSON.stringify(body).length
-      console.log(`[llm] chatCompletion ${elapsed}s, bodyChars=${charLen}, model=${s.llm.model}, tools=${opts.tools?.length ?? 0}, msgs=${messages.length}`)
+      log.info(`chatCompletion ${elapsed}s, bodyChars=${charLen}, model=${s.llm.model}, tools=${opts.tools?.length ?? 0}, msgs=${messages.length}`)
     } catch { /* 日志失败不影响主流程 */ }
   }
   const msg = resp.data?.choices?.[0]?.message

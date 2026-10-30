@@ -3,6 +3,9 @@ import * as path from 'node:path'
 import type { Skill } from '../../shared/ipcTypes'
 import { atomicWriteJson } from './fsUtil'
 import { BUILTIN_SKILLS } from './builtinSkills'
+import { createLogger } from './logger'
+
+const log = createLogger('SkillService')
 
 /**
  * 导演技能框架：
@@ -42,7 +45,7 @@ export class SkillService {
         // 首次运行：还没有历史文件
       } else {
         readFailed = true
-        console.warn(`[SkillService] 技能库读取失败，本轮跳过回写以保护历史数据: ${(e as Error).message}`)
+        log.warn(`技能库读取失败，本轮跳过回写以保护历史数据: ${(e as Error).message}`)
         // 损坏文件先改名备份（与会话自检的备份策略一致），再以内置技能兜底启动；
         // 备份失败（如文件被占用）不阻塞启动，同样因 readFailed 不会回写
         try {

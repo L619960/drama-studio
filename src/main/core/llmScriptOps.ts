@@ -505,7 +505,6 @@ export async function analyzeOp(
       const sanitized = jsonText.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, ' ')
       if (sanitized === jsonText) {
         // 无控制字符可清 → 换修复指令重试一次
-        jsonText = ''
         const retryRaw = await httpChat(
           getSettings,
           `${system}\n\n# 上次输出的 JSON 解析失败（${(firstErr as Error).message.slice(0, 100)}）。请重新输出，要求：promptEn/negativeEn 等所有字符串值必须是单行纯文本，不含换行、不含未转义双引号、不含 markdown 代码围栏；只输出一个合法 JSON 对象。`,

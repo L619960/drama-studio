@@ -38,43 +38,57 @@ npm run build:win    # 打包 Windows 安装包
 ```
 drama-studio/
 ├── src/
-│   ├── main/            主进程（业务逻辑中心）
-│   │   ├── index.ts     IPC 注册 + 入口
-│   │   ├── env.d.ts
-│   │   └── core/        11 个核心服务
-│   │       ├── taskQueue.ts          渲染队列编排
-│   │       ├── directorAgent.ts     AI 导演（剧本→成片编排器）
-│   │       ├── conversationService.ts 导演对话
-│   │       ├── llmService.ts         LLM 调用
-│   │       ├── comfyuiClient.ts      ComfyUI 客户端 + WS
-│   │       ├── workflowLoader.ts     工作流模板加载
-│   │       ├── ttsService.ts         TTS（msedge-tts）
-│   │       ├── lipSyncService.ts     LatentSync 口型同步
-│   │       ├── subtitleService.ts    字幕生成
-│   │       ├── ffmpegService.ts      音视频处理
-│   │       ├── consistencyService.ts 人物一致性比对
-│   │       ├── faceDetector.ts       人脸检测独立子进程
-│   │       ├── imageService.ts       定妆图/场景图生成
-│   │       ├── projectStore.ts       项目存储
-│   │       ├── settingsStore.ts      设置存储
-│   │       ├── memoryStore.ts        跨项目记忆库
-│   │       ├── skillService.ts       技能管理
-│   │       └── logger.ts             统一日志工具
-│   ├── preload/        预加载桥接（contextBridge）
-│   ├── renderer/       Vue 3 渲染层
-│   │   └── src/
-│   │       ├── views/                7 个页面视图
-│   │       ├── composables/          组合函数
-│   │       ├── router/                路由
-│   │       ├── utils/
-│   │       └── assets/theme.css
-│   └── shared/ipcTypes.ts  共享类型 + IPC 契约 + SHOT_TIMING 常量
-├── workflows/          ComfyUI 工作流模板（h3_i2v/h3_r2v/wan22_i2v/latentsync/builtin_t2i）
-├── build/              应用图标
-├── test/               E2E smoke 测试
-├── electron.vite.config.ts
-├── electron-builder.yml
-├── tsconfig.json
+│   ├── main/                     主进程（业务逻辑中心）
+│   │   ├── index.ts              入口 + 窗口创建 + IPC 注册
+│   │   ├── core/                 核心服务层（76 个模块）
+│   │   │   ├── director*/        AI 导演子模块（状态机/流水线/资产/手动/完成）
+│   │   │   ├── taskQueue*.ts     渲染队列（8 文件拆分：调度/重试/渲染/音频/一致性/提示词）
+│   │   │   ├── conversation*/    AI 对话系统（session/service/agentLoop + 4 类 tool dispatcher）
+│   │   │   ├── llm*.ts           LLM 层（HTTP/facade/后处理/审计/解析/脚本 ops/提示词）
+│   │   │   ├── imageService.ts   定妆/场景图生成 + face restore
+│   │   │   ├── comfyuiClient.ts  ComfyUI WS 客户端
+│   │   │   ├── workflowLoader.ts / workflowLibrary.ts  工作流模板加载与扫描
+│   │   │   ├── ttsService.ts     Edge TTS
+│   │   │   ├── lipSyncService.ts LatentSync 口型同步
+│   │   │   ├── subtitleService.ts SRT 字幕生成
+│   │   │   ├── ffmpegService.ts  音视频合成 + 片段拼接
+│   │   │   ├── consistencyService.ts  人物外观一致性
+│   │   │   ├── faceDetector.ts   人脸检测独立子进程
+│   │   │   ├── candidatePickService.ts  多候选抽卡（分数/LLM）
+│   │   │   ├── asyncPool.ts      有限并发映射工具
+│   │   │   ├── projectStore.ts   项目 CRUD + 复制
+│   │   │   ├── settingsStore.ts  设置存储 + 归一化
+│   │   │   ├── memoryStore.ts    跨项目记忆库
+│   │   │   ├── skillLibrary.ts / builtinSkills.ts / builtinToolSpecs.ts  技能/工具库
+│   │   │   ├── childProcessManager.ts  子进程生命周期管理
+│   │   │   ├── errorHandler.ts / errorClassify.ts  全局异常兜底 + 临时/持久错误分类
+│   │   │   └── logger.ts         统一日志工具（createLogger 封装）
+│   │   ├── ipc/                  IPC handler（16 个 handler 文件 + shared.ts 统一包装）
+│   │   └── agent/                MCP 协议桥接
+│   ├── preload/index.ts          预加载桥接（contextBridge + sandbox CJS 输出）
+│   ├── renderer/src/             Vue 3 渲染层（28 组件 + 12 composables）
+│   │   ├── views/                7 个页面视图
+│   │   ├── components/           业务组件（console/storyboard/settings/common）
+│   │   ├── composables/          组合函数（directorState/directorChat/inputMemory 等）
+│   │   ├── router/               vue-router
+│   │   └── main.ts               Element Plus 按需引入 + ElMessage monkeypatch
+│   └── shared/                   跨进程共享层
+│       ├── ipcTypes.ts           主类型 + IpcApi 契约 + SHOT_TIMING 常量
+│       ├── ipc-channels.ts       IPC 通道常量枚举（单一事实源）
+│       ├── ipc-api.ts            preload 桥接接口类型声明
+│       ├── promptAudit.ts / promptAuditTypes.ts  AI 提示词审计 facade + 类型
+│       ├── pipelineGuards.ts     流水线门禁（FFmpeg 收尾/ComfyUI 根目录/成片入选）
+│       ├── imagePrompts.ts       负面提示词预设
+│       └── ...                   其他共享模块（castAppearance/scenePrompts/assetReuse 等）
+├── workflows/                    ComfyUI 工作流模板（h3_i2v/h3_r2v/wan22_i2v/latentsync/builtin_t2i）
+├── tests/unit/                   Vitest 单元测试（37 文件 / 301 用例）
+├── test/                         Playwright E2E smoke 测试
+├── docs/                         技术文档（含 IPC 安全清单、技术审计报告）
+├── electron.vite.config.ts       三分构建配置（main/preload/renderer）+ Element Plus 按需引入 + 代码分割
+├── electron-builder.yml          NSIS Windows 打包配置
+├── vitest.config.ts              Vitest 配置（Node environment + v8 coverage）
+├── eslint.config.js              Flat ESLint 配置（@typescript-eslint + vue）
+├── husky/                        Git pre-commit 钩子（lint-staged）
 └── package.json
 ```
 

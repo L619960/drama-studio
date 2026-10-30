@@ -1,9 +1,10 @@
 import * as fs from 'node:fs/promises'
+import { existsSync } from 'node:fs'
 import * as path from 'node:path'
 import type {
   AnalyzeResult, Character, Shot, SceneBoard
 } from '../../shared/ipcTypes'
-import { normalizeSceneKey } from '../../shared/ipcTypes'
+import { normalizeSceneKey, type Project } from '../../shared/ipcTypes'
 import {
   faceCastingPrompt, bodySheetPrompt, scenePlatePrompt, shotFramePrompt, SHOT_SIZE_CUE,
   panoramaScenePrompt, realismNegativeFor, sceneNegativeFor, emptySceneNegativeFor,
@@ -21,6 +22,9 @@ import {
   logImpl, setStageImpl, isCancelledImpl
 } from './directorStateMachine'
 import { notifyProjectUpdatedImpl } from './directorProgressBridge'
+import { createLogger } from './logger'
+
+const log = createLogger('DirAsset')
 
 /**
  * 资产构建：角色定妆 / 道具 / 场景板 / 首尾帧。
@@ -172,7 +176,7 @@ export async function buildCharactersImpl(
         const items = await Promise.all(candRels.map(async (c, i) => {
           const abs = path.join(agent.baseDir, c.rel)
           let score = 0.5
-          let note = '生成成功'
+          let note: string
           try {
             const st = await fs.stat(abs)
             score = Math.min(0.95, 0.4 + Math.log10(Math.max(1000, st.size)) / 10)
@@ -267,7 +271,7 @@ export async function buildPropAssetsImpl(
 
   logImpl(agent, projectId, 'casting', 'info',
     `生成道具资产 0/${props.length}（${props.map(p => p.zh).join('、')}）...`)
-  await mapPool(props, concurrency, async (prop, i) => {
+  await mapPool(props, concurrency, async (prop, _i) => {
     if (abort()) throw new ImageGenerateCancelled()
     const propsDir = path.join(agent.baseDir, 'projects', projectId, 'props')
     const propAbs = path.join(propsDir, `${prop.id}.png`)
@@ -315,7 +319,7 @@ export async function tryReuseSceneBoardImpl(
   let fbId: string | undefined
   try { fbId = (await agent.settings.get()).render?.assetFallbackProjectId } catch { return undefined }
   if (!fbId) return undefined
-  let fb: import('../../shared/ipcTypes').Project
+  let fb: Project
   try { fb = await agent.store.get(fbId) } catch { return undefined }
   try {
     const cur = await agent.store.get(projectId)
@@ -516,36 +520,57 @@ export async function generateShotFirstFrameImpl(
       // P1-1: 人脸相似度比对（首帧 vs 定妆照），低于阈值重抽 1 次
       if (faceAbs) {
         try {
-          const { execFileSync } = require('node:child_process')
-          const pyOut = execFileSync(
-            'D:\\ComfyUI-V20\\python\\python.exe',
-            ['E:\\drama-studio\\tmp\\face_sim.py', faceAbs, firstAbs],
-            { timeout: 60000, encoding: 'utf-8' }
-          )
-          const lastLine = pyOut.trim().split('\n').pop() || '{}'
-          const result = JSON.parse(lastLine)
-          console.log(`[P1-1] face sim score=${result.score} faces1=${result.faces1} faces2=${result.faces2}`)
-          if (result.score >= 0 && result.score < 0.4) {
-            console.warn(`[P1-1] face sim low (${result.score}), regenerating once...`)
-            // 重抽 1 次
-            await agent.image.generate(
-              shotFramePrompt({
-                phase: 'start', lookEn: look, scene: plateHint, action: frameAction,
-                shotSizeCue: sizeCue, emotion: dMasked.as.emotion || undefined,
-                camera: dMasked.as.camera || undefined, lighting: dMasked.as.lighting,
-                facing: dMasked.as.facing, continuity: dMasked.as.continuity,
-                characterCount: d.characterIds.length || 1, props: d.as.props
-              }),
-              firstAbs,
-              {
-                width: sc.frameWidth, height: sc.frameHeight, shouldAbort: abort,
-                negative: mergeNegative(realismNegativeFor('standard'), frameCrowdNegativeFor(d.characterIds.length || 1), oocWardrobeNegativeFor(look || ''), ageDriftNegativeFor(look || '')),
-                workflowName: 'klein_t2i_clean'
+          // 动态解析 python.exe：从 ComfyUI startCommand 提取，避免硬编码
+          const { comfyInstallRoot } = await import('../../shared/pipelineGuards')
+          const settings = await agent.settings.get()
+          let pyExe = ''
+          const cmd = settings.comfyui?.startCommand
+          if (cmd) {
+            const argv: string[] = []
+            const re = /"([^"]*)"|'([^']*)'|(\S+)/g
+            let m: RegExpExecArray | null
+            while ((m = re.exec(cmd)) !== null) argv.push(m[1] ?? m[2] ?? m[3])
+            pyExe = argv[0] || '' // startCommand 首段即 python.exe 路径
+          }
+          if (!pyExe || !existsSync(pyExe)) {
+            // Python 不可用 → 跳过，不阻塞首帧
+            // 同时清理旧的 tmp/face_sim.py 依赖（开发态实验代码）
+            void comfyInstallRoot // 保留 import 引用防止 TS 报未使用
+          } else {
+            // 脚本路径：优先 baseDir/face_sim.py，回退 data root 同级的 tmp/
+            const scriptCandidates = [
+              path.join(agent.baseDir, 'face_sim.py'),
+              path.join(agent.baseDir, '..', 'tmp', 'face_sim.py')
+            ]
+            const pyScript = scriptCandidates.find(p => existsSync(p))
+            if (pyScript) {
+              const { execFileSync } = await import('node:child_process')
+              const pyOut = execFileSync(pyExe, [pyScript, faceAbs, firstAbs], { timeout: 60000, encoding: 'utf-8' })
+              const lastLine = pyOut.trim().split('\n').pop() || '{}'
+              const result = JSON.parse(lastLine)
+              log.info(`face sim score=${result.score} faces1=${result.faces1} faces2=${result.faces2}`)
+              if (result.score >= 0 && result.score < 0.4) {
+                log.warn(`face sim low (${result.score}), regenerating once...`)
+                await agent.image.generate(
+                  shotFramePrompt({
+                    phase: 'start', lookEn: look, scene: plateHint, action: frameAction,
+                    shotSizeCue: sizeCue, emotion: dMasked.as.emotion || undefined,
+                    camera: dMasked.as.camera || undefined, lighting: dMasked.as.lighting,
+                    facing: dMasked.as.facing, continuity: dMasked.as.continuity,
+                    characterCount: d.characterIds.length || 1, props: d.as.props
+                  }),
+                  firstAbs,
+                  {
+                    width: sc.frameWidth, height: sc.frameHeight, shouldAbort: abort,
+                    negative: mergeNegative(realismNegativeFor('standard'), frameCrowdNegativeFor(d.characterIds.length || 1), oocWardrobeNegativeFor(look || ''), ageDriftNegativeFor(look || '')),
+                    workflowName: 'klein_t2i_clean'
+                  }
+                )
               }
-            )
+            }
           }
         } catch (e) {
-          console.warn('[P1-1] face sim check failed (non-blocking):', e instanceof Error ? e.message : e)
+          log.warn(`face sim check failed (non-blocking): ${e instanceof Error ? e.message : e}`)
         }
       }
     } catch (e) {

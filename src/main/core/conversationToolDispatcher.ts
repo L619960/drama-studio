@@ -10,7 +10,7 @@ import { RESULT_LIMIT } from './conversationConstants'
 import type { ConversationService } from './conversationService'
 
 export async function executeToolImpl(agent: ConversationService, scope: string, name: string, argsJson: string, signal?: AbortSignal): Promise<{ ok: boolean; text: string }> {
-  let args: Record<string, unknown> = {}
+  let args: Record<string, unknown>
   try {
     args = argsJson ? JSON.parse(argsJson) as Record<string, unknown> : {}
   } catch {
