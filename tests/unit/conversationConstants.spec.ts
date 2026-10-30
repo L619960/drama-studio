@@ -3,7 +3,7 @@ import * as cc from '../../src/main/core/conversationConstants'
 
 describe('conversationConstants · 常量与工具函数（2026-10-30 补 mid 函数 0% 缺口）', () => {
   it('常量导出为预期值', () => {
-    expect(cc.MAX_TOOL_ROUNDS).toBe(1000)
+    expect(cc.MAX_TOOL_ROUNDS).toBe(100)
     expect(cc.SAME_CALL_LIMIT).toBe(20)
     expect(cc.HISTORY_LIMIT).toBe(80)
     expect(cc.RESULT_LIMIT).toBe(24000)

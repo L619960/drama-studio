@@ -1,5 +1,5 @@
 /** 工具循环不设业务步数上限（重渲 20 镜需 60+ 轮）；此值仅为防失控的绝对保险，正常任务远达不到 */
-export const MAX_TOOL_ROUNDS = 1000
+export const MAX_TOOL_ROUNDS = 100
 /** 连续多轮完全相同的工具调用（同工具+同参数）判定死循环，强制收尾总结 */
 export const SAME_CALL_LIMIT = 20
 export const HISTORY_LIMIT = 80 // 只携带最近 80 条，控制 token
