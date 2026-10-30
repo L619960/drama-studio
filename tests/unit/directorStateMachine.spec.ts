@@ -31,6 +31,7 @@ import {
   pauseUntilShotsReviewedImpl,
   hydrateImpl,
   recoverAllImpl,
+  listInterruptedImpl,
   clearStateImpl,
   emitStateImpl
 } from '../../src/main/core/directorStateMachine'
@@ -309,6 +310,67 @@ describe('recoverAllImpl：启动扫描残留', () => {
   it('projects 目录不存在 → 返回 0，不抛错', async () => {
     const agent = makeAgent(path.join(tmpDir, 'nonexistent'))
     expect(await recoverAllImpl(agent)).toBe(0)
+  })
+})
+
+describe('listInterruptedImpl：重启后中断任务清单', () => {
+  it('识别中断/残留 running，过滤已完成与无状态项目，按中断时间倒序', async () => {
+    const agent = makeAgent(tmpDir)
+    const write = async (id: string, state: DirectorState) => {
+      const dir = path.join(tmpDir, 'projects', id)
+      await fs.mkdir(dir, { recursive: true })
+      await fs.writeFile(path.join(dir, 'director-state.json'), JSON.stringify(state))
+    }
+    const a = makeState('p_a')
+    a.title = 'A 片'
+    a.running = false
+    a.interrupted = true
+    a.interruptedStage = 'render'
+    a.finishedAt = 1000
+    await write('p_a', a)
+
+    const b = makeState('p_b')
+    b.title = 'B 片'
+    b.stages.render.status = 'running'
+    b.finishedAt = 2000
+    await write('p_b', b)
+
+    const c = makeState('p_c')
+    c.title = 'C 片'
+    c.running = false
+    c.stages.done.status = 'done'
+    await write('p_c', c)
+    await fs.mkdir(path.join(tmpDir, 'projects', 'p_none'), { recursive: true })
+
+    const list = await listInterruptedImpl(agent)
+    expect(list.map(t => t.projectId)).toEqual(['p_b', 'p_a'])
+    expect(list[1].interruptedStage).toBe('render')
+    expect(list[1].reason).toContain('渲染')
+    expect(list[0].interruptedStage).toBe('render')
+  })
+
+  it('title 为空时回退 project.json 标题，仍无则用项目 id', async () => {
+    const agent = makeAgent(tmpDir)
+    const dir1 = path.join(tmpDir, 'projects', 'p_json')
+    await fs.mkdir(dir1, { recursive: true })
+    const s1 = makeState('p_json')
+    s1.title = ''
+    s1.running = false
+    s1.interrupted = true
+    await fs.writeFile(path.join(dir1, 'director-state.json'), JSON.stringify(s1))
+    await fs.writeFile(path.join(dir1, 'project.json'), JSON.stringify({ title: '来自项目文件' }))
+
+    const dir2 = path.join(tmpDir, 'projects', 'p_id')
+    await fs.mkdir(dir2, { recursive: true })
+    const s2 = makeState('p_id')
+    s2.title = ''
+    s2.running = false
+    s2.interrupted = true
+    await fs.writeFile(path.join(dir2, 'director-state.json'), JSON.stringify(s2))
+
+    const list = await listInterruptedImpl(agent)
+    expect(list.find(t => t.projectId === 'p_json')!.projectName).toBe('来自项目文件')
+    expect(list.find(t => t.projectId === 'p_id')!.projectName).toBe('p_id')
   })
 })
 

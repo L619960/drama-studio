@@ -8,7 +8,7 @@ import { ProjectStore } from './projectStore'
 import { SettingsStore } from './settingsStore'
 import type {
   DirectorState, DirectorStage, StageStatus, DirectorStartInput,
-  Shot, AnalyzeResult, SceneBoard, Character, Project
+  Shot, AnalyzeResult, SceneBoard, Character, Project, InterruptedTask
 } from '../../shared/ipcTypes'
 import type { AuditCheckItem } from './skillLibrary'
 import { CandidatePickService } from './candidatePickService'
@@ -17,7 +17,7 @@ import { STAGE_ORDER, STAGE_LABELS, stageIndexOf } from './directorConstants'
 import {
   freshStateImpl, isCancelledImpl, currentStageImpl, setStageImpl, logImpl,
   emitStateImpl, persistImpl, maybeGateImpl, pauseUntilShotsReviewedImpl,
-  getStateImpl, getLatestStateImpl, listActiveStatesImpl, clearStateImpl, hydrateImpl, recoverAllImpl
+  getStateImpl, getLatestStateImpl, listActiveStatesImpl, clearStateImpl, hydrateImpl, recoverAllImpl, listInterruptedImpl
 } from './directorStateMachine'
 import {
   ensureShadowStateImpl, emitProgressEventImpl, notifyProjectUpdatedImpl,
@@ -368,6 +368,11 @@ export class DirectorAgent extends EventEmitter {
   /** 全部活跃任务（running/paused）：全局任务面板展示并行任务 */
   listActiveStates(): DirectorState[] {
     return listActiveStatesImpl(this)
+  }
+
+  /** 磁盘上未跑完的任务（重启后中断/残留）：项目列表「一键继续」横幅用 */
+  async listInterrupted(): Promise<InterruptedTask[]> {
+    return listInterruptedImpl(this)
   }
 
   /** 清空某项目的全部运行时残留 */

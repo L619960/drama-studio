@@ -1,7 +1,7 @@
 import * as fs from 'node:fs/promises'
 import * as path from 'node:path'
 import type {
-  DirectorState, DirectorStage, StageState, StageStatus, DirectorLogEntry
+  DirectorState, DirectorStage, StageState, StageStatus, DirectorLogEntry, InterruptedTask
 } from '../../shared/ipcTypes'
 import { reviewedIsValid } from '../../shared/pipelineGuards'
 import { atomicWriteJson } from './fsUtil'
@@ -271,6 +271,57 @@ export async function recoverAllImpl(agent: DirectorAgent): Promise<number> {
     log.warn(`启动恢复：${repaired} 个项目的残留运行状态已降级为中断`)
   }
   return repaired
+}
+
+/**
+ * 扫描磁盘上未跑完的任务（中断标记或残留 running/paused），
+ * 供项目列表页顶部「待恢复」横幅与一键继续入口使用。按最近中断时间倒序。
+ */
+export async function listInterruptedImpl(agent: DirectorAgent): Promise<InterruptedTask[]> {
+  const tasks: InterruptedTask[] = []
+  let projectDir: string
+  try {
+    projectDir = path.join(agent.baseDir, 'projects')
+    const entries = await fs.readdir(projectDir, { withFileTypes: true })
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue
+      const projectId = entry.name
+      const file = path.join(projectDir, projectId, 'director-state.json')
+      let state: DirectorState
+      try {
+        state = JSON.parse(await fs.readFile(file, 'utf-8')) as DirectorState
+      } catch {
+        // 无状态文件或 JSON 损坏：不是可恢复任务
+        continue
+      }
+      if (!state.interrupted && !state.running && !state.paused) continue
+      // 优先用修复时记录的中断阶段；未修复的磁盘残留则取运行中/出错阶段
+      const stage = state.interruptedStage
+        ?? STAGE_ORDER.find(s => state.stages?.[s]?.status === 'running')
+        ?? STAGE_ORDER.find(s => state.stages?.[s]?.status === 'error')
+      let projectName = state.title
+      if (!projectName) {
+        try {
+          const raw = await fs.readFile(path.join(projectDir, projectId, 'project.json'), 'utf-8')
+          projectName = (JSON.parse(raw) as { title?: string }).title || projectId
+        } catch {
+          projectName = projectId
+        }
+      }
+      const lastLogTs = state.logs?.reduce((m, l) => Math.max(m, l.timestamp || 0), 0) ?? 0
+      const failedAt = state.finishedAt || lastLogTs || state.startedAt || undefined
+      tasks.push({
+        projectId,
+        projectName,
+        interruptedStage: stage,
+        failedAt,
+        reason: stage ? `停在「${STAGE_LABELS[stage]}」` : '任务未跑完'
+      })
+    }
+  } catch {
+    // projects 目录不存在：没有可恢复任务
+  }
+  return tasks.sort((a, b) => (b.failedAt || 0) - (a.failedAt || 0))
 }
 
 /**

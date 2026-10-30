@@ -28,6 +28,51 @@
       class="page-section"
     />
 
+    <!-- REQ-03：重启后中断的任务可一键从断点继续 -->
+    <el-alert
+      v-if="interruptedTasks.length > 0"
+      class="page-section interrupted-banner"
+      type="warning"
+      :closable="false"
+      show-icon
+      title="以下任务在应用重启时中断，已完成的产物均保留，可从断点继续"
+    >
+      <div v-for="t in interruptedTasks" :key="t.projectId" class="interrupted-item">
+        <span class="interrupted-name">{{ t.projectName }}</span>
+        <span class="interrupted-reason">{{ t.reason }}</span>
+        <el-button
+          v-if="t.interruptedStage"
+          size="small"
+          type="primary"
+          :icon="RefreshRight"
+          :loading="resumingId === t.projectId"
+          @click="resumeInterrupted(t)"
+        >
+          从「{{ STAGE_LABELS[t.interruptedStage] }}」继续
+        </el-button>
+        <el-button
+          v-else
+          size="small"
+          type="primary"
+          :icon="RefreshRight"
+          :loading="resumingId === t.projectId"
+          @click="resumeInterrupted(t)"
+        >
+          去项目页继续
+        </el-button>
+        <el-button
+          v-if="t.interruptedStage"
+          size="small"
+          link
+          type="primary"
+          :disabled="resumingId === t.projectId"
+          @click="openProjectById(t.projectId)"
+        >
+          打开项目
+        </el-button>
+      </div>
+    </el-alert>
+
     <!-- 加载中：骨架屏替代裸转圈 -->
     <div v-if="!projectsLoaded" class="project-grid">
       <div v-for="i in 6" :key="i" class="glass-card skeleton-card">
@@ -180,9 +225,9 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { confirmDanger, confirmAction } from '../utils/confirm'
 import {
-  Plus, Edit, EditPen, CopyDocument, Download, FolderOpened, Delete, Connection, VideoCamera, Search
+  Plus, Edit, EditPen, CopyDocument, Download, FolderOpened, Delete, Connection, VideoCamera, Search, RefreshRight
 } from '@element-plus/icons-vue'
-import type { Project } from '../../../shared/ipcTypes'
+import type { Project, InterruptedTask } from '../../../shared/ipcTypes'
 import { GENRE_TEMPLATES } from '../../../shared/ipcTypes'
 import { snapshot } from '../utils/snapshot'
 import {
@@ -193,6 +238,7 @@ import {
 import { useFileUrl, clearFileUrlCache } from '../composables/useFileUrl'
 import { clearLastProjectIdIf, setLastProjectId } from '../composables/useActiveProject'
 import DirectorFlow from '../components/project/DirectorFlow.vue'
+import { STAGE_LABELS } from '../composables/useDirectorState'
 import ContextMenu, { type CtxItem } from '../components/ContextMenu.vue'
 import EmptyState from '../components/common/EmptyState.vue'
 
@@ -264,8 +310,44 @@ const renameDialog = ref({ visible: false, title: '', project: null as Project |
 // AI 导演流程组件
 const directorFlowRef = ref<InstanceType<typeof DirectorFlow> | null>(null)
 
+/** REQ-03：磁盘上未跑完的任务（应用重启中断），顶部横幅展示并支持一键继续 */
+const interruptedTasks = ref<InterruptedTask[]>([])
+const resumingId = ref('')
+
+async function loadInterrupted(): Promise<void> {
+  try {
+    interruptedTasks.value = await window.api.director.listInterrupted()
+  } catch {
+    interruptedTasks.value = []
+  }
+}
+
+function openProjectById(projectId: string): void {
+  router.push(`/project/${projectId}/storyboard`)
+}
+
+async function resumeInterrupted(task: InterruptedTask): Promise<void> {
+  if (!task.interruptedStage) {
+    openProjectById(task.projectId)
+    return
+  }
+  resumingId.value = task.projectId
+  try {
+    await window.api.director.resumeFrom(task.projectId, task.interruptedStage)
+    interruptedTasks.value = interruptedTasks.value.filter(t => t.projectId !== task.projectId)
+    ElMessage.success(`已从「${STAGE_LABELS[task.interruptedStage]}」继续，可在项目页查看进度`)
+    openProjectById(task.projectId)
+    loadProjects()
+  } catch (e) {
+    ElMessage.error(`继续失败：${e instanceof Error ? e.message : String(e)}`)
+  } finally {
+    resumingId.value = ''
+  }
+}
+
 onMounted(() => {
   loadProjects()
+  loadInterrupted()
   checkComfyUI()
   // 剧本页「去 AI 导演」会 push /?openDirector=1：这里自动打开导演表单，
   // 消费后清掉 query，避免刷新/返回时重复弹窗
@@ -561,6 +643,16 @@ async function batchDelete() {
   padding: 12px 16px;
 }
 .batch-info { color: var(--info); font-size: 13px; margin-right: 4px; }
+
+.interrupted-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 4px 0;
+}
+.interrupted-name { font-weight: 600; }
+.interrupted-reason { color: var(--info); font-size: 13px; }
 
 .project-grid {
   display: grid;

@@ -579,6 +579,8 @@ export interface IpcApi {
     getLatestState(): Promise<DirectorState | null>
     /** 全部活跃任务状态（running/paused），供全局任务面板并行展示多项目 */
     getActiveStates(): Promise<DirectorState[]>
+    /** 扫描磁盘上未跑完的任务（中断/残留 running），项目列表「一键继续」横幅用 */
+    listInterrupted(): Promise<InterruptedTask[]>
     onProgress(cb: (e: DirectorProgressEvent) => void): () => void
     onLog(cb: (e: DirectorLogEvent) => void): () => void
     /** 后台流程（定妆/首帧/场景板/逐镜渲染）落盘后通知：前端面板收到即刷新项目数据 */
@@ -996,6 +998,17 @@ export interface PendingGate {
   unreviewedShotIds: string[]
 }
 
+/** 中断任务摘要（director:listInterrupted）：项目列表「待恢复」横幅用 */
+export interface InterruptedTask {
+  projectId: string
+  projectName: string
+  interruptedStage?: DirectorStage
+  /** 中断时间（毫秒）；无记录时缺省 */
+  failedAt?: number
+  /** 中文说明：停在哪个阶段/为何中断 */
+  reason: string
+}
+
 export interface DirectorState {
   projectId: string
   title: string
@@ -1333,6 +1346,7 @@ export const IpcChannels = {
   directorClearState: 'director:clearState',
   directorLatestState: 'director:getLatestState',
   directorActiveStates: 'director:listActiveStates',
+  directorListInterrupted: 'director:listInterrupted',
   directorProgress: 'director:progress',
   directorLog: 'director:log',
   directorProjectUpdated: 'director:project-updated',
