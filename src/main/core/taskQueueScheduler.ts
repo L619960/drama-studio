@@ -5,7 +5,7 @@
  * - isProjectQueueIdle：项目是否既无在跑也无排队任务
  * 行为与原 TaskQueue 内联实现一字不差。
  */
-import type { Project } from '../../shared/ipcTypes'
+import type { Project, QueueSnapshot, ProgressEvent } from '../../shared/ipcTypes'
 import { CANCEL_ERROR, type QueuedTask } from './taskQueueShared'
 
 /**
@@ -33,6 +33,39 @@ export function isProjectQueueIdle(
 ): boolean {
   if (current?.projectId === projectId) return false
   return !queue.some(t => t.projectId === projectId)
+}
+
+/**
+ * 队列剩余预计耗时（秒）。
+ * 无历史样本（首跑）或没有排队任务时返回 null——UI 据此显示「首次渲染，暂无预估」。
+ */
+export function estimateEtaSeconds(durationsMs: number[], pendingCount: number): number | null {
+  if (durationsMs.length === 0 || pendingCount <= 0) return null
+  const avg = durationsMs.reduce((a, b) => a + b, 0) / durationsMs.length
+  if (!Number.isFinite(avg) || avg <= 0) return null
+  return Math.max(1, Math.round((avg * pendingCount) / 1000))
+}
+
+/** 组装队列快照：正在渲哪镜（含当前 step/percent）+ 排队镜 + ETA */
+export function buildQueueSnapshot(
+  queue: QueuedTask[],
+  current: QueuedTask | null,
+  currentProgress: { step: ProgressEvent['step']; percent: number } | null,
+  durationsMs: number[]
+): QueueSnapshot {
+  const queued = queue.map(t => ({ projectId: t.projectId, shotId: t.shotId }))
+  return {
+    running: current
+      ? {
+          projectId: current.projectId,
+          shotId: current.shotId,
+          step: currentProgress?.step ?? 'queued',
+          percent: currentProgress?.percent ?? 0
+        }
+      : null,
+    queued,
+    etaSeconds: estimateEtaSeconds(durationsMs, queued.length)
+  }
 }
 
 /**

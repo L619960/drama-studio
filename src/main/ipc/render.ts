@@ -62,6 +62,8 @@ export function registerRenderIpc(ctx: RenderIpcCtx): void {
   handleIpc(IpcChannels.renderCancel, (_, { projectId, shotId }: { projectId: string; shotId?: string }) =>
     ctx.taskQueue.cancel(projectId, shotId)
   )
+  // 队列可观测（REQ-01）：正在渲哪镜 / 还排几镜 / 预计还要等多久
+  handleIpc(IpcChannels.queueList, () => ctx.taskQueue.getQueueSnapshot())
 
   // AI 导演
   handleIpc(IpcChannels.directorStart, (_, input: DirectorStartInput) =>
@@ -232,6 +234,7 @@ export function registerRenderIpc(ctx: RenderIpcCtx): void {
     return { shots: shots.length, characters: project.characters.length, props: (project.props || []).length }
   })
   handleIpc(IpcChannels.directorLatestState, () => ctx.directorAgent.getLatestState())
+  handleIpc(IpcChannels.directorActiveStates, () => ctx.directorAgent.listActiveStates())
 
   // 场景板：重出全景固定场景（2:1 全景 → 裁方位图 → 拼宫格看板），复用导演流水线同款链路
   handleIpc(IpcChannels.sceneRegeneratePano, async (_, input: { projectId: string; boardId: string }) => {

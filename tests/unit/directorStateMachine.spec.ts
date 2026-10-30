@@ -23,6 +23,7 @@ import {
   freshStateImpl,
   getStateImpl,
   getLatestStateImpl,
+  listActiveStatesImpl,
   setStageImpl,
   isCancelledImpl,
   currentStageImpl,
@@ -357,6 +358,42 @@ describe('getLatestStateImpl：最近活跃任务', () => {
     agent.states.set('p-old', oldS)
     agent.states.set('p-new', newS)
     expect(getLatestStateImpl(agent)!.projectId).toBe('p-new')
+  })
+})
+
+describe('listActiveStatesImpl：并行活跃任务', () => {
+  it('只返回 running/paused，按最近活动倒序', () => {
+    const agent = makeAgent(tmpDir)
+    expect(listActiveStatesImpl(agent)).toEqual([])
+
+    const running = makeState('p-run')
+    running.startedAt = 1000
+    const paused = makeState('p-pause')
+    paused.running = false
+    paused.paused = true
+    paused.startedAt = 3000
+    const finished = makeState('p-done')
+    finished.running = false
+    finished.paused = false
+    finished.startedAt = 5000
+    agent.states.set('p-run', running)
+    agent.states.set('p-pause', paused)
+    agent.states.set('p-done', finished)
+
+    const active = listActiveStatesImpl(agent)
+    expect(active.map(s => s.projectId)).toEqual(['p-pause', 'p-run'])
+  })
+
+  it('最后日志时间优先于 startedAt', () => {
+    const agent = makeAgent(tmpDir)
+    const a = makeState('a')
+    a.startedAt = 100
+    const b = makeState('b')
+    b.startedAt = 50
+    b.logs.push({ id: 1, stage: 'analyze', level: 'info', message: 'x', timestamp: 900 })
+    agent.states.set('a', a)
+    agent.states.set('b', b)
+    expect(listActiveStatesImpl(agent)[0].projectId).toBe('b')
   })
 })
 

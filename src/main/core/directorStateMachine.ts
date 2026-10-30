@@ -204,6 +204,23 @@ export function getLatestStateImpl(agent: DirectorAgent): DirectorState | null {
 }
 
 /**
+ * 全部活跃任务（running 或 paused）：全局任务面板并行展示多项目用。
+ * 按最近活动时间倒序；已结束/已取消的不返回。
+ */
+export function listActiveStatesImpl(agent: DirectorAgent): DirectorState[] {
+  const active: DirectorState[] = []
+  for (const state of agent.states.values()) {
+    if (!state.running && !state.paused) continue
+    active.push(state)
+  }
+  return active.sort((a, b) => {
+    const atA = Math.max(a.logs[a.logs.length - 1]?.timestamp || 0, a.startedAt || 0)
+    const atB = Math.max(b.logs[b.logs.length - 1]?.timestamp || 0, b.startedAt || 0)
+    return atB - atA
+  })
+}
+
+/**
  * 启动时主动扫描全部项目的 director-state.json，把残留 running=true 的状态降级为 error。
  * 与懒加载的 hydrate() 互补：hydrate 只在用户打开项目时才修复；本方法在应用启动后跑一次，
  * 保证即使不打开项目，磁盘上的 director-state.json 也不会留下"假运行"状态。

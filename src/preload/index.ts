@@ -43,7 +43,8 @@ const api: IpcApi = {
   },
   render: {
     start: (projectId, shotIds, forceRebuildFirstFrame) => invoke(IpcChannels.renderStart, { projectId, shotIds, forceRebuildFirstFrame }),
-    cancel: (projectId, shotId) => invoke(IpcChannels.renderCancel, { projectId, shotId })
+    cancel: (projectId, shotId) => invoke(IpcChannels.renderCancel, { projectId, shotId }),
+    list: () => invoke(IpcChannels.queueList)
   },
   comfyui: {
     healthCheck: () => invoke(IpcChannels.comfyuiHealth),
@@ -146,6 +147,7 @@ const api: IpcApi = {
     getState: (projectId) => invoke(IpcChannels.directorGetState, projectId),
     clearState: (projectId) => invoke(IpcChannels.directorClearState, projectId),
     getLatestState: () => invoke(IpcChannels.directorLatestState),
+    getActiveStates: () => invoke(IpcChannels.directorActiveStates),
     onProgress: (cb) => {
       const listener = (_: unknown, e: unknown) => cb(e as Parameters<typeof cb>[0])
       ipcRenderer.on(IpcChannels.directorProgress, listener)

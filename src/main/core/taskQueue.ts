@@ -50,7 +50,7 @@ import {
   computeWantedCandidates, computeLipProfile, isFlf2vWorkflow, resolveFlfWorkflowName,
   injectH3TurboLora, type EngineMode
 } from './taskQueueRender'
-import { deriveProjectStatus, isProjectQueueIdle, createCancellationWatcher } from './taskQueueScheduler'
+import { deriveProjectStatus, isProjectQueueIdle, createCancellationWatcher, buildQueueSnapshot } from './taskQueueScheduler'
 import { decideRetryAction } from './taskQueueRetry'
 
 const log = createLogger('TaskQueue')
@@ -68,6 +68,12 @@ export class TaskQueue extends EventEmitter {
     return `${projectId}/${shotId}`
   }
   private current: QueuedTask | null = null
+  /** 当前在渲镜的最新进度（供 queue:list 快照展示，不必等下一个事件） */
+  private currentProgress: { step: ProgressEvent['step']; percent: number } | null = null
+  /** 最近成片镜耗时（毫秒，最多 20 条）：ETA 估算的历史样本，首跑无样本时不展示数字 */
+  private recentDurationsMs: number[] = []
+  /** 当前镜开始渲染时间戳（用于落 done 时记录耗时） */
+  private currentStartedAt = 0
   private lastProjectId = ''
   /** 本轮 process 处理过的项目，排空后逐个收尾并发 queue-finished */
   private touchedProjects = new Set<string>()
@@ -407,6 +413,8 @@ export class TaskQueue extends EventEmitter {
         // 项目级取消：跳过该项目的残留任务，不中断其他项目
         if (this.cancelledProjects.has(task.projectId)) continue
         this.current = task
+        this.currentProgress = null
+        this.currentStartedAt = Date.now()
         this.lastProjectId = task.projectId
         this.touchedProjects.add(task.projectId)
         try {
@@ -418,11 +426,13 @@ export class TaskQueue extends EventEmitter {
           log.error(`镜头渲染异常 ${task.projectId}/${task.shotId}: ${(e as Error).message}`)
         }
         this.current = null
+        this.currentProgress = null
       }
     } finally {
       // 无论循环如何退出都必须复位 running 并逐项目收尾，
       // 否则 running 卡死导致后续 start() 全部丢弃任务、waitForFinish 永久挂起
       this.current = null
+      this.currentProgress = null
       this.running = false
 
       // 逐项目收尾：更新状态 + 通知编排者
@@ -482,8 +492,31 @@ export class TaskQueue extends EventEmitter {
     return isProjectQueueIdle(this.queue, this.current, projectId)
   }
 
+  /** 队列快照（IPC queue:list）：任意页面可查询在渲镜 / 排队镜 / 剩余 ETA */
+  getQueueSnapshot(): ReturnType<typeof buildQueueSnapshot> {
+    return buildQueueSnapshot(this.queue, this.current, this.currentProgress, this.recentDurationsMs)
+  }
+
   private emitProgress(e: Omit<ProgressEvent, 'type'>): void {
-    this.emit('progress', { ...e, type: 'project:progress' } as ProgressEvent)
+    const event = { ...e, type: 'project:progress' } as ProgressEvent
+    // 记录在渲镜最新进度，供 queue:list 快照使用
+    if (this.current && e.projectId === this.current.projectId && e.shotId === this.current.shotId) {
+      this.currentProgress = { step: e.step, percent: e.percent }
+    }
+    // 成片镜耗时样本（最近 20 条）：供 ETA 估算；取消/失败不计入
+    if (e.step === 'done' && this.currentStartedAt > 0) {
+      const elapsed = Date.now() - this.currentStartedAt
+      if (elapsed > 0) {
+        this.recentDurationsMs.push(elapsed)
+        if (this.recentDurationsMs.length > 20) this.recentDurationsMs.shift()
+      }
+    }
+    // ETA 随进度事件下发（兼容既有 ProgressEvent.etaSeconds 契约）
+    if (this.queue.length > 0) {
+      const eta = buildQueueSnapshot(this.queue, this.current, this.currentProgress, this.recentDurationsMs).etaSeconds
+      if (eta !== null) event.etaSeconds = eta
+    }
+    this.emit('progress', event)
   }
 
   /** 识别 ComfyUI 显存不足类错误（OOM/显存分配失败） */

@@ -60,6 +60,10 @@
         <span class="label">失败</span>
         <span class="value danger">{{ failedCount }}</span>
       </div>
+      <div class="summary-item" v-if="taskActive && etaText">
+        <span class="label">预计</span>
+        <span class="value info">{{ etaText }}</span>
+      </div>
     </div>
 
     <el-empty
@@ -83,8 +87,17 @@
         <template #default="{ row }">
           <div class="progress-cell">
             <el-progress
-              :percentage="getProgress(row)"
+              v-if="getProgress(row) !== null"
+              :percentage="getProgress(row) ?? 0"
               :status="row.status === 'failed' ? 'exception' : row.status === 'done' ? 'success' : ''"
+              :stroke-width="8"
+            />
+            <!-- 已入队但还没收到进度事件：显示不确定态，避免「0% 卡死」错觉 -->
+            <el-progress
+              v-else
+              :percentage="0"
+              :indeterminate="true"
+              :show-text="false"
               :stroke-width="8"
             />
             <span class="progress-msg">{{ getMessage(row) }}</span>
@@ -227,6 +240,7 @@ import { Refresh, CircleClose, RefreshLeft, VideoPlay, Document, FolderOpened } 
 import type { Project, Shot, ProgressEvent } from '../../../shared/ipcTypes'
 import { useFileUrl, clearFileUrlCache } from '../composables/useFileUrl'
 import { useRouteProjectId } from '../composables/useRouteProjectId'
+import { useTaskBoard } from '../composables/useTaskBoard'
 import { snapshot } from '../utils/snapshot'
 import { throttleTap } from '../utils/throttle'
 import { statusTagType as statusType, shotStatusText } from '../utils/status'
@@ -259,6 +273,10 @@ const retryingId = ref<string | null>(null)
 const contextMenu = ref({ visible: false, x: 0, y: 0, row: null as Shot | null })
 
 const shots = computed(() => project.value?.shots || [])
+/** 队列快照（REQ-01）：正渲哪镜/排队数/ETA，进页即可回答「还要等多久」 */
+const taskBoard = useTaskBoard()
+const taskActive = taskBoard.isActive
+const etaText = taskBoard.etaText
 const hasRendering = computed(() => shots.value.some(s => s.status === 'rendering'))
 const doneCount = computed(() => shots.value.filter(s => s.status === 'done').length)
 const renderingCount = computed(() => shots.value.filter(s => s.status === 'rendering').length)
@@ -273,6 +291,7 @@ let unsubscribe: (() => void) | null = null
 let reloadTimer: number | null = null
 
 onMounted(async () => {
+  taskBoard.subscribe()
   unsubscribe = window.api.onProgress((e: ProgressEvent) => {
     if (e.projectId !== projectId.value) return
     progressMap.value[e.shotId] = { percent: e.percent, message: e.message }
@@ -292,6 +311,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   unsubscribe?.()
+  taskBoard.unsubscribeAll()
   if (reloadTimer !== null) clearTimeout(reloadTimer)
   document.removeEventListener('click', closeContextMenu)
   document.removeEventListener('keydown', onMenuKeydown)
@@ -329,11 +349,16 @@ useHotkeys([
   { keys: 'f5', handler: () => refresh() }
 ])
 
-function getProgress(shot: Shot) {
+/**
+ * 进度值：渲染中但尚未收到首个进度事件时返回 null，
+ * 模板据此显示 indeterminate 进度条而不是「0% 卡死」（REQ-01 RC-14）。
+ */
+function getProgress(shot: Shot): number | null {
   const p = progressMap.value[shot.id]
   if (p) return p.percent
   if (shot.status === 'done') return 100
   if (shot.status === 'failed') return 0
+  if (shot.status === 'rendering') return null
   return 0
 }
 

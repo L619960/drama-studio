@@ -58,6 +58,20 @@
 | P2-7 | F-03 localStorage 输入记忆未加密 | ✅ 已评估：仅存 URL/路径/模型名/项目 id/时间戳，无敏感信息，不加密 | — | — | S |
 | P2-8 | D-03 缺失跨平台 CI | ✅ 已交付 `.github/workflows/ci.yml`：三平台四门验证 + tag 触发的分平台打包（本机无法实跑，待 CI runner 验证） | P2-4 | — | M |
 
+## 交互整改方案（REQ-01 ~ REQ-20，见 `docs/交互整改需求方案-2026-10-30.md`）
+
+> 20 条需求：P0 × 5 / P1 × 9 / P2 × 6；按方案 Phase 1 → 2 → 3 推进，每批四门全绿后单一主题提交。
+
+### Phase 1（P0，5 条）
+
+| 编号 | 任务 | 状态 | 依赖 | 工作量 |
+| --- | --- | --- | --- | --- |
+| REQ-01 | 渲染队列可观测（`queue:list` 快照 + ETA + `director:listActiveStates` + `useTaskBoard` + 队列页 indeterminate） | ✅ 已交付：主进程队列快照/ETA/活跃任务通道 + `useTaskBoard` 聚合 + QueueView 不确定态与 ETA 展示，补 10 例单测 | — | M |
+| REQ-02 | 门禁待处理结构化（`pendingGates` + 审看定位 CTA） | 待开始 | — | M |
+| REQ-03 | 重启后中断任务「一键继续」入口 | 待开始 | — | M |
+| REQ-04 | 门禁 warn 二次确认与「一口气跑到底」联动 | 待开始 | REQ-02 | M |
+| REQ-05 | 常驻导演运行条 / 全局任务面板 | 待开始 | REQ-01、REQ-02 | L |
+
 ## 依赖关系
 
 ```

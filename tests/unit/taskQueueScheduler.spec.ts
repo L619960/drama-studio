@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import {
   deriveProjectStatus, isProjectQueueIdle,
-  createCancellationWatcher
+  createCancellationWatcher, estimateEtaSeconds, buildQueueSnapshot
 } from '../../src/main/core/taskQueueScheduler'
 import type { Project, Shot } from '../../src/shared/ipcTypes'
 import { CANCEL_ERROR } from '../../src/main/core/taskQueueShared'
@@ -129,6 +129,65 @@ describe('taskQueueScheduler', () => {
       vi.advanceTimersByTime(1000)
       // 定时器已清理，watcher 不会再触发
       await Promise.resolve()
+    })
+  })
+
+  describe('estimateEtaSeconds：队列剩余预计耗时', () => {
+    it('无历史样本（首跑）→ null', () => {
+      expect(estimateEtaSeconds([], 3)).toBeNull()
+    })
+
+    it('无排队任务 → null', () => {
+      expect(estimateEtaSeconds([60_000, 90_000], 0)).toBeNull()
+    })
+
+    it('按历史均耗时×剩余镜数估算（秒）', () => {
+      // 均耗时 60s，还剩 3 镜 → 180s
+      expect(estimateEtaSeconds([30_000, 90_000], 3)).toBe(180)
+    })
+
+    it('不足 1 秒也至少给 1 秒，避免 UI 显示 0', () => {
+      expect(estimateEtaSeconds([500], 1)).toBe(1)
+    })
+
+    it('非法样本（0/NaN）→ null', () => {
+      expect(estimateEtaSeconds([0], 2)).toBeNull()
+      expect(estimateEtaSeconds([Number.NaN], 2)).toBeNull()
+    })
+  })
+
+  describe('buildQueueSnapshot：队列快照', () => {
+    it('空队列无在跑 → running=null、queued 为空', () => {
+      const snap = buildQueueSnapshot([], null, null, [])
+      expect(snap).toEqual({ running: null, queued: [], etaSeconds: null })
+    })
+
+    it('在跑镜进度与排队镜正确映射', () => {
+      const snap = buildQueueSnapshot(
+        [{ projectId: 'p1', shotId: 's2' } as any, { projectId: 'p2', shotId: 's9' } as any],
+        { projectId: 'p1', shotId: 's1' } as any,
+        { step: 'render', percent: 40 },
+        [60_000]
+      )
+      expect(snap.running).toEqual({ projectId: 'p1', shotId: 's1', step: 'render', percent: 40 })
+      expect(snap.queued).toEqual([
+        { projectId: 'p1', shotId: 's2' },
+        { projectId: 'p2', shotId: 's9' }
+      ])
+      // 均耗时 60s × 2 镜
+      expect(snap.etaSeconds).toBe(120)
+    })
+
+    it('尚无进度事件 → step 回退 queued、percent=0', () => {
+      const snap = buildQueueSnapshot(
+        [],
+        { projectId: 'p1', shotId: 's1' } as any,
+        null,
+        []
+      )
+      expect(snap.running?.step).toBe('queued')
+      expect(snap.running?.percent).toBe(0)
+      expect(snap.etaSeconds).toBeNull()
     })
   })
 })

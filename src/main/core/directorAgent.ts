@@ -17,7 +17,7 @@ import { STAGE_ORDER, STAGE_LABELS, stageIndexOf } from './directorConstants'
 import {
   freshStateImpl, isCancelledImpl, currentStageImpl, setStageImpl, logImpl,
   emitStateImpl, persistImpl, maybeGateImpl, pauseUntilShotsReviewedImpl,
-  getStateImpl, getLatestStateImpl, clearStateImpl, hydrateImpl, recoverAllImpl
+  getStateImpl, getLatestStateImpl, listActiveStatesImpl, clearStateImpl, hydrateImpl, recoverAllImpl
 } from './directorStateMachine'
 import {
   ensureShadowStateImpl, emitProgressEventImpl, notifyProjectUpdatedImpl,
@@ -361,6 +361,11 @@ export class DirectorAgent extends EventEmitter {
   /** 最近活跃的任务状态（含影子渲染任务） */
   getLatestState(): DirectorState | null {
     return getLatestStateImpl(this)
+  }
+
+  /** 全部活跃任务（running/paused）：全局任务面板展示并行任务 */
+  listActiveStates(): DirectorState[] {
+    return listActiveStatesImpl(this)
   }
 
   /** 清空某项目的全部运行时残留 */

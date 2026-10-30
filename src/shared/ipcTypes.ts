@@ -224,6 +224,14 @@ export interface ProgressEvent {
   etaSeconds?: number
 }
 
+/** 渲染队列快照（queue:list）：让任意页面回答「正渲哪镜 / 还排几镜 / 还要等多久」 */
+export interface QueueSnapshot {
+  running: { projectId: string; shotId: string; step: ProgressEvent['step']; percent: number } | null
+  queued: Array<{ projectId: string; shotId: string }>
+  /** 队列剩余预计耗时（秒）：按最近成片镜均耗时×剩余镜数估算；无历史样本时为 null */
+  etaSeconds: number | null
+}
+
 // ===== ComfyUI WebSocket 消息类型 =====
 export type ComfyWSMessage =
   | { type: 'status'; data: { status: { exec_info: { queue_remaining: number } }; sid?: string } }
@@ -429,6 +437,8 @@ export interface IpcApi {
     /** 返回 reviewGate='warn' 时告警放行的未审核人物镜序号（block 模式有未审核镜会直接 reject） */
     start(projectId: string, shotIds?: string[], forceRebuildFirstFrame?: boolean): Promise<{ warnedShots: number[] }>
     cancel(projectId: string, shotId?: string): Promise<void>
+    /** 队列快照：当前在渲镜 + 排队镜 + 剩余预计耗时（无历史样本时 etaSeconds=null） */
+    list(): Promise<QueueSnapshot>
   }
   comfyui: {
     healthCheck(): Promise<boolean>
@@ -567,6 +577,8 @@ export interface IpcApi {
     clearState(projectId: string): Promise<void>
     /** 最近活跃任务的状态（含影子渲染任务）：全局控制台未绑定项目时展示用 */
     getLatestState(): Promise<DirectorState | null>
+    /** 全部活跃任务状态（running/paused），供全局任务面板并行展示多项目 */
+    getActiveStates(): Promise<DirectorState[]>
     onProgress(cb: (e: DirectorProgressEvent) => void): () => void
     onLog(cb: (e: DirectorLogEvent) => void): () => void
     /** 后台流程（定妆/首帧/场景板/逐镜渲染）落盘后通知：前端面板收到即刷新项目数据 */
@@ -1242,6 +1254,7 @@ export const IpcChannels = {
   characterImport: 'character:import',
   renderStart: 'render:start',
   renderCancel: 'render:cancel',
+  queueList: 'queue:list',
   comfyuiHealth: 'comfyui:health',
   comfySystemStats: 'comfyui:systemStats',
   comfyObjectNodes: 'comfyui:objectNodes',
@@ -1306,6 +1319,7 @@ export const IpcChannels = {
   directorGetState: 'director:getState',
   directorClearState: 'director:clearState',
   directorLatestState: 'director:getLatestState',
+  directorActiveStates: 'director:listActiveStates',
   directorProgress: 'director:progress',
   directorLog: 'director:log',
   directorProjectUpdated: 'director:project-updated',
