@@ -62,10 +62,13 @@ export default defineConfig({
     build: {
       rollupOptions: {
         output: {
-          // 代码分割：vendor 库独立 chunk，便于长期缓存和并行加载
+          // 代码分割：vue 生态独立 chunk，便于长期缓存和并行加载。
+          // 注意：不要为 element-plus 指定 manualChunks——按包名成 chunk 会把包
+          // 入口 index（re-export 全部组件）整块拉入，导致按需引入失效、单个
+          // element-plus chunk 膨胀到 2MB+。让 Rollup 依据实际按需引用自动拆分，
+          // 各个 el-* 组件只进入使用它的页面 chunk。
           manualChunks: {
-            'vue-vendor': ['vue', 'vue-router'],
-            'element-plus': ['element-plus', '@element-plus/icons-vue']
+            'vue-vendor': ['vue', 'vue-router']
           }
         }
       }
