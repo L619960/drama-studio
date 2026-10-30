@@ -109,8 +109,8 @@ export class LLMService {
     return splitScriptOp(this.getSettings, this.genreTemplates, script, genre)
   }
 
-  /** AI 导演·剧本分析：一次调用同时产出角色清单与分镜列表 */
-  analyze(script: string, genre: string, opts?: { title?: string; extraRules?: string[] }): Promise<AnalyzeResult> {
+  /** AI 导演·剧本分析：一次调用同时产出角色清单与分镜列表（signal 可中断长耗时请求） */
+  analyze(script: string, genre: string, opts?: { title?: string; extraRules?: string[]; signal?: AbortSignal }): Promise<AnalyzeResult> {
     return analyzeOp(this.getSettings, this.genreTemplates, script, genre, opts)
   }
 

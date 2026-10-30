@@ -451,7 +451,7 @@ export async function analyzeOp(
   genreTemplates: GenreTemplate[],
   script: string,
   genre: string,
-  opts?: { title?: string; extraRules?: string[] }
+  opts?: { title?: string; extraRules?: string[]; signal?: AbortSignal }
 ): Promise<AnalyzeResult> {
   const tpl = genreTemplates.find(t => t.key === genre)
   // title 韧性兜底：历史/外部数据可能把 title 存成非字符串（对象/数组），直接 .trim 会崩
@@ -467,7 +467,7 @@ export async function analyzeOp(
   // 角色识别优先确定性：温度来自创作设置·分镜模块
   // 长方法论 prompt + 完整角色/分镜 JSON 输出，云端/本地大模型长输出可达 10~20 分钟；
   // 超时放宽到 20 分钟避免长任务被误判超时反复重试（重试同样耗时且浪费 token）
-  const raw = await httpChat(getSettings, system, script, sb.temperature, 1200000, 32768)
+  const raw = await httpChat(getSettings, system, script, sb.temperature, 1200000, 32768, opts?.signal)
   // 解析容错：LLM 在 promptEn/negativeEn 等长文本字段里写入裸换行/控制字符会让 JSON.parse 失败
   // → 先剥离控制字符（字符串内裸换行替换为空格），仍失败则带修复指令重试一次
   const dumpDir = path.join(process.env.APPDATA || process.cwd(), 'drama-studio', 'drama-studio', 'tmp')
@@ -508,7 +508,7 @@ export async function analyzeOp(
         const retryRaw = await httpChat(
           getSettings,
           `${system}\n\n# 上次输出的 JSON 解析失败（${(firstErr as Error).message.slice(0, 100)}）。请重新输出，要求：promptEn/negativeEn 等所有字符串值必须是单行纯文本，不含换行、不含未转义双引号、不含 markdown 代码围栏；只输出一个合法 JSON 对象。`,
-          script, sb.temperature, 1200000, 32768)
+          script, sb.temperature, 1200000, 32768, opts?.signal)
         cleaned = retryRaw.replace(/```(?:json)?/g, '').trim()
         start = cleaned.indexOf('{')
         end = cleaned.lastIndexOf('}')

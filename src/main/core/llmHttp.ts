@@ -117,7 +117,8 @@ export async function httpChat(
   user: string,
   temperature = 0.7,
   timeoutMs = 60000,
-  maxTokens = 16384
+  maxTokens = 16384,
+  signal?: AbortSignal
 ): Promise<string> {
   const s = await getSettings()
   if (!s.llm.apiKey) {
@@ -126,7 +127,9 @@ export async function httpChat(
   const baseUrl = (s.llm.baseUrl || 'https://api.deepseek.com').replace(/\/+$/, '')
   const axOpts = {
     headers: { Authorization: `Bearer ${s.llm.apiKey}` },
-    timeout: timeoutMs
+    timeout: timeoutMs,
+    // P1-2：长耗时分析可取消（导演任务取消/退出时 AbortController.abort() 立即中断请求）
+    signal
   }
   const baseBody = {
     model: s.llm.model,

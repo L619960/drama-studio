@@ -524,7 +524,7 @@ describe('analyzeOp · AI 导演剧本分析', () => {
     const r = await analyzeOp(getSettings, TPLS, '剧本全文', 'ancient', { title: ' 雨夜 ', extraRules: ['r1'] })
 
     expect(analyzePromptMock).toHaveBeenCalledWith(expect.objectContaining({ titleHint: '雨夜', tpl: ANCIENT, extraRules: ['r1'] }))
-    expect(chat).toHaveBeenCalledWith(getSettings, 'SYSTEM_ANALYZE', '剧本全文', 0.3, 1200000, 32768)
+    expect(chat).toHaveBeenCalledWith(getSettings, 'SYSTEM_ANALYZE', '剧本全文', 0.3, 1200000, 32768, undefined)
     expect(r.logline).toBe('雨夜寻亲')
 
     expect(r.characters).toHaveLength(2)
@@ -622,5 +622,13 @@ describe('analyzeOp · AI 导演剧本分析', () => {
     narrativeMock.mockReturnValueOnce(['警告：台词与动作矛盾'])
     const r = await analyzeOp(getSettings, TPLS, 's', 'ancient')
     expect(r.warnings).toEqual(['警告：台词与动作矛盾'])
+  })
+
+  // P1-2：长耗时分析支持取消 —— 显式传入的 AbortSignal 必须透传给 HTTP 层
+  it('P1-2：opts.signal 透传给 httpChat（首次调用与 JSON 修复重试都带）', async () => {
+    const ac = new AbortController()
+    chat.mockResolvedValueOnce(MIN_ANALYZE)
+    await analyzeOp(getSettings, TPLS, 's', 'ancient', { signal: ac.signal })
+    expect(chat).toHaveBeenLastCalledWith(getSettings, 'SYSTEM_ANALYZE', 's', 0.3, 1200000, 32768, ac.signal)
   })
 })

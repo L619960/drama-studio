@@ -164,14 +164,25 @@ export async function runPipelineImpl(
   if (fromIdx <= stageIndexOf('analyze')) {
     setStageImpl(agent, projectId, 'analyze', 'running', 'AI 阅读剧本，识别角色与分镜...', 10)
     try {
-      analysis = await withTransientRetryImpl(
-        agent,
-        () => agent.llm.analyze(input.script, input.genre, {
-          title: input.title,
-          extraRules: methodRules
-        }),
-        { notify: (msg) => setStageImpl(agent, projectId, 'analyze', 'running', msg, 10), isCancelled: () => isCancelledImpl(agent, projectId) }
-      )
+      // P1-2：分析是长耗时 LLM 调用（最长 20 分钟），用户取消时立即中断 HTTP 请求，
+      // 而不是等模型跑完再丢弃结果、白耗 token
+      const ac = new AbortController()
+      const cancelWatch = setInterval(() => {
+        if (isCancelledImpl(agent, projectId)) ac.abort()
+      }, 500)
+      try {
+        analysis = await withTransientRetryImpl(
+          agent,
+          () => agent.llm.analyze(input.script, input.genre, {
+            title: input.title,
+            extraRules: methodRules,
+            signal: ac.signal
+          }),
+          { notify: (msg) => setStageImpl(agent, projectId, 'analyze', 'running', msg, 10), isCancelled: () => isCancelledImpl(agent, projectId) }
+        )
+      } finally {
+        clearInterval(cancelWatch)
+      }
       state.analysis = analysis
       const maxShots = (await agent.settings.get()).creation?.storyboard?.maxShots ?? 20
       const clamped = clampShotList(analysis.shots, maxShots)
