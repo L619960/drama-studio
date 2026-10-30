@@ -62,13 +62,23 @@ export default defineConfig({
     build: {
       rollupOptions: {
         output: {
-          // 代码分割：vue 生态独立 chunk，便于长期缓存和并行加载。
-          // 注意：不要为 element-plus 指定 manualChunks——按包名成 chunk 会把包
-          // 入口 index（re-export 全部组件）整块拉入，导致按需引入失效、单个
-          // element-plus chunk 膨胀到 2MB+。让 Rollup 依据实际按需引用自动拆分，
-          // 各个 el-* 组件只进入使用它的页面 chunk。
-          manualChunks: {
-            'vue-vendor': ['vue', 'vue-router']
+          // 代码分割：
+          // 1) 入口共享块只保留应用代码；把跨页面共享的第三方库按包拆成独立 vendor chunk，
+          //    便于长期缓存与并行加载（App 每次改动不会让整个 vendor 失效）。
+          // 2) element-plus 组件本体不做整包分组——整包成 chunk 会把包入口（re-export 全部
+          //    组件）整块拉入，按需引入失效、单 chunk 膨胀到 2MB+；交给 Rollup 依据实际
+          //    引用按页面拆分（el-table-column 等只进入使用它的页面 chunk）。
+          manualChunks(id) {
+            if (!id.includes('node_modules')) return undefined
+            if (id.includes('/@element-plus/icons-vue/')) return 'icons-vendor'
+            if (id.includes('/element-plus/')) return undefined
+            if (id.includes('/@vueuse/')) return 'vueuse-vendor'
+            if (id.includes('/@popperjs/')) return 'popper-vendor'
+            if (id.includes('/@ctrl/tinycolor/')) return 'color-vendor'
+            if (id.includes('/dayjs/')) return 'date-vendor'
+            if (id.includes('/lodash-es/')) return 'lodash-vendor'
+            if (id.includes('/@vue/') || id.includes('/vue/') || id.includes('/vue-router/')) return 'vue-vendor'
+            return undefined
           }
         }
       }
