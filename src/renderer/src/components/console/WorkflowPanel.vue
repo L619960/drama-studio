@@ -8,6 +8,22 @@
         <el-tag v-else-if="running" type="primary" effect="dark" size="small" class="state-tag">执行中</el-tag>
         <el-tag v-else-if="state" type="success" effect="plain" size="small" class="state-tag">已结束</el-tag>
         <el-tag v-else type="info" effect="plain" size="small" class="state-tag">待命</el-tag>
+        <!-- REQ-04：「一口气跑到底」常驻态，点击可中途恢复阶段确认点 -->
+        <el-tooltip
+          v-if="gatesOff"
+          content="当前为「一口气跑到底」，所有阶段确认点已关闭；点击可重新启用。"
+          placement="bottom"
+        >
+          <el-tag
+            type="warning"
+            effect="dark"
+            size="small"
+            class="state-tag gates-off-chip"
+            @click="enableGates"
+          >
+            确认点已关闭 · 点击恢复
+          </el-tag>
+        </el-tooltip>
       </div>
       <div class="control-actions">
         <el-button v-if="!running" type="primary" :icon="VideoPlay" @click="onStartClick">
@@ -170,6 +186,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
+import { confirmAction } from '../../utils/confirm'
 import {
   VideoPlay, VideoPause, Delete, CircleCloseFilled, RefreshRight, EditPen
 } from '@element-plus/icons-vue'
@@ -264,6 +282,29 @@ function goReviewPendingShots(): void {
     path: `/project/${pid}/storyboard`,
     query: first ? { review: first } : undefined
   })
+}
+
+// ===== REQ-04 「一口气跑到底」门禁状态 chip =====
+const gatesOff = computed(() =>
+  !!props.state
+  && (props.running || props.paused)
+  && (props.state.gateStages?.length ?? 0) === 0
+)
+
+async function enableGates(): Promise<void> {
+  const pid = props.state?.projectId || props.project?.id
+  if (!pid) return
+  const ok = await confirmAction(
+    '重新启用后，流水线会在「剧本分析 / 场景板与首尾帧 / 成片复审」等阶段边界暂停等待确认；进行中的阶段不受影响，已完成的阶段不会回退。',
+    { title: '重新启用阶段确认点', confirmText: '重新启用' }
+  )
+  if (!ok) return
+  try {
+    await window.api.director.enableGates(pid)
+    ElMessage.success('已重新启用阶段确认点，剩余阶段将在边界暂停')
+  } catch (e) {
+    ElMessage.error(`启用失败：${e instanceof Error ? e.message : String(e)}`)
+  }
 }
 
 // ===== P0-1 任务中断提示 =====
@@ -375,6 +416,7 @@ function confirmStart(input: DirectorStartInput): void {
   color: var(--text-muted);
 }
 .pause-alert { border-radius: 8px; }
+.gates-off-chip { cursor: pointer; }
 .interrupted-alert { border-radius: 8px; }
 .interrupted-alert :deep(.el-alert__content) { width: 100%; }
 .interrupted-actions { display: flex; gap: 8px; margin-top: 8px; }

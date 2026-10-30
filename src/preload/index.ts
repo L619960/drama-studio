@@ -149,6 +149,7 @@ const api: IpcApi = {
     getLatestState: () => invoke(IpcChannels.directorLatestState),
     getActiveStates: () => invoke(IpcChannels.directorActiveStates),
     listInterrupted: () => invoke(IpcChannels.directorListInterrupted),
+    enableGates: (projectId) => invoke(IpcChannels.directorEnableGates, projectId),
     onProgress: (cb) => {
       const listener = (_: unknown, e: unknown) => cb(e as Parameters<typeof cb>[0])
       ipcRenderer.on(IpcChannels.directorProgress, listener)

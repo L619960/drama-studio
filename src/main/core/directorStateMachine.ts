@@ -5,7 +5,7 @@ import type {
 } from '../../shared/ipcTypes'
 import { reviewedIsValid } from '../../shared/pipelineGuards'
 import { atomicWriteJson } from './fsUtil'
-import { STAGE_ORDER, STAGE_LABELS, LOG_LIMIT } from './directorConstants'
+import { STAGE_ORDER, STAGE_LABELS, LOG_LIMIT, stageIndexOf } from './directorConstants'
 import type { DirectorAgent } from './directorAgent'
 import { createLogger } from './logger'
 
@@ -322,6 +322,32 @@ export async function listInterruptedImpl(agent: DirectorAgent): Promise<Interru
     // projects 目录不存在：没有可恢复任务
   }
   return tasks.sort((a, b) => (b.failedAt || 0) - (a.failedAt || 0))
+}
+
+/**
+ * REQ-04：重新启用阶段确认点（「一口气跑到底」中途撤销）。
+ * 只对剩余阶段生效：当前阶段边界及之后的确认点纳入 gates，已过阶段不回退；
+ * 同时重新打开分镜审核门禁（noShotGate=false）。
+ */
+export function enableGatesImpl(
+  agent: DirectorAgent,
+  projectId: string,
+  stages: readonly DirectorStage[]
+): boolean {
+  const state = agent.states.get(projectId)
+  if (!state) return false
+  const gateList = stages.filter(g => g !== 'done') as DirectorStage[]
+  state.gateStages = gateList
+  // 与 start 的写入对称：恢复分镜审核门禁
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- JSON 动态字段，与 directorAgent.start 对称
+  ;(state as any).noShotGate = false
+  const current = currentStageImpl(state)
+  const from = current === 'done' ? 0 : stageIndexOf(current)
+  agent.gates.set(projectId, new Set(gateList.filter(g => stageIndexOf(g) >= from)))
+  state.pendingGates = []
+  logImpl(agent, projectId, current, 'info', '已重新启用阶段确认点，剩余阶段将在边界暂停等待确认')
+  emitStateImpl(agent, projectId)
+  return true
 }
 
 /**

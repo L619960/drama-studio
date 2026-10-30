@@ -34,3 +34,23 @@ export function confirmDanger(message: string, options: ConfirmOptions = {}): Pr
 export function confirmAction(message: string, options: ConfirmOptions = {}): Promise<boolean> {
   return show(message, options, false)
 }
+
+export type UnreviewedBatchAction = 'review' | 'render' | 'cancel'
+
+/**
+ * 未审镜入队前的三选一确认（REQ-04）：
+ * 「去审看」为主按钮，右下；「仍要渲染」为次按钮，左下；ESC/遮罩 = 取消（不放行）。
+ */
+export function confirmUnreviewedBatch(
+  message: string,
+  title = '分镜未核对'
+): Promise<UnreviewedBatchAction> {
+  return ElMessageBox.confirm(message, title, {
+    confirmButtonText: '去审看',
+    cancelButtonText: '仍要渲染',
+    distinguishCancelAndClose: true,
+    type: 'warning'
+  })
+    .then(() => 'review' as const)
+    .catch((action: unknown) => (action === 'cancel' ? 'render' as const : 'cancel' as const))
+}

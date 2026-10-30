@@ -581,6 +581,8 @@ export interface IpcApi {
     getActiveStates(): Promise<DirectorState[]>
     /** 扫描磁盘上未跑完的任务（中断/残留 running），项目列表「一键继续」横幅用 */
     listInterrupted(): Promise<InterruptedTask[]>
+    /** 重新启用「一口气跑到底」关闭的阶段确认点（剩余阶段生效） */
+    enableGates(projectId: string): Promise<boolean>
     onProgress(cb: (e: DirectorProgressEvent) => void): () => void
     onLog(cb: (e: DirectorLogEvent) => void): () => void
     /** 后台流程（定妆/首帧/场景板/逐镜渲染）落盘后通知：前端面板收到即刷新项目数据 */
@@ -1347,6 +1349,7 @@ export const IpcChannels = {
   directorLatestState: 'director:getLatestState',
   directorActiveStates: 'director:listActiveStates',
   directorListInterrupted: 'director:listInterrupted',
+  directorEnableGates: 'director:enableGates',
   directorProgress: 'director:progress',
   directorLog: 'director:log',
   directorProjectUpdated: 'director:project-updated',

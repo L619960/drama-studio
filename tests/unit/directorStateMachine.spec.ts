@@ -19,6 +19,7 @@ vi.mock('../../src/main/core/fsUtil', () => ({
 import type { DirectorAgent } from '../../src/main/core/directorAgent'
 import type { DirectorState, DirectorStage, StageState } from '../../src/shared/ipcTypes'
 import { STAGE_ORDER, LOG_LIMIT } from '../../src/main/core/directorConstants'
+import { DEFAULT_DIRECTOR_GATES } from '../../src/shared/pipelineGuards'
 import {
   freshStateImpl,
   getStateImpl,
@@ -32,6 +33,7 @@ import {
   hydrateImpl,
   recoverAllImpl,
   listInterruptedImpl,
+  enableGatesImpl,
   clearStateImpl,
   emitStateImpl
 } from '../../src/main/core/directorStateMachine'
@@ -371,6 +373,42 @@ describe('listInterruptedImpl：重启后中断任务清单', () => {
     const list = await listInterruptedImpl(agent)
     expect(list.find(t => t.projectId === 'p_json')!.projectName).toBe('来自项目文件')
     expect(list.find(t => t.projectId === 'p_id')!.projectName).toBe('p_id')
+  })
+})
+
+describe('enableGatesImpl：一口气跑到底中途恢复门禁', () => {
+  it('当前处于剧本分析：默认确认点全部纳管并重新打开分镜审核门禁', () => {
+    const agent = makeAgent(tmpDir)
+    const s = makeState('p1')
+    s.stages.analyze.status = 'running'
+    s.gateStages = []
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- 运行时动态字段
+    ;(s as any).noShotGate = true
+    agent.states.set('p1', s)
+
+    expect(enableGatesImpl(agent, 'p1', DEFAULT_DIRECTOR_GATES)).toBe(true)
+    expect(s.gateStages).toEqual(['analyze', 'scenes', 'review'])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- 同上
+    expect((s as any).noShotGate).toBe(false)
+    expect(agent.gates.get('p1')).toEqual(new Set(['analyze', 'scenes', 'review']))
+  })
+
+  it('已过剧本分析：只保留剩余阶段确认点，已过阶段不回退', () => {
+    const agent = makeAgent(tmpDir)
+    const s = makeState('p1')
+    s.stages.analyze.status = 'done'
+    s.stages.casting.status = 'running'
+    s.gateStages = []
+    agent.states.set('p1', s)
+
+    enableGatesImpl(agent, 'p1', DEFAULT_DIRECTOR_GATES)
+    expect([...agent.gates.get('p1')!]).toEqual(['scenes', 'review'])
+  })
+
+  it('项目不在内存 → 返回 false 且不改任何状态', () => {
+    const agent = makeAgent(tmpDir)
+    expect(enableGatesImpl(agent, 'nope', DEFAULT_DIRECTOR_GATES)).toBe(false)
+    expect(agent.gates.has('nope')).toBe(false)
   })
 })
 

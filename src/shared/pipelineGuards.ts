@@ -52,6 +52,19 @@ export function reviewedIsValid(type: string, reviewed: boolean | undefined, fir
 /** 两个开拍入口共用的默认确认点：剧本锁定、首帧锁定、成片复审。 */
 export const DEFAULT_DIRECTOR_GATES = ['analyze', 'scenes', 'review'] as const
 
+/** warn 放行后同一批未审镜的免打扰窗口（REQ-04：30 分钟） */
+export const WARN_SUPPRESS_WINDOW_MS = 30 * 60 * 1000
+
+/** 同一项目的同一批未审镜去重键（镜号排序后拼接，顺序无关） */
+export function warnedBatchKey(projectId: string, shotIds: string[]): string {
+  return `${projectId}:${[...shotIds].sort().join(',')}`
+}
+
+/** 该批未审镜是否仍在免打扰窗口内 */
+export function isWarnSuppressed(lastWarnedAt: number | undefined, now: number): boolean {
+  return lastWarnedAt !== undefined && now - lastWarnedAt < WARN_SUPPRESS_WINDOW_MS
+}
+
 export interface CutCandidate {
   status?: string
   segmentPath?: string

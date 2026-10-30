@@ -14,10 +14,28 @@ import {
   orientVideoSize,
   shouldPauseAfterAudit,
   CATASTROPHIC_CONSISTENCY_SCORE,
-  reviewedIsValid
+  reviewedIsValid,
+  WARN_SUPPRESS_WINDOW_MS,
+  warnedBatchKey,
+  isWarnSuppressed
 } from '../../src/shared/pipelineGuards'
 import { extractKeyProps, propLockFromAction, validateNarrativeContinuity } from '../../src/shared/narrativeBeats'
 import { audioTailSecFor } from '../../src/shared/shotDoctrine'
+
+describe('REQ-04 warn 放行去重', () => {
+  it('同一项目的镜号集合顺序无关，不同项目/不同集合互不影响', () => {
+    expect(warnedBatchKey('p1', ['b', 'a'])).toBe(warnedBatchKey('p1', ['a', 'b']))
+    expect(warnedBatchKey('p1', ['a'])).not.toBe(warnedBatchKey('p2', ['a']))
+    expect(warnedBatchKey('p1', ['a'])).not.toBe(warnedBatchKey('p1', ['a', 'b']))
+  })
+
+  it('30 分钟窗口内抑制，超时或从未放行则不抑制', () => {
+    const now = 1_000_000
+    expect(isWarnSuppressed(now - WARN_SUPPRESS_WINDOW_MS + 1, now)).toBe(true)
+    expect(isWarnSuppressed(now - WARN_SUPPRESS_WINDOW_MS, now)).toBe(false)
+    expect(isWarnSuppressed(undefined, now)).toBe(false)
+  })
+})
 
 describe('成片入选', () => {
   it('低一致性仍入片，跳过和空路径不入片', () => {

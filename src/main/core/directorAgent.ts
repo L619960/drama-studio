@@ -14,10 +14,12 @@ import type { AuditCheckItem } from './skillLibrary'
 import { CandidatePickService } from './candidatePickService'
 import { SkillLibrary } from './skillLibrary'
 import { STAGE_ORDER, STAGE_LABELS, stageIndexOf } from './directorConstants'
+import { DEFAULT_DIRECTOR_GATES } from '../../shared/pipelineGuards'
 import {
   freshStateImpl, isCancelledImpl, currentStageImpl, setStageImpl, logImpl,
   emitStateImpl, persistImpl, maybeGateImpl, pauseUntilShotsReviewedImpl,
-  getStateImpl, getLatestStateImpl, listActiveStatesImpl, clearStateImpl, hydrateImpl, recoverAllImpl, listInterruptedImpl
+  getStateImpl, getLatestStateImpl, listActiveStatesImpl, clearStateImpl, hydrateImpl, recoverAllImpl, listInterruptedImpl,
+  enableGatesImpl
 } from './directorStateMachine'
 import {
   ensureShadowStateImpl, emitProgressEventImpl, notifyProjectUpdatedImpl,
@@ -373,6 +375,11 @@ export class DirectorAgent extends EventEmitter {
   /** 磁盘上未跑完的任务（重启后中断/残留）：项目列表「一键继续」横幅用 */
   async listInterrupted(): Promise<InterruptedTask[]> {
     return listInterruptedImpl(this)
+  }
+
+  /** REQ-04：重新启用阶段确认点（「一口气跑到底」中途撤销） */
+  enableGates(projectId: string): boolean {
+    return enableGatesImpl(this, projectId, DEFAULT_DIRECTOR_GATES)
   }
 
   /** 清空某项目的全部运行时残留 */

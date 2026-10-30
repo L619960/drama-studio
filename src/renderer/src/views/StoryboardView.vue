@@ -184,6 +184,11 @@ function consumeReviewQuery(): void {
   openReviewAt(idx)
 }
 
+// REQ-04：已在分镜页时（如队列页确认框选「去审看」）再次收到 ?review=... 也要立即定位
+watch(() => route.query.review, (v) => {
+  if (typeof v === 'string') consumeReviewQuery()
+})
+
 function editReviewingShot(): void {
   if (reviewIndex.value < 0) return
   reviewVisible.value = false

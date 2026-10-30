@@ -236,6 +236,8 @@ export function registerRenderIpc(ctx: RenderIpcCtx): void {
   handleIpc(IpcChannels.directorLatestState, () => ctx.directorAgent.getLatestState())
   handleIpc(IpcChannels.directorActiveStates, () => ctx.directorAgent.listActiveStates())
   handleIpc(IpcChannels.directorListInterrupted, () => ctx.directorAgent.listInterrupted())
+  handleIpc(IpcChannels.directorEnableGates, (_, projectId: string) =>
+    ctx.directorAgent.enableGates(projectId))
 
   // 场景板：重出全景固定场景（2:1 全景 → 裁方位图 → 拼宫格看板），复用导演流水线同款链路
   handleIpc(IpcChannels.sceneRegeneratePano, async (_, input: { projectId: string; boardId: string }) => {
