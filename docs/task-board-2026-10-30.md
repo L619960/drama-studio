@@ -1,6 +1,6 @@
 # 任务看板 · 2026-10-30
 
-> 基线：分支 `feat/agent-autonomy`，最新提交 `3653c75`
+> 基线：分支 `feat/agent-autonomy`，最新提交 `37b7940`
 > 门禁现状：`typecheck` ✅ · `npm test` 1788/1788（111 文件）✅ · `npm run build` ✅ · `eslint` 0 warning（0 error）
 > 本文以代码实测为准，已修正 `docs/remediation-plan-2026-10-27.md` / `docs/technical-audit-2026-10-30.md` 中过时结论。
 
@@ -76,7 +76,7 @@ P1-C1（flake 修复）─→ P1-D1 大批量补测（避免新增用例继承�
 | 批次 1 ✅ | P1-A1、P1-B1、P1-C1 | 无外部决策，立即可执行 |
 | 批次 2 ✅ | P0-B3 决策 → P1-A2（白名单口径） | 用户确认路径口径 |
 | 批次 3 ✅ | P1-B2、P1-D1 第一批（`directorPipeline` / `directorStageShots` / `conversationSession` / `skillService`） | 批次 1 门禁全绿 |
-| 批次 4 | P2-1 ~ P2-8 | P0/P1 清零 |
+| 批次 4 ✅ | P2-1 ~ P2-8 | P0/P1 清零（`37b7940`） |
 
 每批次收口标准：`npm run typecheck` + `npm test` + `npm run build` 全绿，`eslint` 无新增 error；提交按单一主题拆分。
 
@@ -97,3 +97,4 @@ P1-C1（flake 修复）─→ P1-D1 大批量补测（避免新增用例继承�
 | 2026-10-31 00:03 | P1-D1 第三批 `1d7509e`：4 个 core 模块补测 47 例（101 文件 / 1682 用例全绿） |
 | 2026-10-31 00:10 | P1-D1 第四批 `8da793a`：5 个 core 模块补测 40 例（106 文件 / 1722 用例全绿，四门通过） |
 | 2026-10-31 00:16 | P1-D1 第五批 `3653c75`：最后 5 个 core 模块补测 66 例，23/23 缺口清零（111 文件 / 1788 用例全绿，四门通过） |
+| 2026-10-31 00:24 | 批次 4 收口 `37b7940`：P2-4 增加 mac(dmg/zip)/linux(AppImage/deb) 打包目标与 `build:mac`/`build:linux`；P2-8 新增三平台 CI（lint/typecheck/test/build + tag 分平台打包）；P2-6 评估不引入 Pinia。四门全绿（1788 用例），mac/linux 产物与 CI 实跑待对应 runner 验证 |
