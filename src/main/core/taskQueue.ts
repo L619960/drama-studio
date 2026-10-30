@@ -22,6 +22,7 @@ import {
 } from '../../shared/imagePrompts'
 import { resolveCreation } from '../../shared/creationSettings'
 import { orientVideoSize } from '../../shared/pipelineGuards'
+import { assertMediaPath } from './assetPathGuard'
 import { CandidatePickService } from './candidatePickService'
 import type { LLMService } from './llmService'
 import { createLogger } from './logger'
@@ -1314,11 +1315,14 @@ export class TaskQueue extends EventEmitter {
 
     let imageName: string | undefined
     if (params.refImageAbs) {
+      // S-06：LLM 可控参考图先过素材白名单，阻断敏感文件被当素材上传
+      assertMediaPath(params.refImageAbs, 'image', '参考图', { requireAbsolute: true })
       onProgress?.('上传参考图...', 10)
       imageName = await this.comfyui.uploadImage(params.refImageAbs)
       vars.REF_IMAGE = imageName
     }
     if (params.endImageAbs) {
+      assertMediaPath(params.endImageAbs, 'image', '尾帧图', { requireAbsolute: true })
       onProgress?.('上传尾帧图...', 12)
       vars.END_IMAGE = await this.comfyui.uploadImage(params.endImageAbs)
     }

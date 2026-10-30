@@ -8,15 +8,18 @@ import * as path from 'node:path'
 import { shell } from 'electron'
 import type { ConversationToolsHost, ToolResult } from './conversationTools'
 import { RESULT_LIMIT } from './conversationConstants'
+import { assertMediaPath } from './assetPathGuard'
 
 export async function tSetProjectBgm(host: ConversationToolsHost, pid: string | undefined, args: Record<string, unknown>): Promise<ToolResult> {
   if (!pid) return { ok: false, text: '当前没有打开的项目' }
   const abs = String(args.absolute_path || '').trim()
   if (!abs) return { ok: false, text: '缺少 absolute_path（BGM 音频在本机的绝对路径）' }
-  const ext = path.extname(abs).toLowerCase()
-  if (!['.mp3', '.wav', '.m4a', '.aac', '.ogg'].includes(ext)) {
-    return { ok: false, text: `不支持的音频格式 ${ext}，可用：mp3/wav/m4a/aac/ogg` }
+  try {
+    assertMediaPath(abs, 'audio', 'BGM 文件', { requireAbsolute: true })
+  } catch (e) {
+    return { ok: false, text: e instanceof Error ? e.message : String(e) }
   }
+  const ext = path.extname(abs).toLowerCase()
   if (!(await fs.stat(abs).then(() => true).catch(() => false))) {
     return { ok: false, text: `文件不存在：${abs}` }
   }

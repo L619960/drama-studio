@@ -2,6 +2,7 @@ import type { ComfyUIClient } from './comfyuiClient'
 import type { WorkflowLoader } from './workflowLoader'
 import { REALISM_NEGATIVE, CINEMATIC_QUALITY_BLOCK } from '../../shared/imagePrompts'
 import { isTransientError } from './errorClassify'
+import { assertMediaPath } from './assetPathGuard'
 import path from 'node:path'
 import { createLogger } from './logger'
 
@@ -168,7 +169,8 @@ export class ImageService {
       if (!abs) {
         throw new Error(`工作流 ${name} 需要图生图参考图 ${token}，但未提供第 ${i + 1} 张参考图`)
       }
-      vars[token] = await this.comfyui.uploadImage(abs)
+      // P1-5：参考图上传前过素材白名单（图片扩展名），阻断敏感文件被当参考图上传
+      vars[token] = await this.comfyui.uploadImage(assertMediaPath(abs, 'image', '参考图'))
     }
     // 兼容旧模板：$REF_IMAGE$ 存在但走 referenceImagePaths 时已由上方覆盖；此处仅兜底未命中 token 的旧调用
     if (!refs.length && meta?.placeholders.includes('REF_IMAGE')) {
