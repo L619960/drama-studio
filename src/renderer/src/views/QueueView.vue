@@ -286,12 +286,14 @@ onMounted(async () => {
     }
   })
   document.addEventListener('click', closeContextMenu)
+  document.addEventListener('keydown', onMenuKeydown)
 })
 
 onUnmounted(() => {
   unsubscribe?.()
   if (reloadTimer !== null) clearTimeout(reloadTimer)
   document.removeEventListener('click', closeContextMenu)
+  document.removeEventListener('keydown', onMenuKeydown)
 })
 
 async function loadProject(id?: string) {
@@ -351,6 +353,11 @@ function onRowContextMenu(row: Shot, column: unknown, event: MouseEvent) {
 
 function closeContextMenu() {
   contextMenu.value.visible = false
+}
+
+/** Esc 关闭右键菜单（与资产页 ContextMenu 行为一致） */
+function onMenuKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape') closeContextMenu()
 }
 
 async function retryShot(shot: Shot) {

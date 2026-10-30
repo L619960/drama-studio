@@ -141,6 +141,15 @@ export class ComfyUIClient {
     if (!exe.includes('\\') && !exe.includes('/')) {
       return { ok: false, error: `启动程序不存在或未配置（${exe}）` }
     }
+    // S-03：拒绝控制字符（换行/回车会污染启动日志与命令行解析），并校验启动文件真实存在且为文件，
+    // 避免把误配目录/不存在路径交给 spawn（Windows 下会弹「找不到文件」系统对话框）
+    if (/[\r\n\0]/.test(cmd)) return { ok: false, error: '启动命令含非法控制字符' }
+    try {
+      const st = await fs.stat(exe)
+      if (!st.isFile()) return { ok: false, error: `启动程序不是文件（${exe}）` }
+    } catch {
+      return { ok: false, error: `启动程序不存在（${exe}）` }
+    }
     const cwd = path.dirname(exe)
     // 启动日志：用户数据目录下 comfyui-launch.log（排错用）
     const logDir = path.join(process.env.APPDATA || '', 'drama-studio', 'logs')
