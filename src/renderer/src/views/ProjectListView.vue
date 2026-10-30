@@ -6,6 +6,9 @@
         <p class="subtitle">从剧本到成片的本地短剧工作台</p>
       </div>
       <div class="page-actions">
+        <el-select v-model="sortMode" style="width: 124px" title="排序方式">
+          <el-option v-for="o in PROJECT_SORT_OPTIONS" :key="o.value" :label="o.label" :value="o.value" />
+        </el-select>
         <el-input v-model="searchKw" placeholder="搜索片名/剧本关键词" clearable style="width: 220px" :prefix-icon="Search" />
         <el-button :loading="checkingComfy" @click="checkComfyUI">
           <el-icon><Connection /></el-icon>{{ checkingComfy ? '检测中...' : '检测 ComfyUI' }}
@@ -112,6 +115,14 @@
       </el-button>
     </EmptyState>
 
+    <EmptyState
+      v-else-if="projectsLoaded && filteredProjects.length === 0"
+      title="没有匹配的项目"
+      description="换个片名关键词试试，或清空搜索查看全部项目。"
+      :icon="Search"
+      class="page-section"
+    />
+
     <div v-else class="project-grid">
       <article
         v-for="(row, i) in filteredProjects"
@@ -127,8 +138,8 @@
         </div>
         <div class="card-cover">
           <img
-            v-if="urlCache[`projects/${row.id}/thumbnail.jpg`]"
-            :src="urlCache[`projects/${row.id}/thumbnail.jpg`]"
+            v-if="coverRel[row.id]"
+            :src="urlCache[coverRel[row.id]]"
             alt=""
           />
           <div v-else class="cover-fallback">
@@ -227,8 +238,17 @@ import { confirmDanger, confirmAction } from '../utils/confirm'
 import {
   Plus, Edit, EditPen, CopyDocument, Download, FolderOpened, Delete, Connection, VideoCamera, Search, RefreshRight
 } from '@element-plus/icons-vue'
-import type { Project, InterruptedTask } from '../../../shared/ipcTypes'
+import type { Project, InterruptedTask, DirectorProgressEvent } from '../../../shared/ipcTypes'
 import { GENRE_TEMPLATES } from '../../../shared/ipcTypes'
+import {
+  PROJECT_SORT_OPTIONS,
+  type ProjectSortMode,
+  filterProjects,
+  sortProjects,
+  projectCoverPath,
+  markProjectOpened,
+  directorProjectStatus
+} from '../utils/projectList'
 import { snapshot } from '../utils/snapshot'
 import {
   statusTagType as statusType,
@@ -248,13 +268,13 @@ const router = useRouter()
 const route = useRoute()
 const projects = ref<Project[]>([])
 const searchKw = ref('')
-const filteredProjects = computed(() => {
-  const kw = searchKw.value.trim().toLowerCase()
-  if (!kw) return projects.value
-  return projects.value.filter(p =>
-    p.title?.toLowerCase().includes(kw) || p.script?.toLowerCase().includes(kw)
-  )
-})
+/** REQ-08：排序方式（最近打开/创建时间/完成状态） */
+const sortMode = ref<ProjectSortMode>('recent')
+/** REQ-08：卡片封面相对路径（首镜首帧优先，回退缩略图） */
+const coverRel = ref<Record<string, string>>({})
+const filteredProjects = computed(() =>
+  sortProjects(filterProjects(projects.value, searchKw.value), sortMode.value)
+)
 const projectsLoaded = ref(false)
 const showCreateDialog = ref(false)
 const creating = ref(false)
@@ -314,6 +334,30 @@ const directorFlowRef = ref<InstanceType<typeof DirectorFlow> | null>(null)
 const interruptedTasks = ref<InterruptedTask[]>([])
 const resumingId = ref('')
 
+// ===== REQ-08：卡片状态随导演任务实时刷新（进度事件改徽章 + 落盘事件节流拉表） =====
+let unsubProgress: (() => void) | null = null
+let unsubProjectUpdated: (() => void) | null = null
+let reloadTimer: ReturnType<typeof setTimeout> | null = null
+
+/** 整表刷新节流：onProgress/onProjectUpdated 高频，合并成一次拉取 */
+function scheduleReload(delay = 400): void {
+  if (reloadTimer !== null) return
+  reloadTimer = setTimeout(() => {
+    reloadTimer = null
+    void loadProjects()
+  }, delay)
+}
+
+function handleDirectorProgress(e: DirectorProgressEvent): void {
+  const row = projects.value.find(p => p.id === e.projectId)
+  if (!row) { scheduleReload(); return }
+  // 徽章原地更新：渲染中/完成无需整表重渲染；高频进度事件也不会每帧刷新列表
+  const next = directorProjectStatus(e.state)
+  if (next && next !== row.status) row.status = next
+  // 任务进入终态时再拉一次磁盘数据，保证标题/更新时间与落盘一致
+  if (!e.state.running) scheduleReload(500)
+}
+
 async function loadInterrupted(): Promise<void> {
   try {
     interruptedTasks.value = await window.api.director.listInterrupted()
@@ -323,6 +367,7 @@ async function loadInterrupted(): Promise<void> {
 }
 
 function openProjectById(projectId: string): void {
+  markProjectOpened(projectId)
   router.push(`/project/${projectId}/storyboard`)
 }
 
@@ -349,6 +394,10 @@ onMounted(() => {
   loadProjects()
   loadInterrupted()
   checkComfyUI()
+  unsubProgress = window.api.director.onProgress(handleDirectorProgress)
+  unsubProjectUpdated = window.api.director.onProjectUpdated((e) => {
+    if (e?.projectId) scheduleReload()
+  })
   // 剧本页「去 AI 导演」会 push /?openDirector=1：这里自动打开导演表单，
   // 消费后清掉 query，避免刷新/返回时重复弹窗
   if (route.query.openDirector === '1') {
@@ -359,19 +408,28 @@ onMounted(() => {
 
 onUnmounted(() => {
   // 无全局 listener：ContextMenu 组件自管 Esc/失焦/外部点击关闭
+  unsubProgress?.()
+  unsubProjectUpdated?.()
+  unsubProgress = null
+  unsubProjectUpdated = null
+  if (reloadTimer !== null) {
+    clearTimeout(reloadTimer)
+    reloadTimer = null
+  }
 })
 
 async function loadProjects() {
   try {
     projects.value = await window.api.project.list()
-    // 仅对存在的缩略图解析 URL，避免破图
-    const checks = await Promise.all(
-      projects.value.map(p => window.api.file.exists(`projects/${p.id}/thumbnail.jpg`))
-    )
-    const existingThumbs = projects.value
-      .filter((_, i) => checks[i])
-      .map(p => `projects/${p.id}/thumbnail.jpg`)
-    await ensureFileUrls(existingThumbs)
+    // REQ-08：封面取首镜首帧，缺失回退缩略图；仅解析真实存在的文件，避免破图
+    const candidates = projects.value.map(p => projectCoverPath(p))
+    const checks = await Promise.all(candidates.map(rel => window.api.file.exists(rel)))
+    const relMap: Record<string, string> = {}
+    projects.value.forEach((p, i) => {
+      if (checks[i]) relMap[p.id] = candidates[i]
+    })
+    coverRel.value = relMap
+    await ensureFileUrls(Object.values(relMap))
   } catch {
     ElMessage.error('加载项目失败')
   } finally {
@@ -433,6 +491,7 @@ function pickGenre(key: string): void {
 }
 
 function openProject(row: Project) {
+  markProjectOpened(row.id)
   router.push(`/project/${row.id}/storyboard`)
 }
 
