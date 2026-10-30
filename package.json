@@ -17,6 +17,8 @@
     "format": "prettier --write \"src/**/*.{ts,vue}\"",
     "preview": "electron-vite preview",
     "build:win": "electron-vite build && electron-builder --win",
+    "build:mac": "electron-vite build && electron-builder --mac",
+    "build:linux": "electron-vite build && electron-builder --linux",
     "postinstall": "node scripts/patch-element-plus.mjs",
     "prepare": "husky"
   },

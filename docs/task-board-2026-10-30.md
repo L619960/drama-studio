@@ -1,7 +1,7 @@
 # 任务看板 · 2026-10-30
 
-> 基线：分支 `feat/agent-autonomy`，最新提交 `31958e6`
-> 门禁现状：`typecheck` ✅ · `npm test` 1597/1597（92 文件）✅ · `npm run build` ✅ · `eslint` 0 warning（0 error）
+> 基线：分支 `feat/agent-autonomy`，最新提交 `3653c75`
+> 门禁现状：`typecheck` ✅ · `npm test` 1788/1788（111 文件）✅ · `npm run build` ✅ · `eslint` 0 warning（0 error）
 > 本文以代码实测为准，已修正 `docs/remediation-plan-2026-10-27.md` / `docs/technical-audit-2026-10-30.md` 中过时结论。
 
 ## 优先级定义
@@ -35,11 +35,15 @@
 | P1-B1 | UX-P1-04 `QueueView` 自绘右键菜单无 Esc 关闭 | ✅ 已交付 `e7c69de` | — | — | S |
 | P1-B2 | UX-P1-05 软审核「告警放行」无二次确认（Storyboard/Queue/Console 直接入队） | ✅ 已交付 `1ad1d80` | — | — | M |
 | P1-C1 | R-01 `directorStateMachine.spec` 偶发 EBUSY（Windows 句柄未释放） | ✅ 已交付 `5704bd5` | — | — | S |
-| P1-D1 | 测试缺口：74 个 core 模块中 23 个无对应 spec | 🔄 第一批已交付 `26aee24`（4/23） | — | 剩余 19 个按调用面分批 | L |
+| P1-D1 | 测试缺口：74 个 core 模块中 23 个无对应 spec | ✅ 已交付 23/23（`26aee24` / `acabde7` / `1d7509e` / `8da793a` / `3653c75`） | — | — | L |
 
-已覆盖（第一批）：`directorPipeline`、`directorStageShots`、`conversationSession`、`skillService`。
+已覆盖（第一批 4）：`directorPipeline`、`directorStageShots`、`conversationSession`、`skillService`。
+已覆盖（第二批 5）：`directorConstants`、`logger`、`directorPrompts`、`lipSyncService`、`skillLibrary`。
+已覆盖（第三批 4）：`directorStageAssets`、`directorStageHealing`、`directorProgressBridge`、`directorFinish`。
+已覆盖（第四批 5）：`builtinSkills`、`builtinToolSpecs`、`directorStageAudit`、`directorStageCharacters`、`directorManualOps`。
+已覆盖（第五批 5）：`conversationService`、`conversationToolsDirector`、`llmPromptsOps`、`llmPromptsScript`、`selfCheckService`。
 
-无 spec 的 19 个模块：`builtinSkills`、`builtinToolSpecs`、`conversationService`、`conversationToolsDirector`、`directorConstants`、`directorFinish`、`directorManualOps`、`directorProgressBridge`、`directorPrompts`、`directorStageAssets`、`directorStageAudit`、`directorStageCharacters`、`directorStageHealing`、`lipSyncService`、`llmPromptsOps`、`llmPromptsScript`、`logger`、`selfCheckService`、`skillLibrary`。
+23 个缺口模块已全部补齐 spec（111 个测试文件 / 1788 用例）。
 
 ## P2
 
@@ -48,11 +52,11 @@
 | P2-1 | Q-03 ESLint 82 条 warning（unused / no-explicit-any / empty catch） | ✅ 已交付 `97ce4a0`（82 → 0） | — | — | M |
 | P2-2 | D-01 README 模块数与目录结构过时 | ✅ 已交付 `d165c9e` | — | — | S |
 | P2-3 | D-05 `scripts/archive` 存量脚本清理 | ✅ 已交付 `0f6f787`（15 脚本 + 空目录已删） | — | — | S |
-| P2-4 | E-01 跨平台打包（electron-builder 仅 Windows 配置） | 🔜 | — | 需 mac/linux 目标声明与验证环境 | M |
+| P2-4 | E-01 跨平台打包（electron-builder 仅 Windows 配置） | ✅ 已交付：`electron-builder.yml` 增加 mac(dmg/zip)/linux(AppImage/deb) 目标 + `build:mac`/`build:linux` 脚本；原生二进制需本平台 runner 打包，Windows 本机无法验证 mac/linux 产物 | — | — | M |
 | P2-5 | E-02 依赖 `^` 版本范围锁定 | ✅ 已交付 `31958e6`（38 项全部锁定） | — | — | S |
-| P2-6 | F-02 未引入 Pinia 状态管理 | 🔜 | — | 属架构演进，需评估收益后再动 | L |
+| P2-6 | F-02 未引入 Pinia 状态管理 | ✅ 已评估：11 个 composables + `reactive` 已覆盖共享状态，引入 Pinia 收益低，不引入 | — | — | L |
 | P2-7 | F-03 localStorage 输入记忆未加密 | ✅ 已评估：仅存 URL/路径/模型名/项目 id/时间戳，无敏感信息，不加密 | — | — | S |
-| P2-8 | D-03 缺失跨平台 CI | 🔜 | P2-4 | 依赖打包目标先确定 | M |
+| P2-8 | D-03 缺失跨平台 CI | ✅ 已交付 `.github/workflows/ci.yml`：三平台四门验证 + tag 触发的分平台打包（本机无法实跑，待 CI runner 验证） | P2-4 | — | M |
 
 ## 依赖关系
 
@@ -89,3 +93,7 @@ P1-C1（flake 修复）─→ P1-D1 大批量补测（避免新增用例继承�
 | 2026-10-30 23:11 | P1-D1 第一批 `26aee24`：4 个 core 模块补测 37 例，92 文件 / 1597 用例全绿，build 通过 |
 | 2026-10-30 23:34 | P2-1 `97ce4a0`：ESLint 82 → 0 warning（tests 目录关闭 no-explicit-any，源码清理未用绑定/导入/无用赋值，行为不变）；四门全绿 |
 | 2026-10-30 23:52 | P2-2 `d165c9e` README 对齐（75 core / 10 views / 92 测试文件）；P2-3 `0f6f787` 删除 `scripts/archive` 15 脚本；P2-5 `31958e6` 38 项依赖锁定精确版本（`npm ci --dry-run` 通过）；P2-7 评估为无敏感内容，不加密 |
+| 2026-10-31 00:00 | P1-D1 第二批 `acabde7`：5 个 core 模块补测 38 例（97 文件 / 1635 用例全绿） |
+| 2026-10-31 00:03 | P1-D1 第三批 `1d7509e`：4 个 core 模块补测 47 例（101 文件 / 1682 用例全绿） |
+| 2026-10-31 00:10 | P1-D1 第四批 `8da793a`：5 个 core 模块补测 40 例（106 文件 / 1722 用例全绿，四门通过） |
+| 2026-10-31 00:16 | P1-D1 第五批 `3653c75`：最后 5 个 core 模块补测 66 例，23/23 缺口清零（111 文件 / 1788 用例全绿，四门通过） |

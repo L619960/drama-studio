@@ -50,6 +50,24 @@ nsis:
   createStartMenuShortcut: true
   shortcutName: 本地AI短剧工坊
 
+# macOS：需在 macOS 主机/CI runner 上打包（ffmpeg-static 与 onnxruntime-node 为平台原生二进制，
+# 跨平台交叉打包不可用；本机 Windows 无法验证 mac 产物）
+mac:
+  target:
+    - target: dmg
+    - target: zip
+  artifactName: ${productName}-${version}-${arch}.${ext}
+  category: public.app-category.video
+
+# Linux：需在 Linux 主机/CI runner 上打包（同上，原生二进制不可跨平台）
+linux:
+  target:
+    - target: AppImage
+    - target: deb
+  artifactName: ${productName}-${version}-${arch}.${ext}
+  category: AudioVideo
+  maintainer: drama-studio
+
 # 生产依赖未打包进 asar 时 electron-builder 会自动处理；
 # 以下为主进程运行时必需的外部原生/二进制相关包
 npmRebuild: false
