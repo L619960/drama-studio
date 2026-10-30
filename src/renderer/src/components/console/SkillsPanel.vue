@@ -72,7 +72,7 @@
 import { Plus, EditPen, Delete } from '@element-plus/icons-vue'
 import type { Skill } from '../../../../shared/ipcTypes'
 
-const props = defineProps<{
+defineProps<{
   skills: Skill[]
   skillDialog: { visible: boolean; name: string; description: string; promptTemplate: string }
   editingSkill: Skill | null

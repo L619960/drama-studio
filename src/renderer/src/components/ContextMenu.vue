@@ -61,7 +61,7 @@ export interface CtxItem {
   divider?: boolean
 }
 
-const props = defineProps<{
+defineProps<{
   items: CtxItem[]
 }>()
 

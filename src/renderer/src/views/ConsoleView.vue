@@ -174,7 +174,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { DataLine, MagicStick, Collection, Cpu, FolderOpened, Odometer } from '@element-plus/icons-vue'
-import type { DirectorStage, Project, SelfCheckItem, Shot, AssetRegenerateInput } from '../../../shared/ipcTypes'
+import type { DirectorStage, Project, SelfCheckItem, AssetRegenerateInput } from '../../../shared/ipcTypes'
 import { useDirectorState } from '../composables/useDirectorState'
 import { useDirectorChat } from '../composables/useDirectorChat'
 import { useSkillsManager } from '../composables/useSkillsManager'
@@ -225,7 +225,7 @@ const {
 } = useMemoryManager()
 
 const {
-  comfyStats, nodeNames, nodeQuery, comfyLoading, comfyLoaded,
+  comfyStats, nodeNames, nodeQuery, comfyLoading,
   workflows, workflowParams, expandedWorkflows, matchedNodes,
   validateReports, validateLoading, validateRun, validateBadCount,
   modelsDir, openModelsDir,

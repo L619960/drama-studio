@@ -185,7 +185,6 @@ async function confirmAssetRegenerate(): Promise<void> {
 async function rollbackAsset(): Promise<void> {
   const s = assetEditing.value
   if (!s) return
-  const k = draftKey(s.kind, s.id)
   const payload = buildAssetPayload(s.kind, s.id, s)
   if (!payload) return
   rollbackBusy.value = true

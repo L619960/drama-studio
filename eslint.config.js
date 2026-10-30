@@ -99,6 +99,15 @@ export default tseslint.config(
     }
   },
 
+  // tests/ 用最小 mock 对象替代真实服务（store/llm/ffmpeg 等），`any` 是测试脚手架常态；
+  // 产品代码中的 any 仍按 warn 治理。
+  {
+    files: ['tests/**/*.ts'],
+    rules: {
+      '@typescript-eslint/no-explicit-any': 'off'
+    }
+  },
+
   // scripts/ 是本地一次性开发/性能度量/归档修复脚本（非主进程/渲染进程产品代码），
   // 其中空 catch 兜底、临时变量残留属工具脚本常态，不纳入产品代码 lint 治理。
   {

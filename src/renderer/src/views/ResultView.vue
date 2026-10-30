@@ -384,7 +384,7 @@ async function combineVideo() {
 }
 
 /** 剪辑台参数变更即持久化到项目（入点/出点/转场/跳过） */
-async function saveShotEdits(shot: Shot): Promise<void> {
+async function saveShotEdits(_shot: Shot): Promise<void> {
   if (!project.value) return
   try {
     await window.api.project.save(snapshot(project.value))

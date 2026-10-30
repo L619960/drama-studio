@@ -217,13 +217,6 @@ async function regenerateLast(): Promise<void> {
   regenerating.value = true
   try {
     const rel = `projects/${props.projectId}/shots/${s.id}_last_review.png`
-    const scene = s.scene || 'cinematic scene'
-    const look = s.characterIds
-      .map(id => props.characters.find(c => c.id === id))
-      .filter((c): c is Character => Boolean(c))
-      .map(c => c.appearanceLock || c.description)
-      .filter(Boolean)
-      .join('; ') || 'chinese person, natural everyday appearance'
     const propCue = s.props?.length
       ? `，关键道具必须原样出现：${s.props.join(', ')}`
       : ''

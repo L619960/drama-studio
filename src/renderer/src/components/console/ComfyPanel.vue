@@ -178,7 +178,7 @@ import type {
 // R-13：gb/gpuLabel/vramPercent/canEditParam 唯一实现在 useComfyPanel，不再本地重复
 import { gb, gpuLabel, vramPercent, canEditParam } from '../../composables/useComfyPanel'
 
-const props = defineProps<{
+defineProps<{
   comfyStats: ComfySystemStats | null
   nodeNames: string[]
   nodeQuery: string

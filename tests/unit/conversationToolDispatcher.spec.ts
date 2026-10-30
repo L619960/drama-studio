@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 
 // conversationToolDispatcher import 链里会触发：
 //   comfyMcpService → @modelcontextprotocol/sdk
@@ -80,7 +80,6 @@ describe('conversationToolDispatcher · executeToolImpl（前置分支 + 路由�
   })
 
   it('signal.aborted → 返回 ok=false 不执行', async () => {
-    const signal = new AbortController().signal
     // AbortController signal 初始状态是 aborted=false，手动触发
     const ctrl = new AbortController()
     ctrl.abort()
@@ -151,7 +150,7 @@ describe('conversationToolDispatcher · executeToolImpl（前置分支 + 路由�
   it('rebuild_frames：shot_indexes 有效 → 调用 director.rebuildShotFirstFrames', async () => {
     const rebuild = vi.fn(async () => ({ ok: true, text: 'done' }))
     const agent = mkAgent({ director: { rebuildShotFirstFrames: rebuild, rerunCasting: vi.fn() } })
-    const r = await executeToolImpl(agent, 'pid1', 'rebuild_frames', '{"shot_indexes":[1,2]}')
+    await executeToolImpl(agent, 'pid1', 'rebuild_frames', '{"shot_indexes":[1,2]}')
     expect(rebuild).toHaveBeenCalledWith('pid1', [1, 2])
   })
 

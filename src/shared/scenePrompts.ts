@@ -7,7 +7,7 @@
 
 import { CINEMATIC_QUALITY_BLOCK, REALISM_POSITIVE, SHOT_SIZE_CUE } from './promptConstants'
 import { joinParts } from './promptUtils'
-import { sanitizeCastLook, identityLockBlock, stripModernWardrobe, isPeriodGenre } from './castAppearance'
+import { identityLockBlock, stripModernWardrobe, isPeriodGenre } from './castAppearance'
 import { motionCueFromAction } from './motion'
 import { ageLockFor } from './promptDrift'
 import { realismPositiveExtra } from './negatives'

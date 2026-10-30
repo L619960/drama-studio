@@ -8,7 +8,7 @@ import * as fs from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { ProjectStore } from '../../src/main/core/projectStore'
-import type { Project, Character, Shot } from '../../src/shared/ipcTypes'
+import type { Project } from '../../src/shared/ipcTypes'
 
 vi.mock('../../src/main/core/logger', () => ({
   createLogger: () => ({ info: () => {}, warn: () => {}, error: () => {}, debug: () => {} })
@@ -28,20 +28,6 @@ afterAll(async () => {
 beforeEach(() => {
   store = new ProjectStore(path.join(dir, 'projects'))
 })
-
-// ---------- 辅助 ----------
-function makeChar(id: string, opts: Partial<Character> = {}): Character {
-  return {
-    id, name: 'A', refImagePath: '', faceImagePath: '', bodySheetPath: '',
-    description: '', voice: '', voiceRate: '', appearanceLock: '', ...opts
-  }
-}
-function makeShot(id: string, opts: Partial<Shot> = {}): Shot {
-  return {
-    id, index: 1, scene: '', action: '', dialogue: '', characterIds: [],
-    type: 'i2v', width: 720, height: 480, frames: 81, seed: 1, ...opts
-  }
-}
 
 // ==============================================================
 // normalizeProject 字段迁移 / 版本兼容（通过 create→get 间接触发）
@@ -280,7 +266,7 @@ describe('list / getShotDir 基础覆盖', () => {
 
   it('list 跳过没有 project.json 的目录', async () => {
     await fs.mkdir(path.join(dir, 'projects', 'empty-dir'), { recursive: true })
-    const p1 = await store.create('valid', '都市')
+    await store.create('valid', '都市')
     const list = await store.list()
     // 只包含 valid，不包含 empty-dir
     expect(list.length).toBeGreaterThanOrEqual(1)

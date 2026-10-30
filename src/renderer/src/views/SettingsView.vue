@@ -399,7 +399,7 @@ async function saveSettings() {
     // 通知侧栏立刻复查 ComfyUI（地址可能已变）
     window.dispatchEvent(new Event('comfyui:recheck'))
     ElMessage.success('保存成功')
-  } catch (e) {
+  } catch {
     ElMessage.error('保存失败')
   } finally {
     saving.value = false

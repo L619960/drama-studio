@@ -193,7 +193,7 @@ export function differentiateLooks(looks: string[]): { looks: string[]; notes: s
   const colorRe = /#?[0-9a-fA-F]{6}|\b(black|white|grey|gray|brown|tan|beige|ivory|navy|blue|dark blue|deep blue|indigo|teal|green|olive|red|crimson|scarlet|purple|violet|lavender|pink|rose|orange|amber|gold|golden|silver|rust|maroon|claret|ochre|mustard|emerald|jade|cyan|azure|charcoal|slate|oxblood|mauve|plum|wine)\b/i
   const hairRe = /\b(hair|bun|ponytail|topknot|braid|bangs|fringe|hairline)\b/i
   const faceRe = /\b(round\s+face|oval\s+face|square\s+face|long\s+face|sharp\s+jaw|square\s+jaw|high\s+cheekbones|broad\s+cheekbones|narrow\s+face|round\s+cheeks|almond\s+eyes|deep\s+set\s+eyes|wide\s+eyes|narrow\s+eyes|arched\s+brows|straight\s+brows|thick\s+brows|thin\s+lips|full\s+lips|aquiline\s+nose|flat\s+nose|mustache|beard|goatee|stubble|mole|scar)\b/i
-  const seen = looks.map((l, i) => ({
+  const seen = looks.map(l => ({
     color: (l.match(colorRe) || []).slice(0, 3),
     hair: hairRe.test(l) ? (l.match(/[a-z]+(?: hair| bun| ponytail| topknot| braid| bangs| fringe)/i)?.[0] || 'hair') : '',
     face: faceRe.test(l) ? (l.match(faceRe)?.[0] || 'face') : ''

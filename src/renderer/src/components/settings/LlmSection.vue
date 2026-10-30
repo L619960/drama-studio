@@ -65,7 +65,6 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { ElMessage } from 'element-plus'
 import type { AppSettings } from '../../../../shared/ipcTypes'
 import InputContextMenu from '../common/InputContextMenu.vue'
 import { useInputMemory } from '../../utils/useInputMemory'

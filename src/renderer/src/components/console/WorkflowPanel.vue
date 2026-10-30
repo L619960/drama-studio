@@ -174,7 +174,7 @@ import { STAGE_LABELS } from '../../composables/useDirectorState'
 import {
   type DirectorState, type DirectorStage, type DirectorLogEntry,
   type Project, type WorkflowMeta, type WorkflowCapability,
-  type AssetRegenerateKind, type AssetRegenerateInput, type DirectorStartInput
+  type AssetRegenerateInput, type DirectorStartInput
 } from '../../../../shared/ipcTypes'
 
 const props = defineProps<{

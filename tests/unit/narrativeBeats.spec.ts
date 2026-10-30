@@ -122,13 +122,6 @@ describe('narrativeBeats · 叙事节拍与关键道具校验', () => {
   })
 
   describe('validateNarrativeContinuity：拆镜结果本地叙事校验 → warnings', () => {
-    const baseShots: NarrativeShotLike[] = [
-      mkShot({ index: 1, action: 'a woman walks toward the camera with an umbrella', type: 't2v' }),
-      mkShot({ index: 2, action: 'man opens the car door', type: 'i2v' }),
-      mkShot({ index: 3, action: 'woman sits inside the car', type: 'i2v' }),
-      mkShot({ index: 4, action: 'taillights recede into the night', type: 'i2v' })
-    ]
-
     it('空 shots → 直接返回空数组', () => {
       expect(validateNarrativeContinuity('t', undefined, '', [])).toEqual([])
     })

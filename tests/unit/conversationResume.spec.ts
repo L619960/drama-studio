@@ -91,7 +91,7 @@ describe('tSimple · resume（P0-2 中断态 fallback）', () => {
     st.stages.casting = { status: 'skipped', message: '', percent: 0 }
     st.stages.scenes = { status: 'error', message: '', percent: 0 }
     const host = mkHost(st)
-    const r = await callSimple(host, 'resume')
+    await callSimple(host, 'resume')
     expect(host.director.resumeFromStage).toHaveBeenCalledWith('p1', 'scenes')
   })
 

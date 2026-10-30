@@ -1,5 +1,4 @@
 import { describe, it, expect, vi } from 'vitest'
-import path from 'node:path'
 
 // conversationToolsFile 直接 import electron + fs/promises
 vi.mock('electron', () => ({

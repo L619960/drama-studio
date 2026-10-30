@@ -66,7 +66,7 @@ import { TTSRateLimitedError } from '../../src/main/core/ttsService'
 // ============================================================ 固定 baseDir（beforeEach/afterEach 共享）
 let baseDir = ''
 beforeEach(() => { baseDir = nodeFs.mkdtempSync(nodePath.join(nodeOs.tmpdir(), 'audio-spec-')) })
-afterEach(() => { try { nodeFs.rmSync(baseDir, { recursive: true, force: true }) } catch {} })
+afterEach(() => { try { nodeFs.rmSync(baseDir, { recursive: true, force: true }) } catch { /* 清理失败忽略 */ } })
 
 const rel = (p: string) => nodePath.join(baseDir, p)
 
@@ -169,7 +169,7 @@ describe('prepareShotAudio', () => {
   it('已有音频文件在盘且时长不超预算 → 复用，padAudioLead 生成同步音频，不调 TTS', async () => {
     const shot = makeShot('s1', { dialogue: '台词', audioPath: 'projects/p1/audio/s1.mp3' })
     writeFile('projects/p1/audio/s1.mp3')
-    const { rt, patchedShots } = makeRuntime({
+    const { rt } = makeRuntime({
       getDuration: async () => 2.0,
       padAudioLead: async (_i, o, sec) => {
         expect(sec).toBe(SHOT_TIMING.audioLeadSec)
@@ -177,7 +177,6 @@ describe('prepareShotAudio', () => {
       }
     })
     let ttsCalled = false
-    const cfg = makeRuntime({ onTtsGenerate: async () => { ttsCalled = true; return 'x' } })
     // 直接用上面构造的 rt（复用 getDuration=2.0）
     Object.assign(rt, { tts: { generate: async () => { ttsCalled = true; return 'x' } } })
     const r = await prepareShotAudio(rt, 'p1', shot, makeProject([shot]), makeWatcher())

@@ -10,7 +10,7 @@ let lastTip = 0
 
 export function throttleTap(key: string, ms = 800): boolean {
   const now = Date.now()
-  let last = 0
+  let last: number
   try {
     last = Number(localStorage.getItem(TAP_PREFIX + key) || 0)
   } catch {

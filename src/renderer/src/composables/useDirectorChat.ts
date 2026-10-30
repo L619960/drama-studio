@@ -276,7 +276,7 @@ export function useDirectorChat(
   /** 上传文件：选择文本文件后把内容拼进用户消息发给导演 */
   async function uploadAndSend(): Promise<void> {
     if (sending.value) return
-    let payload: { name: string; content: string; truncated: boolean } | null = null
+    let payload: { name: string; content: string; truncated: boolean } | null
     try {
       payload = await window.api.conversation.uploadFile()
     } catch (e) {

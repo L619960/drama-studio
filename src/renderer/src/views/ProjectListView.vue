@@ -196,7 +196,7 @@ import DirectorFlow from '../components/project/DirectorFlow.vue'
 import ContextMenu, { type CtxItem } from '../components/ContextMenu.vue'
 import EmptyState from '../components/common/EmptyState.vue'
 
-const { urlCache, ensureFileUrl, ensureFileUrls } = useFileUrl()
+const { urlCache, ensureFileUrls } = useFileUrl()
 
 const router = useRouter()
 const route = useRoute()
@@ -290,7 +290,7 @@ async function loadProjects() {
       .filter((_, i) => checks[i])
       .map(p => `projects/${p.id}/thumbnail.jpg`)
     await ensureFileUrls(existingThumbs)
-  } catch (e) {
+  } catch {
     ElMessage.error('加载项目失败')
   } finally {
     projectsLoaded.value = true
@@ -395,7 +395,7 @@ async function duplicateProject(project: Project) {
 async function exportProject(project: Project) {
   const finalRel = `projects/${project.id}/final.mp4`
   // R-12：前置检查失败单独提示，不产生 unhandled rejection
-  let exists = false
+  let exists: boolean
   try {
     exists = await window.api.file.exists(finalRel)
   } catch {

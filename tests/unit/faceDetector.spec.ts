@@ -141,7 +141,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  try { nodeFs.rmSync(baseDir, { recursive: true, force: true }) } catch {}
+  try { nodeFs.rmSync(baseDir, { recursive: true, force: true }) } catch { /* 清理失败忽略 */ }
 })
 
 // ============================================================ describe

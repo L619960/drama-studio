@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { referenceIsPortrait, resolveRefImageRel, resolveSceneImageRel } from '../../src/main/core/taskQueueRefs'
+import { resolveRefImageRel, resolveSceneImageRel } from '../../src/main/core/taskQueueRefs'
 import type { Project, Shot, Character, SceneBoard } from '../../src/shared/ipcTypes'
 
 function mkShot(overrides: Partial<Shot> = {}): Shot {

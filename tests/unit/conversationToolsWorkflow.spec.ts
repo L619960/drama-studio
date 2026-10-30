@@ -5,7 +5,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { workflowExists, tChooseWorkflow } from '../../src/main/core/conversationToolsWorkflow'
-import { tWebSearch, tFetchUrl, isBlockedFetchHost } from '../../src/main/core/conversationToolsNetwork'
+import { isBlockedFetchHost } from '../../src/main/core/conversationToolsNetwork'
 
 // ------ Mock host ------
 const mkHost = () => ({

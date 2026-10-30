@@ -4,13 +4,13 @@
  * （motionPrompt / cleanAction / sanitizeCinematicPrompt / identityLockBlock ...）
  * 全是纯函数，直接导入执行。只 mock createLogger 消除日志副作用。
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 
 vi.mock('../../src/main/core/logger', () => ({
   createLogger: () => ({ info: () => {}, warn: () => {}, error: () => {}, debug: () => {} })
 }))
 
-import type { Shot, Project, GenreTemplate } from '../../src/shared/ipcTypes'
+import type { Shot, Project } from '../../src/shared/ipcTypes'
 import { driftLockBlock, usablePromptEn, sceneCueFor, propsConstraintBlock, noExtrasLockFor, buildH3Prompt } from '../../src/main/core/taskQueuePrompts'
 
 // ---------- 辅助：构造最小 Shot ----------
