@@ -1,7 +1,7 @@
 # 任务看板 · 2026-10-30
 
-> 基线：分支 `feat/agent-autonomy`，最新提交 `85f05e3`
-> 门禁现状：`typecheck` ✅ · `npm test` 1815/1815（112 文件）✅ · `npm run build` ✅ · `eslint` 0 warning（0 error）
+> 基线：分支 `feat/agent-autonomy`，最新提交 `d434e17`
+> 门禁现状：`typecheck` ✅ · `npm test` 1819/1819（113 文件）✅ · `npm run build` ✅ · `eslint` 0 warning（0 error）
 > 本文以代码实测为准，已修正 `docs/remediation-plan-2026-10-27.md` / `docs/technical-audit-2026-10-30.md` 中过时结论。
 
 ## 优先级定义
@@ -77,6 +77,7 @@
 | 编号 | 任务 | 状态 | 依赖 | 工作量 |
 | --- | --- | --- | --- | --- |
 | REQ-06 | 首跑引导向导（三步 + 一键启动 ComfyUI + 表单级校验 + 视频模式 tip） | ✅ 已交付：新增 `components/onboarding/FirstRunWizard.vue`（环境检查复用 `system.selfcheck`/`SelfCheckPanel`、ComfyUI 离线一键拉起 + 2s×30 轮询、示例片名/题材建项目后进控制台、可跳过）；设置页新增「环境检查 → 重新运行」入口；`DirectorStartForm` 改 el-form rules 红字定位 + 自动聚焦，视频模式补「视频不进成片」tip；补 5 例单测 | — | M |
+| REQ-07 | 会话域收敛与控制台信息架构（面包屑 / activeModule 持久化 / 删死代码） | ✅ 已交付：控制台顶部会话域面包屑（项目对话显示片名、全局对话提示最近项目并可一键切换）、未发送草稿按作用域 localStorage 保留、中栏模块选择持久化（`consoleLayout` 白名单）；删除 `DirectorFlow` 进度弹窗死代码（RC-05）与 `WorkflowPanel` 死 emit（RC-13）；补 4 例单测 | — | M |
 
 ## 依赖关系
 
@@ -122,3 +123,4 @@ P1-C1（flake 修复）─→ P1-D1 大批量补测（避免新增用例继承�
 | 2026-10-31 01:10 | REQ-04 `f0b2d08`：warn 放行三选一确认与 30 分钟同批去重、`director:enableGates` 中途恢复默认门禁 + 控制台橙色 chip，补 5 例单测。四门全绿（1808 用例） |
 | 2026-10-31 01:28 | REQ-05 `b7b31e3`：`director:finished` 终态事件 + 底部常驻 `DirectorRunBar`（任意页面控制/多任务面板/完成失败入口），补 2 例单测。四门全绿（1810 用例）；Phase 1（P0 5 条）全部交付 |
 | 2026-10-31 02:20 | REQ-06：首跑三步向导 `FirstRunWizard`（环境检查/一键启动 ComfyUI 轮询/示例项目/跳过标记）+ 设置页「重新运行环境检查」入口 + 开拍单 el-form rules 定位聚焦与视频模式 tip，补 5 例单测。四门全绿（1815 用例） |
+| 2026-10-31 02:40 | REQ-07：控制台会话域面包屑与全局→项目一键切换、按域草稿持久化、`activeModule` 持久化（`consoleLayout` 白名单 + 4 例单测）；删 `DirectorFlow` 进度弹窗死代码（RC-05）与 `WorkflowPanel` 死 emit（RC-13）。四门全绿（1819 用例 / 113 文件） |

@@ -238,8 +238,6 @@ const emit = defineEmits<{
   rerenderShots: [payloads: Array<{ shotId: string; prompt: string; dialogue: string; negative: string; workflow: string }>]
   /** 工作台产物：编辑提示词/工作流后重新生成（角色/场景/首尾帧） */
   regenerateAsset: [payload: AssetRegenerateInput]
-  /** 工作台产物：回滚到上一版 */
-  rollbackAsset: [payload: AssetRegenerateInput]
   /** 产物已变更，通知父级刷新 project/assetUrls */
   'asset-refreshed': []
   'update:expandedStages': [stages: DirectorStage[]]

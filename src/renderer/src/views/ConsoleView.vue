@@ -1,5 +1,16 @@
 <template>
-  <div class="console page">
+  <div class="console-shell">
+    <!-- REQ-07 / RC-02：会话域面包屑，任何控制台界面都能确认「指令落到哪个会话」 -->
+    <div class="console-crumb glass-panel">
+      <el-icon><ChatDotRound /></el-icon>
+      <span class="crumb-domain">{{ domainLabel }}</span>
+      <template v-if="!projectId && suggestProject">
+        <span class="crumb-suggest">你在《{{ suggestProject.title }}》项目中，要不要切到项目对话？</span>
+        <el-button link type="primary" size="small" @click="switchToProjectChat">切到项目对话</el-button>
+      </template>
+    </div>
+
+    <div class="console page">
     <!-- ===== 左栏：模块导航 + 项目概览 ===== -->
     <aside class="console-aside glass-panel">
       <div class="aside-title">导演控制台</div>
@@ -166,6 +177,7 @@
         @update:input-text="val => inputText = val"
       />
     </aside>
+    </div>
   </div>
 </template>
 
@@ -173,7 +185,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { DataLine, MagicStick, Collection, Cpu, FolderOpened, Odometer } from '@element-plus/icons-vue'
+import { DataLine, MagicStick, Collection, Cpu, FolderOpened, Odometer, ChatDotRound } from '@element-plus/icons-vue'
 import type { DirectorStage, Project, SelfCheckItem, AssetRegenerateInput } from '../../../shared/ipcTypes'
 import { useDirectorState } from '../composables/useDirectorState'
 import { useDirectorChat } from '../composables/useDirectorChat'
@@ -183,6 +195,8 @@ import { useComfyPanel } from '../composables/useComfyPanel'
 import { useFileUrl } from '../composables/useFileUrl'
 import { snapshot } from '../utils/snapshot'
 import { confirmUnreviewedRender } from '../utils/renderGate'
+import { readConsoleModule, saveConsoleModule } from '../utils/consoleLayout'
+import { useActiveProject } from '../composables/useActiveProject'
 import WorkflowPanel from '../components/console/WorkflowPanel.vue'
 import SkillsPanel from '../components/console/SkillsPanel.vue'
 import MemoryPanel from '../components/console/MemoryPanel.vue'
@@ -196,7 +210,37 @@ const projectId = computed(() => route.params.id as string | undefined)
 /** 对话作用域：项目内对话带项目快照；无项目时为全局对话 */
 const chatScope = computed(() => projectId.value || 'global')
 
-const activeModule = ref('workflow')
+// REQ-07 / RC-10：中栏模块选择持久化，切页/切项目后回来仍停在原模块
+const activeModule = ref<string>(readConsoleModule())
+
+// REQ-07 / RC-02：会话域提示。全局控制台可一键切到最近项目对话，未发送内容按域保留
+const { currentProjectId } = useActiveProject(route)
+const suggestProject = ref<{ id: string; title: string } | null>(null)
+const domainLabel = computed(() => {
+  if (!projectId.value) return '全局对话'
+  const title = state.value?.title || project.value?.title || '当前项目'
+  return `《${title}》项目对话`
+})
+
+async function loadSuggestProject(): Promise<void> {
+  const id = currentProjectId.value
+  if (!id || projectId.value) { suggestProject.value = null; return }
+  try {
+    const p = await window.api.project.get(id)
+    suggestProject.value = p ? { id: p.id, title: p.title } : null
+  } catch {
+    suggestProject.value = null
+  }
+}
+
+function switchToProjectChat(): void {
+  const p = suggestProject.value
+  if (!p) return
+  if (inputText.value.trim()) {
+    ElMessage.info('未发送内容已按会话域保留，切回来后仍在输入框')
+  }
+  void router.push(`/project/${p.id}/console`)
+}
 
 // ===== 装配 5 个 composable =====
 const {
@@ -412,6 +456,7 @@ onMounted(async () => {
   })()
   await Promise.all([hydrateTask, loadSkills(), loadMemories(), loadChat()])
   void loadProjectData(projectId.value)
+  void loadSuggestProject()
   void runSelfcheck()
 })
 
@@ -435,10 +480,12 @@ watch(projectId, async (id, old) => {
   })()
   await Promise.all([hydrateTask, loadChat()])
   void loadProjectData(id)
+  void loadSuggestProject()
 })
 
 function onModuleSelect(index: string): void {
   activeModule.value = index
+  saveConsoleModule(index)
   // agent 工具可在后台增删技能/记忆，切到对应面板时拉最新，避免显示旧数据
   if (index === 'skills') void loadSkills()
   else if (index === 'memory') void loadMemories()
@@ -481,13 +528,34 @@ async function clearChatGuarded(): Promise<void> {
 </script>
 
 <style scoped>
+.console-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  height: calc(100vh - 48px);
+  animation: page-enter var(--dur-slow) var(--ease-out);
+}
+.console-crumb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+.crumb-domain {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.crumb-suggest { color: var(--text-muted); }
 .console {
   display: flex;
   gap: 14px;
-  height: calc(100vh - 48px);
+  flex: 1;
+  min-height: 0;
   max-width: none;
   padding: 0;
-  animation: page-enter var(--dur-slow) var(--ease-out);
 }
 .console-aside {
   width: 230px;
@@ -569,10 +637,13 @@ async function clearChatGuarded(): Promise<void> {
 }
 
 @media (max-width: 1100px) {
-  .console {
-    flex-direction: column;
+  .console-shell {
     height: auto;
     min-height: calc(100vh - 48px);
+  }
+  .console {
+    flex-direction: column;
+    min-height: 0;
   }
   .console-aside { width: 100%; }
   .console-right {

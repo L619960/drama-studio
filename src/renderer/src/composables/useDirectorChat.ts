@@ -1,4 +1,4 @@
-import { computed, reactive, ref, type Ref } from 'vue'
+import { computed, reactive, ref, watch, type Ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { confirmDanger } from '../utils/confirm'
 import { throttleTap } from '../utils/throttle'
@@ -7,12 +7,25 @@ import type {
 } from '../../../shared/ipcTypes'
 import { SELF_LEARN_PROMPT } from '../../../shared/ipcTypes'
 
+/** RC-02：未发送草稿按作用域存取（localStorage），切换会话域后自动恢复 */
+const DRAFT_PREFIX = 'drama-studio:chatDraft:'
+
+function readDraft(scope: string): string {
+  if (typeof localStorage === 'undefined') return ''
+  return localStorage.getItem(DRAFT_PREFIX + scope) || ''
+}
+
+function writeDraft(scope: string, text: string): void {
+  if (typeof localStorage === 'undefined') return
+  const key = DRAFT_PREFIX + scope
+  if (text.trim()) localStorage.setItem(key, text)
+  else localStorage.removeItem(key)
+}
+
 /**
  * 导演对话：消息流 + 工具卡片 + Markdown 渲染。
- *
- * 滚动 DOM（chatBoxRef）留在子组件 DirectorChat 内：composable 在每次消息变化时递增
- * `scrollTick`，子组件 watch 该 tick + nextTick 后判断"用户是否在回看历史"
- * （nearBottom 判断）决定是否滚到底部——保留原 [ConsoleView.vue] 的不打断逻辑。
+ * 滚动 DOM 留在子组件 DirectorChat，本 composable 只递增 `scrollTick`，
+ * 由子组件判断用户是否在回看历史后决定是否滚底，避免打断阅读。
  *
  * @param chatScope 对话作用域（projectId 或 'global'）
  * @param state     导演状态（用于动态推荐快捷指令 quickPrompts）
@@ -22,7 +35,10 @@ export function useDirectorChat(
   state: Ref<DirectorState | null>
 ) {
   const messages = ref<ConversationMessage[]>([])
-  const inputText = ref('')
+  // RC-02：未发送内容按对话作用域暂存，切换全局/项目对话后回来仍在输入框
+  const inputText = ref(readDraft(chatScope.value))
+  watch(inputText, (text) => writeDraft(chatScope.value, text))
+  watch(chatScope, (scope) => { inputText.value = readDraft(scope) })
   const sending = ref(false)
   const expandedTools = reactive(new Set<string>())
   /** 滚动信号：递增后由子组件 watch 并按需滚底 */
