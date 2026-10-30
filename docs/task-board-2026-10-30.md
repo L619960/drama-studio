@@ -1,7 +1,7 @@
 # 任务看板 · 2026-10-30
 
-> 基线：分支 `feat/agent-autonomy`，最新提交 `d45a11a`
-> 门禁现状：`typecheck` ✅ · `npm test` 1548/1548 ✅ · `npm run build` ✅ · `eslint` 82 warning（0 error）
+> 基线：分支 `feat/agent-autonomy`，最新提交 `26aee24`
+> 门禁现状：`typecheck` ✅ · `npm test` 1597/1597（92 文件）✅ · `npm run build` ✅ · `eslint` 82 warning（0 error）
 > 本文以代码实测为准，已修正 `docs/remediation-plan-2026-10-27.md` / `docs/technical-audit-2026-10-30.md` 中过时结论。
 
 ## 优先级定义
@@ -33,11 +33,13 @@
 | P1-A1 | S-03 剩余：`comfyuiClient.doStart` 的 `startCommand` 无白名单/危险字符校验 | ✅ 已交付 `e7c69de` | — | — | S |
 | P1-A2 | P1-5 `imageService` 参考图逐个上传前无 `resolveInsideRoot` 校验 | ✅ 已交付（扩展名白名单） | P0-B3 | — | S |
 | P1-B1 | UX-P1-04 `QueueView` 自绘右键菜单无 Esc 关闭 | ✅ 已交付 `e7c69de` | — | — | S |
-| P1-B2 | UX-P1-05 软审核「告警放行」无二次确认（Storyboard/Queue/Console 直接入队） | 🔜 次批次 | — | 需统一确认文案与三处入口 | M |
+| P1-B2 | UX-P1-05 软审核「告警放行」无二次确认（Storyboard/Queue/Console 直接入队） | ✅ 已交付 `1ad1d80` | — | — | M |
 | P1-C1 | R-01 `directorStateMachine.spec` 偶发 EBUSY（Windows 句柄未释放） | ✅ 已交付 `5704bd5` | — | — | S |
-| P1-D1 | 测试缺口：74 个 core 模块中 23 个无对应 spec | 🔜 分批 | — | 优先级需按调用面与回归价值排序 | L |
+| P1-D1 | 测试缺口：74 个 core 模块中 23 个无对应 spec | 🔄 第一批已交付 `26aee24`（4/23） | — | 剩余 19 个按调用面分批 | L |
 
-无 spec 的 23 个模块：`builtinSkills`、`builtinToolSpecs`、`conversationService`、`conversationSession`、`conversationToolsDirector`、`directorConstants`、`directorFinish`、`directorManualOps`、`directorPipeline`、`directorProgressBridge`、`directorPrompts`、`directorStageAssets`、`directorStageAudit`、`directorStageCharacters`、`directorStageHealing`、`directorStageShots`、`lipSyncService`、`llmPromptsOps`、`llmPromptsScript`、`logger`、`selfCheckService`、`skillLibrary`、`skillService`。
+已覆盖（第一批）：`directorPipeline`、`directorStageShots`、`conversationSession`、`skillService`。
+
+无 spec 的 19 个模块：`builtinSkills`、`builtinToolSpecs`、`conversationService`、`conversationToolsDirector`、`directorConstants`、`directorFinish`、`directorManualOps`、`directorProgressBridge`、`directorPrompts`、`directorStageAssets`、`directorStageAudit`、`directorStageCharacters`、`directorStageHealing`、`lipSyncService`、`llmPromptsOps`、`llmPromptsScript`、`logger`、`selfCheckService`、`skillLibrary`。
 
 ## P2
 
@@ -69,7 +71,7 @@ P1-C1（flake 修复）─→ P1-D1 大批量补测（避免新增用例继承�
 | --- | --- | --- |
 | 批次 1 ✅ | P1-A1、P1-B1、P1-C1 | 无外部决策，立即可执行 |
 | 批次 2 ✅ | P0-B3 决策 → P1-A2（白名单口径） | 用户确认路径口径 |
-| 批次 3 | P1-B2、P1-D1 第一批（`directorPipeline` / `directorStageShots` / `conversationSession` / `skillService`） | 批次 1 门禁全绿 |
+| 批次 3 ✅ | P1-B2、P1-D1 第一批（`directorPipeline` / `directorStageShots` / `conversationSession` / `skillService`） | 批次 1 门禁全绿 |
 | 批次 4 | P2-1 ~ P2-8 | P0/P1 清零 |
 
 每批次收口标准：`npm run typecheck` + `npm test` + `npm run build` 全绿，`eslint` 无新增 error；提交按单一主题拆分。
@@ -83,3 +85,5 @@ P1-C1（flake 修复）─→ P1-D1 大批量补测（避免新增用例继承�
 | 2026-10-30 22:34 | 补齐 `llmHttp.spec.ts` / `llmScriptOpsOps.spec.ts` 对 `LLM_DUMP_DIR` 的 mock 导出 |
 | 2026-10-30 22:36 | 批次 1 卡口：R-01 flake 修复 `5704bd5`；启动命令校验加固 + 队列菜单 Esc `e7c69de` |
 | 2026-10-30 22:50 | 批次 2：素材路径白名单 `assetPathGuard` 接入 `taskQueue` / `imageService` / `set_project_bgm`，新增 10 条单测；全量 1558 用例全绿，build 通过 |
+| 2026-10-30 23:05 | P1-B2 二次确认 `1ad1d80`：新增 `renderGate` 预判，接入 Storyboard/Queue/Console；抽 `renderTargetShots` 与主进程共用，1560 用例全绿 |
+| 2026-10-30 23:11 | P1-D1 第一批 `26aee24`：4 个 core 模块补测 37 例，92 文件 / 1597 用例全绿，build 通过 |
