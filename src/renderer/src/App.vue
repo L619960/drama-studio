@@ -103,11 +103,15 @@
       </div>
     </el-aside>
 
-    <el-main class="main-stage">
-      <router-view v-slot="{ Component }">
-        <component :is="Component" />
-      </router-view>
-    </el-main>
+    <el-container class="work-shell">
+      <el-main class="main-stage">
+        <router-view v-slot="{ Component }">
+          <component :is="Component" />
+        </router-view>
+      </el-main>
+      <!-- REQ-05：底部常驻导演运行条，任何页面可见/可控 -->
+      <DirectorRunBar />
+    </el-container>
   </el-container>
 </template>
 
@@ -120,6 +124,7 @@ import {
 import { useHotkeys } from './composables/useHotkeys'
 import { useActiveProject, forgetLastProjectIfMissing } from './composables/useActiveProject'
 import { useRenderActivity } from './composables/useRenderActivity'
+import DirectorRunBar from './components/layout/DirectorRunBar.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -386,9 +391,18 @@ useHotkeys([
 }
 
 .main-stage {
+  flex: 1;
+  min-height: 0;
   padding: 14px 18px 18px;
   overflow-y: auto;
   overflow-x: hidden;
+}
+
+/* 右侧工作区纵向排布：内容区可滚动 + 底部运行条常驻 */
+.work-shell {
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
 }
 
 .view-fade-enter-active,

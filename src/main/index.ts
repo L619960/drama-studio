@@ -6,6 +6,7 @@ import {
   type ProgressEvent,
   type DirectorProgressEvent,
   type DirectorLogEvent,
+  type DirectorFinishedEvent,
   type ConversationToolEvent
 } from '../shared/ipcTypes'
 import { ProjectStore } from './core/projectStore'
@@ -259,6 +260,10 @@ function registerIpc(): void {
   // 项目数据落盘（定妆/首帧/场景板/逐镜渲染）→ 通知前端刷新面板
   directorAgent.on('projectUpdated', (event: { projectId: string }) => {
     sendToWindow(IpcChannels.directorProjectUpdated, event)
+  })
+  // REQ-05：任务终态（完成/失败/取消）
+  directorAgent.on('finished', (event: DirectorFinishedEvent) => {
+    sendToWindow(IpcChannels.directorFinished, event)
   })
   conversationService.on('tool', (event: ConversationToolEvent) => {
     sendToWindow(IpcChannels.conversationTool, event)

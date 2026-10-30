@@ -585,6 +585,8 @@ export interface IpcApi {
     enableGates(projectId: string): Promise<boolean>
     onProgress(cb: (e: DirectorProgressEvent) => void): () => void
     onLog(cb: (e: DirectorLogEvent) => void): () => void
+    /** 任务终态（完成/失败/取消）：全局运行条反馈 */
+    onFinished(cb: (e: DirectorFinishedEvent) => void): () => void
     /** 后台流程（定妆/首帧/场景板/逐镜渲染）落盘后通知：前端面板收到即刷新项目数据 */
     onProjectUpdated(cb: (e: { projectId: string }) => void): () => void
   }
@@ -1057,6 +1059,20 @@ export interface DirectorLogEvent {
   entry: DirectorLogEntry
 }
 
+/** 导演任务终态事件（director:finished）：全局运行条完成/失败反馈用 */
+export interface DirectorFinishedEvent {
+  type: 'director:finished'
+  projectId: string
+  title: string
+  /** 正常跑完成片（未取消、无失败收尾消息） */
+  success: boolean
+  cancelled: boolean
+  failedShotIds: string[]
+  /** 收尾说明（失败时含中文原因） */
+  message: string
+  finalPath?: string
+}
+
 export interface DirectorStartInput {
   title: string
   genre: string
@@ -1353,6 +1369,7 @@ export const IpcChannels = {
   directorProgress: 'director:progress',
   directorLog: 'director:log',
   directorProjectUpdated: 'director:project-updated',
+  directorFinished: 'director:finished',
   skillList: 'skill:list',
   skillCreate: 'skill:create',
   skillUpdate: 'skill:update',

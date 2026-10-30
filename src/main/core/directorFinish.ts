@@ -1,6 +1,6 @@
 import * as fs from 'node:fs/promises'
 import * as path from 'node:path'
-import type { Project, Shot } from '../../shared/ipcTypes'
+import type { Project, Shot, DirectorFinishedEvent } from '../../shared/ipcTypes'
 import type { AuditCheckItem } from './skillLibrary'
 import { FACE_CONSISTENCY_THRESHOLD } from './consistencyService'
 import type { DirectorAgent } from './directorAgent'
@@ -37,6 +37,18 @@ export function finishImpl(agent: DirectorAgent, projectId: string, doneMessage?
   logImpl(agent, projectId, 'done',
     state.cancelled ? 'warn' : (doneMessage ? 'error' : 'success'),
     state.cancelled ? '任务已取消' : (doneMessage || '全部完成，成片已产出'))
+  // REQ-05：终态事件（完成/失败/取消），全局运行条据此变绿/变红并给出下一步入口
+  const finishedEvent: DirectorFinishedEvent = {
+    type: 'director:finished',
+    projectId,
+    title: state.title,
+    success: !wasCancelled && !doneMessage,
+    cancelled: wasCancelled,
+    failedShotIds: [...state.failedShotIds],
+    message: state.stages.done.message,
+    finalPath: state.finalPath
+  }
+  agent.emit('finished', finishedEvent)
   // emitState 内部会按 cancelled 集合重算 state.cancelled：
   // 必须在 emitState 之后才从集合删除，否则取消标志被覆盖回 false（D1 自相矛盾）
   emitStateImpl(agent, projectId)

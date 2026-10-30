@@ -137,6 +137,47 @@ describe('directorFinish', () => {
       expect(state.stages.done.message).toBe('渲染失败过多')
       expect(state.logs.some((l: any) => l.level === 'error' && l.message === '渲染失败过多')).toBe(true)
     })
+
+    it('REQ-05：正常完成发出 success=true 的终态事件', () => {
+      const agent = makeAgentWithDir()
+      const state = freshStateImpl(agent, 'p1', 't')
+      state.finalPath = 'projects/p1/final.mp4'
+      agent.states.set('p1', state)
+
+      finishImpl(agent, 'p1')
+
+      const finished = agent.emit.mock.calls.find((c: any[]) => c[0] === 'finished')?.[1]
+      expect(finished).toMatchObject({
+        type: 'director:finished',
+        projectId: 'p1',
+        success: true,
+        cancelled: false,
+        finalPath: 'projects/p1/final.mp4'
+      })
+    })
+
+    it('REQ-05：失败收尾与取消分别发出 success=false 的终态事件', () => {
+      const agent = makeAgentWithDir()
+      const state = freshStateImpl(agent, 'p1', 't')
+      state.failedShotIds = ['s1']
+      agent.states.set('p1', state)
+      finishImpl(agent, 'p1', '审批未通过')
+      const failed = agent.emit.mock.calls.find((c: any[]) => c[0] === 'finished')?.[1]
+      expect(failed).toMatchObject({
+        type: 'director:finished', success: false, cancelled: false, failedShotIds: ['s1']
+      })
+      expect(failed.message).toBe('审批未通过')
+
+      const agent2 = makeAgentWithDir()
+      const state2 = freshStateImpl(agent2, 'p2', 't2')
+      agent2.states.set('p2', state2)
+      agent2.cancelled.add('p2')
+      finishImpl(agent2, 'p2')
+      const cancelled = agent2.emit.mock.calls.find((c: any[]) => c[0] === 'finished')?.[1]
+      expect(cancelled).toMatchObject({
+        type: 'director:finished', success: false, cancelled: true, failedShotIds: []
+      })
+    })
   })
 
   describe('evictFinishedStatesImpl', () => {

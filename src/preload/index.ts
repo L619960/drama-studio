@@ -160,6 +160,11 @@ const api: IpcApi = {
       ipcRenderer.on(IpcChannels.directorLog, listener)
       return () => ipcRenderer.removeListener(IpcChannels.directorLog, listener)
     },
+    onFinished: (cb) => {
+      const listener = (_: unknown, e: unknown) => cb(e as Parameters<typeof cb>[0])
+      ipcRenderer.on(IpcChannels.directorFinished, listener)
+      return () => ipcRenderer.removeListener(IpcChannels.directorFinished, listener)
+    },
     onProjectUpdated: (cb) => {
       const listener = (_: unknown, e: unknown) => cb(e as Parameters<typeof cb>[0])
       ipcRenderer.on(IpcChannels.directorProjectUpdated, listener)

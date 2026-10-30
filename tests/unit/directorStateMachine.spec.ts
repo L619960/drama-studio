@@ -382,13 +382,11 @@ describe('enableGatesImpl：一口气跑到底中途恢复门禁', () => {
     const s = makeState('p1')
     s.stages.analyze.status = 'running'
     s.gateStages = []
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- 运行时动态字段
     ;(s as any).noShotGate = true
     agent.states.set('p1', s)
 
     expect(enableGatesImpl(agent, 'p1', DEFAULT_DIRECTOR_GATES)).toBe(true)
     expect(s.gateStages).toEqual(['analyze', 'scenes', 'review'])
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- 同上
     expect((s as any).noShotGate).toBe(false)
     expect(agent.gates.get('p1')).toEqual(new Set(['analyze', 'scenes', 'review']))
   })
