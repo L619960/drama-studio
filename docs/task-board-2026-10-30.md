@@ -1,6 +1,6 @@
 # 任务看板 · 2026-10-30
 
-> 基线：分支 `feat/agent-autonomy`，最新提交 `97ce4a0`
+> 基线：分支 `feat/agent-autonomy`，最新提交 `31958e6`
 > 门禁现状：`typecheck` ✅ · `npm test` 1597/1597（92 文件）✅ · `npm run build` ✅ · `eslint` 0 warning（0 error）
 > 本文以代码实测为准，已修正 `docs/remediation-plan-2026-10-27.md` / `docs/technical-audit-2026-10-30.md` 中过时结论。
 
@@ -46,12 +46,12 @@
 | 编号 | 任务 | 状态 | 依赖 | 阻塞点 | 工作量 |
 | --- | --- | --- | --- | --- | --- |
 | P2-1 | Q-03 ESLint 82 条 warning（unused / no-explicit-any / empty catch） | ✅ 已交付 `97ce4a0`（82 → 0） | — | — | M |
-| P2-2 | D-01 README 模块数与目录结构过时 | 🔜 | — | 需与当前 74 个 core 模块对齐 | S |
-| P2-3 | D-05 `scripts/archive` 存量脚本清理 | 🔜 | — | 需确认无 CI 引用 | S |
+| P2-2 | D-01 README 模块数与目录结构过时 | ✅ 已交付 `d165c9e` | — | — | S |
+| P2-3 | D-05 `scripts/archive` 存量脚本清理 | ✅ 已交付 `0f6f787`（15 脚本 + 空目录已删） | — | — | S |
 | P2-4 | E-01 跨平台打包（electron-builder 仅 Windows 配置） | 🔜 | — | 需 mac/linux 目标声明与验证环境 | M |
-| P2-5 | E-02 依赖 `^` 版本范围锁定 | 🔜 | — | 与 `package-lock.json` 协同，需回归安装 | S |
+| P2-5 | E-02 依赖 `^` 版本范围锁定 | ✅ 已交付 `31958e6`（38 项全部锁定） | — | — | S |
 | P2-6 | F-02 未引入 Pinia 状态管理 | 🔜 | — | 属架构演进，需评估收益后再动 | L |
-| P2-7 | F-03 localStorage 输入记忆未加密 | 🔜 | — | 需确认存储内容是否含敏感信息 | S |
+| P2-7 | F-03 localStorage 输入记忆未加密 | ✅ 已评估：仅存 URL/路径/模型名/项目 id/时间戳，无敏感信息，不加密 | — | — | S |
 | P2-8 | D-03 缺失跨平台 CI | 🔜 | P2-4 | 依赖打包目标先确定 | M |
 
 ## 依赖关系
@@ -88,3 +88,4 @@ P1-C1（flake 修复）─→ P1-D1 大批量补测（避免新增用例继承�
 | 2026-10-30 23:05 | P1-B2 二次确认 `1ad1d80`：新增 `renderGate` 预判，接入 Storyboard/Queue/Console；抽 `renderTargetShots` 与主进程共用，1560 用例全绿 |
 | 2026-10-30 23:11 | P1-D1 第一批 `26aee24`：4 个 core 模块补测 37 例，92 文件 / 1597 用例全绿，build 通过 |
 | 2026-10-30 23:34 | P2-1 `97ce4a0`：ESLint 82 → 0 warning（tests 目录关闭 no-explicit-any，源码清理未用绑定/导入/无用赋值，行为不变）；四门全绿 |
+| 2026-10-30 23:52 | P2-2 `d165c9e` README 对齐（75 core / 10 views / 92 测试文件）；P2-3 `0f6f787` 删除 `scripts/archive` 15 脚本；P2-5 `31958e6` 38 项依赖锁定精确版本（`npm ci --dry-run` 通过）；P2-7 评估为无敏感内容，不加密 |
