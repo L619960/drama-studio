@@ -1,7 +1,7 @@
 # 任务看板 · 2026-10-30
 
-> 基线：分支 `feat/agent-autonomy`，最新提交 `37b7940`
-> 门禁现状：`typecheck` ✅ · `npm test` 1788/1788（111 文件）✅ · `npm run build` ✅ · `eslint` 0 warning（0 error）
+> 基线：分支 `feat/agent-autonomy`，最新提交 `fdba5dc`
+> 门禁现状：`typecheck` ✅ · `npm test` 1803/1803（111 文件）✅ · `npm run build` ✅ · `eslint` 0 warning（0 error）
 > 本文以代码实测为准，已修正 `docs/remediation-plan-2026-10-27.md` / `docs/technical-audit-2026-10-30.md` 中过时结论。
 
 ## 优先级定义
@@ -68,7 +68,7 @@
 | --- | --- | --- | --- | --- |
 | REQ-01 | 渲染队列可观测（`queue:list` 快照 + ETA + `director:listActiveStates` + `useTaskBoard` + 队列页 indeterminate） | ✅ 已交付：主进程队列快照/ETA/活跃任务通道 + `useTaskBoard` 聚合 + QueueView 不确定态与 ETA 展示，补 10 例单测 | — | M |
 | REQ-02 | 门禁待处理结构化（`pendingGates` + 审看定位 CTA） | ✅ 已交付：`DirectorState.pendingGates`（完整镜号不截断）+ 暂停卡片带「去审看」CTA + 分镜页消费 `?review=id` 自动打开审核；补 3 例单测 | — | M |
-| REQ-03 | 重启后中断任务「一键继续」入口 | 待开始 | — | M |
+| REQ-03 | 重启后中断任务「一键继续」入口 | ✅ 已交付：`director:listInterrupted` 扫描磁盘中断/残留任务 + 项目列表琥珀横幅逐项「从断点继续」，补 2 例单测 | — | M |
 | REQ-04 | 门禁 warn 二次确认与「一口气跑到底」联动 | 待开始 | REQ-02 | M |
 | REQ-05 | 常驻导演运行条 / 全局任务面板 | 待开始 | REQ-01、REQ-02 | L |
 
@@ -112,3 +112,4 @@ P1-C1（flake 修复）─→ P1-D1 大批量补测（避免新增用例继承�
 | 2026-10-31 00:10 | P1-D1 第四批 `8da793a`：5 个 core 模块补测 40 例（106 文件 / 1722 用例全绿，四门通过） |
 | 2026-10-31 00:16 | P1-D1 第五批 `3653c75`：最后 5 个 core 模块补测 66 例，23/23 缺口清零（111 文件 / 1788 用例全绿，四门通过） |
 | 2026-10-31 00:24 | 批次 4 收口 `37b7940`：P2-4 增加 mac(dmg/zip)/linux(AppImage/deb) 打包目标与 `build:mac`/`build:linux`；P2-8 新增三平台 CI（lint/typecheck/test/build + tag 分平台打包）；P2-6 评估不引入 Pinia。四门全绿（1788 用例），mac/linux 产物与 CI 实跑待对应 runner 验证 |
+| 2026-10-31 00:56 | REQ-03 `fdba5dc`：新增 `director:listInterrupted`（扫描中断标记/残留 running，项目名回退 project.json）、项目列表琥珀横幅与逐项「从断点继续」，补 2 例单测。四门全绿（1803 用例） |
