@@ -1,14 +1,17 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
-import ProjectListView from '../views/ProjectListView.vue'
-import StoryboardView from '../views/StoryboardView.vue'
-import CharacterView from '../views/CharacterView.vue'
-import SceneBoardView from '../views/SceneBoardView.vue'
-import PropsView from '../views/PropsView.vue'
-import ScriptView from '../views/ScriptView.vue'
-import QueueView from '../views/QueueView.vue'
-import ResultView from '../views/ResultView.vue'
-import SettingsView from '../views/SettingsView.vue'
-import ConsoleView from '../views/ConsoleView.vue'
+
+// P1-1 代码分割：路由组件全部懒加载（按页拆分 chunk，首屏只加载项目列表），
+// vendor 库仍由 electron.vite.config.ts 的 manualChunks 独立成 vue-vendor / element-plus。
+const ProjectListView = () => import('../views/ProjectListView.vue')
+const StoryboardView = () => import('../views/StoryboardView.vue')
+const CharacterView = () => import('../views/CharacterView.vue')
+const SceneBoardView = () => import('../views/SceneBoardView.vue')
+const PropsView = () => import('../views/PropsView.vue')
+const ScriptView = () => import('../views/ScriptView.vue')
+const QueueView = () => import('../views/QueueView.vue')
+const ResultView = () => import('../views/ResultView.vue')
+const SettingsView = () => import('../views/SettingsView.vue')
+const ConsoleView = () => import('../views/ConsoleView.vue')
 
 const router = createRouter({
   history: createWebHashHistory(),
