@@ -107,6 +107,7 @@ import type { Project, Shot, WorkflowMeta, ProgressEvent, PromptAuditReport, Pro
 import { snapshot } from '../utils/snapshot'
 import { throttleTap } from '../utils/throttle'
 import { confirmDanger } from '../utils/confirm'
+import { confirmUnreviewedRender } from '../utils/renderGate'
 import ShotEditDialog, { type ShotDraft } from '../components/storyboard/ShotEditDialog.vue'
 import SplitScriptDialog from '../components/storyboard/SplitScriptDialog.vue'
 import PromptAuditDrawer from '../components/storyboard/PromptAuditDrawer.vue'
@@ -479,6 +480,7 @@ async function deleteShot(index: number) {
 async function renderSingle(shot: Shot) {
   if (!project.value) return
   if (!throttleTap('shot-render-' + shot.id, 1500)) return
+  if (!(await confirmUnreviewedRender(project.value, [shot.id]))) return
   rendering.value = true
   try {
     const res = await window.api.render.start(projectId.value, [shot.id], false)
@@ -496,6 +498,7 @@ async function renderSingle(shot: Shot) {
 
 async function startRender() {
   if (!throttleTap('shot-render-all', 1500)) return
+  if (project.value && !(await confirmUnreviewedRender(project.value))) return
   rendering.value = true
   try {
     const res = await window.api.render.start(projectId.value, undefined, false)

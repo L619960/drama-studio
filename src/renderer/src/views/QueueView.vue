@@ -231,6 +231,7 @@ import { snapshot } from '../utils/snapshot'
 import { throttleTap } from '../utils/throttle'
 import { statusTagType as statusType, shotStatusText } from '../utils/status'
 import { confirmDanger, confirmAction } from '../utils/confirm'
+import { confirmUnreviewedRender } from '../utils/renderGate'
 
 const { urlCache, ensureFileUrl, ensureFileUrls } = useFileUrl()
 
@@ -363,6 +364,7 @@ function onMenuKeydown(e: KeyboardEvent) {
 async function retryShot(shot: Shot) {
   contextMenu.value.visible = false
   if (!throttleTap('queue-retry-' + shot.id, 1500)) return
+  if (project.value && !(await confirmUnreviewedRender(project.value, [shot.id]))) return
   retryingId.value = shot.id
   delete progressMap.value[shot.id]
   try {

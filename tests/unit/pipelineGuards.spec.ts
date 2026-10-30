@@ -7,6 +7,8 @@ import {
   shotsInCut,
   trimmedDurationSec,
   unreviewedI2vShots,
+  renderTargetShots,
+  unreviewedRenderShots,
   clampShotList,
   shouldFallbackToWan,
   orientVideoSize,
@@ -46,6 +48,30 @@ describe('成片入选', () => {
       { type: 't2v', reviewed: false }
     ])
     expect(pending).toHaveLength(1)
+  })
+
+  it('开渲目标：显式 shotIds 优先，否则只取 pending/failed', () => {
+    const shots = [
+      { id: 'a', status: 'done' },
+      { id: 'b', status: 'pending' },
+      { id: 'c', status: 'failed' },
+      { id: 'd', status: 'rendering' }
+    ]
+    expect(renderTargetShots(shots).map(s => s.id)).toEqual(['b', 'c'])
+    expect(renderTargetShots(shots, ['a', 'd']).map(s => s.id)).toEqual(['a', 'd'])
+  })
+
+  it('告警放行预判：只看目标中的 i2v，重渲场景按全部 i2v 提示', () => {
+    const shots = [
+      { id: 'a', index: 1, status: 'pending', type: 'i2v', reviewed: true, firstFramePath: 'projects/f.png' },
+      { id: 'b', index: 2, status: 'pending', type: 'i2v', reviewed: false },
+      { id: 'c', index: 3, status: 'done', type: 'i2v', reviewed: false },
+      { id: 'd', index: 4, status: 'pending', type: 't2v', reviewed: false }
+    ]
+    expect(unreviewedRenderShots(shots).map(s => s.id)).toEqual(['b'])
+    expect(unreviewedRenderShots(shots, ['a', 'b']).map(s => s.id)).toEqual(['b'])
+    // 重渲会清空 reviewed：已核对的 a 也需提示，非 i2v 的 d 不提示
+    expect(unreviewedRenderShots(shots, ['a', 'b', 'd'], true).map(s => s.id)).toEqual(['a', 'b'])
   })
 })
 

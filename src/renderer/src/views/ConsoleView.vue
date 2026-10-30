@@ -182,6 +182,7 @@ import { useMemoryManager } from '../composables/useMemoryManager'
 import { useComfyPanel } from '../composables/useComfyPanel'
 import { useFileUrl } from '../composables/useFileUrl'
 import { snapshot } from '../utils/snapshot'
+import { confirmUnreviewedRender } from '../utils/renderGate'
 import WorkflowPanel from '../components/console/WorkflowPanel.vue'
 import SkillsPanel from '../components/console/SkillsPanel.vue'
 import MemoryPanel from '../components/console/MemoryPanel.vue'
@@ -260,11 +261,16 @@ const reviewExpanded = ref(false)
 /** 渲染阶段「改提示词/工作流重渲此镜」：更新分镜并作废旧产物 → 重新入队 */
 const rerenderingShotId = ref('')
 type RerenderPayload = { shotId: string; prompt: string; dialogue: string; negative: string; workflow: string }
-async function rerenderOneShot(payload: RerenderPayload): Promise<void> {
+async function rerenderOneShot(payload: RerenderPayload, opts: { skipGate?: boolean } = {}): Promise<void> {
   const p = project.value
   if (!p) return
   const shot = p.shots.find(s => s.id === payload.shotId)
   if (!shot) return
+  // 重渲会作废首帧审核：warn 模式下先确认，取消则不改动分镜状态
+  if (!opts.skipGate && !(await confirmUnreviewedRender(p, [shot.id], {
+    reason: '提示词/工作流已改动，首帧审核会作废。',
+    treatAllAsUnreviewed: true
+  }))) return
   // 工作台编辑的是渲染实际使用的 promptEn（留空则渲染时回退 action 模板）；
   // 不覆盖 shot.action——它还承担分镜动作/首帧 cue，避免工作台改动污染分镜数据
   shot.promptEn = payload.prompt || undefined
@@ -300,10 +306,14 @@ async function onRerenderShot(payload: RerenderPayload): Promise<void> {
 /** 批量重渲：逐镜串行入队（render.start 内部已有队列/去重） */
 async function onRerenderShots(payloads: RerenderPayload[]): Promise<void> {
   if (rerenderingShotId.value) return
+  if (project.value && !(await confirmUnreviewedRender(project.value, payloads.map(pl => pl.shotId), {
+    reason: '提示词/工作流已改动，首帧审核会作废。',
+    treatAllAsUnreviewed: true
+  }))) return
   rerenderingShotId.value = payloads[0]?.shotId || 'batch'
   try {
     for (const pl of payloads) {
-      try { await rerenderOneShot(pl) } catch (e) { ElMessage.error(`镜 ${pl.shotId} 重渲失败：${e instanceof Error ? e.message : String(e)}`) }
+      try { await rerenderOneShot(pl, { skipGate: true }) } catch (e) { ElMessage.error(`镜 ${pl.shotId} 重渲失败：${e instanceof Error ? e.message : String(e)}`) }
     }
     ElMessage.success(`${payloads.length} 镜已重新入队渲染`)
   } finally {

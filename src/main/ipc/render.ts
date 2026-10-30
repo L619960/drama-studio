@@ -1,7 +1,7 @@
 import { IpcChannels, type DirectorStartInput, type DirectorStage } from '../../shared/ipcTypes'
 import { normalizeSceneKey } from '../../shared/ipcTypes'
 import { stripDialogueDirections } from '../../shared/imagePrompts'
-import { reviewedIsValid, clampShotList } from '../../shared/pipelineGuards'
+import { reviewedIsValid, clampShotList, renderTargetShots } from '../../shared/pipelineGuards'
 import { handleIpc } from './shared'
 import type { ProjectStore } from '../core/projectStore'
 import type { SettingsStore } from '../core/settingsStore'
@@ -41,9 +41,7 @@ export function registerRenderIpc(ctx: RenderIpcCtx): void {
       }
     }
 
-    const targets = shotIds && shotIds.length > 0
-      ? project.shots.filter(s => shotIds.includes(s.id))
-      : project.shots.filter(s => s.status === 'pending' || s.status === 'failed')
+    const targets = renderTargetShots(project.shots, shotIds)
     // P2-6：i2v 勾选已审必须有首帧路径，否则审核无效（reviewed=true 但 firstFramePath 缺失仍拦）
     const unreviewed = targets.filter(s => s.type === 'i2v' && !reviewedIsValid(s.type, s.reviewed, s.firstFramePath))
     if (shotGate === 'block' && unreviewed.length > 0) {

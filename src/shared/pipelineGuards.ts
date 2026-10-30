@@ -84,6 +84,26 @@ export function unreviewedI2vShots<T extends { type: string; reviewed?: boolean;
   return shots.filter(s => s.type === 'i2v' && !reviewedIsValid(s.type, s.reviewed, s.firstFramePath))
 }
 
+/** 开渲目标镜头：显式 shotIds 优先，否则仅 pending/failed（主进程入队与渲染器预判共用） */
+export function renderTargetShots<T extends { id: string; status?: string }>(shots: T[], shotIds?: string[]): T[] {
+  return shotIds && shotIds.length > 0
+    ? shots.filter(s => shotIds.includes(s.id))
+    : shots.filter(s => s.status === 'pending' || s.status === 'failed')
+}
+
+/**
+ * 需「告警放行」确认的未核对 i2v 镜头。
+ * treatAllAsUnreviewed 用于重渲前预判：重渲会清空 reviewed，当前已核对的 i2v 也将变成未核对。
+ */
+export function unreviewedRenderShots<T extends { id: string; status?: string; type: string; reviewed?: boolean; firstFramePath?: string }>(
+  shots: T[],
+  shotIds?: string[],
+  treatAllAsUnreviewed = false
+): T[] {
+  const targets = renderTargetShots(shots, shotIds)
+  return treatAllAsUnreviewed ? targets.filter(s => s.type === 'i2v') : unreviewedI2vShots(targets)
+}
+
 const DONE_MEDIA_KEYS = ['segmentPath', 'rawVideoPath', 'audioPath', 'firstFramePath', 'lastFramePath', 'sceneImagePath'] as const
 
 /**
