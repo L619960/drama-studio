@@ -209,7 +209,9 @@ describe('conversationToolDispatcher · executeToolImpl（前置分支 + 路由�
   })
 
   it('get_workflow_params：workflow 不存在 → ok=false', async () => {
-    const agent = mkAgent({ workflowExists: vi.fn(async () => false) })
+    const agent = mkAgent({
+      workflows: { list: vi.fn(async () => []), createWorkflow: vi.fn(), getMeta: vi.fn(), getEditableParams: vi.fn(), updateParam: vi.fn() }
+    })
     const r = await executeToolImpl(agent, 'pid1', 'get_workflow_params', '{"workflow_name":"nope"}')
     expect(r.ok).toBe(false)
     expect(r.text).toMatch(/工作流不存在/)
@@ -222,7 +224,9 @@ describe('conversationToolDispatcher · executeToolImpl（前置分支 + 路由�
   })
 
   it('update_workflow_param：value 类型不对 → ok=false', async () => {
-    const agent = mkAgent({ workflowExists: vi.fn(async () => true) })
+    const agent = mkAgent({
+      workflows: { list: vi.fn(async () => [{ name: 'w' }]), createWorkflow: vi.fn(), getMeta: vi.fn(), getEditableParams: vi.fn(), updateParam: vi.fn() }
+    })
     const r = await executeToolImpl(agent, 'pid1', 'update_workflow_param',
       '{"workflow_name":"w","node_id":"n","key":"k","value":[1,2,3]}')
     expect(r.ok).toBe(false)
@@ -232,8 +236,7 @@ describe('conversationToolDispatcher · executeToolImpl（前置分支 + 路由�
   it('update_workflow_param：成功路径', async () => {
     const updateParam = vi.fn(async () => {})
     const agent = mkAgent({
-      workflowExists: vi.fn(async () => true),
-      workflows: { updateParam, list: vi.fn(), createWorkflow: vi.fn(), getMeta: vi.fn(), getEditableParams: vi.fn() }
+      workflows: { updateParam, list: vi.fn(async () => [{ name: 'w' }]), createWorkflow: vi.fn(), getMeta: vi.fn(), getEditableParams: vi.fn() }
     })
     const r = await executeToolImpl(agent, 'pid1', 'update_workflow_param',
       '{"workflow_name":"w","node_id":"n","key":"k","value":"v"}')

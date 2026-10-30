@@ -39,7 +39,7 @@ export interface ConversationToolsHost {
   skillLibrary?: SkillLibrary
   workflowLibrary?: WorkflowLibrary
   comfyMcp?: ComfyMcpService
-  lastProjectId: string | undefined
+  lastProjectId?: string
 }
 
 export type ToolResult = { ok: boolean; text: string }

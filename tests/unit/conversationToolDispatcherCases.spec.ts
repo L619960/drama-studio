@@ -388,7 +388,7 @@ describe('conversationToolDispatcher · executeToolImpl 未覆盖 case 内分支
   it('get_workflow_params：存在 → 返回可编辑参数 JSON', async () => {
     const agent = mkAgent({
       workflows: {
-        list: vi.fn(async () => []),
+        list: vi.fn(async () => [{ name: 'w' }]),
         createWorkflow: vi.fn(),
         getMeta: vi.fn(),
         getEditableParams: vi.fn(async () => [{ node_id: '3', key: 'text' }]),
@@ -404,7 +404,7 @@ describe('conversationToolDispatcher · executeToolImpl 未覆盖 case 内分支
     const many = Array.from({ length: 100 }, (_, i) => ({ node_id: String(i), key: 'k' }))
     const agent = mkAgent({
       workflows: {
-        list: vi.fn(async () => []),
+        list: vi.fn(async () => [{ name: 'w' }]),
         createWorkflow: vi.fn(),
         getMeta: vi.fn(),
         getEditableParams: vi.fn(async () => many),
@@ -428,7 +428,7 @@ describe('conversationToolDispatcher · executeToolImpl 未覆盖 case 内分支
     const updateParam = vi.fn(async () => undefined)
     const agent = mkAgent({
       workflows: {
-        list: vi.fn(async () => []), createWorkflow: vi.fn(), getMeta: vi.fn(),
+        list: vi.fn(async () => [{ name: 'w' }]), createWorkflow: vi.fn(), getMeta: vi.fn(),
         getEditableParams: vi.fn(async () => []), updateParam
       }
     })

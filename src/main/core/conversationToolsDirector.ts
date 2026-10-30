@@ -5,8 +5,25 @@
 import * as fs from 'node:fs/promises'
 import * as path from 'node:path'
 import type { ConversationToolsHost, ToolResult } from './conversationTools'
-import type { DirectorStage, Shot } from '../../shared/ipcTypes'
+import type { DirectorStage, DirectorState, Shot } from '../../shared/ipcTypes'
 import { RESULT_LIMIT } from './conversationConstants'
+import { STAGE_ORDER } from './directorConstants'
+
+/**
+ * P0-2：任务未停在确认点时，判断「继续」应从哪个阶段续跑。
+ * 优先用 hydrate 记录的中断阶段；否则取流水线顺序第一个未完成阶段（跳过已完成/已跳过）。
+ * 返回 null 表示所有可执行阶段都已完成。
+ */
+function resumeFallbackStage(st: DirectorState): DirectorStage | null {
+  const recorded = st.interruptedStage
+  if (recorded && recorded !== 'done') return recorded
+  for (const stage of STAGE_ORDER) {
+    if (stage === 'done') break
+    const info = st.stages[stage]
+    if (info.status !== 'done' && info.status !== 'skipped') return stage
+  }
+  return null
+}
 
 export async function tStart(host: ConversationToolsHost, pid: string | undefined, args: Record<string, unknown>): Promise<ToolResult> {
   const title = String(args.title || '').trim()
@@ -39,8 +56,23 @@ export async function tSimple(host: ConversationToolsHost, pid: string | undefin
     if (!st.running || st.paused) return { ok: false, text: '任务当前不在执行中（可能已暂停或已结束）' }
     await host.director.pause(pid)
   } else if (action === 'resume') {
-    if (!st.paused) return { ok: false, text: '任务没有停在确认点，无需继续' }
-    await host.director.resume(pid)
+    if (st.paused) {
+      await host.director.resume(pid)
+    } else if (st.running) {
+      return { ok: false, text: '任务正在运行中，无需继续' }
+    } else if (st.cancelled) {
+      return { ok: false, text: '任务已被取消；如需重跑，请指明从哪个阶段续跑' }
+    } else {
+      // P0-2：应用重启/崩溃/阶段失败后没有阶段门确认点（paused=false），
+      // 旧逻辑直接回「无需继续」把用户卡死；这里自动断点续跑到中断（或首个未完成）阶段。
+      const stage = resumeFallbackStage(st)
+      if (!stage) return { ok: false, text: '所有阶段均已完成，无需继续' }
+      try {
+        await host.director.resumeFromStage(pid, stage)
+      } catch (e) {
+        return { ok: false, text: `无法继续：${e instanceof Error ? e.message : String(e)}` }
+      }
+    }
   } else {
     await host.director.cancel(pid)
   }
