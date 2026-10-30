@@ -2,6 +2,10 @@
   <div class="panel panel-grow">
     <div class="panel-title log-title">
       执行日志
+      <el-radio-group v-model="levelFilter" size="small" class="level-filter">
+        <el-radio-button value="all">全部</el-radio-button>
+        <el-radio-button value="warn">仅警告/错误</el-radio-button>
+      </el-radio-group>
       <span class="log-hint">{{ logHover ? '已暂停滚动 · 移开鼠标恢复' : '已完成阶段自动折叠 · 新消息自动滚底' }}</span>
     </div>
     <div ref="logBoxRef" class="log-box" @mouseenter="logHover = true" @mouseleave="logHover = false">
@@ -88,8 +92,16 @@ const stageLabels = STAGE_LABELS
 const levelText = LEVEL_TEXT
 
 const logHover = ref(false)
+const levelFilter = ref<'all' | 'warn'>('all')
 const logBoxRef = ref<HTMLElement | null>(null)
-const logsByStage = computed(() => groupLogsByStage(props.localLogs))
+const logsByStage = computed(() => {
+  const all = groupLogsByStage(props.localLogs)
+  if (levelFilter.value !== 'warn') return all
+  // 仅保留有 warn/error 的阶段组
+  return all
+    .map(g => ({ ...g, entries: g.entries.filter(e => e.level === 'warn' || e.level === 'error') }))
+    .filter(g => g.entries.length > 0)
+})
 
 // el-collapse v-model 在父子分离场景下用 :model-value + @update
 function onStagesUpdate(val: string | string[]): void {
@@ -130,6 +142,7 @@ watch(() => props.localLogs.length, async () => {
 }
 .log-title { justify-content: space-between; }
 .log-hint { font-size: 12px; font-weight: 400; color: var(--text-muted); }
+.level-filter { margin-left: 12px; }
 .log-box {
   flex: 1;
   overflow-y: auto;

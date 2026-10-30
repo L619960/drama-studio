@@ -15,8 +15,11 @@ import { isPeriodGenre } from './castAppearance'
 export function oocWardrobeNegativeFor(lookEn: string): string {
   const lock = (lookEn || '').toLowerCase()
   const terms = [
-    'apron', 'vest', 'hat', 'cap', 'necktie', 'bow tie', 'scarf', 'gown', 'blazer',
-    'uniform', 'overalls', 'lab coat', 'name tag', 'waiter costume'
+    'apron', 'vest', 'hat', 'cap', 'beanie', 'hood', 'necktie', 'tie', 'bow tie',
+    'scarf', 'shawl', 'stole', 'necklace', 'pendant', 'earrings', 'bracelet', 'watch',
+    'glasses', 'sunglasses', 'purse', 'handbag', 'shoulder bag', 'backpack',
+    'gown', 'blazer', 'suit jacket', 'uniform', 'overalls', 'lab coat',
+    'name tag', 'waiter costume', 'apron dress', 'cardigan', 'blouse', 'turtleneck sweater'
   ]
   return terms.filter(t => !lock.includes(t)).map(t => `no ${t}`).join(', ')
 }
@@ -82,7 +85,10 @@ export function eraNegativeFor(genre: string | undefined): string {
  *  因此人物压制必须放在 negative 里；不得用于角色定妆（会把人一起压掉）。 */
 const EMPTY_SCENE_NEGATIVE =
   'people, person, human, crowd, pedestrian, passerby, silhouette, figure, face, portrait, ' +
-  'cartoon, illustration, cgi render, text, watermark, logo'
+  'cartoon, illustration, cgi render, text, watermark, logo, ' +
+  // 360° 全景底部常见 artifact（实测天台全景底部出现轮胎/井盖）：走负向压制
+  'tires, wheels, manhole covers, drain grates, circular metal covers, random mechanical objects, ' +
+  'repeated circular patterns on the ground, fisheye distortion, warp at bottom edge'
 
 /** 室内外空间负向：室内场景被画成临街/外景是本项目高频事故
  *  （实测「男厕所」全景 = 雨夜临街公厕 + 汽车 + 马路）。正向已声明 interior，
@@ -93,7 +99,8 @@ const OUTDOOR_SPACE_RE =
   /街|路|巷|广场|公园|海|山|桥|天台|露台|工地|码头|停车场|院|小区|野外|郊外|田|河|湖|车站|站台|\b(outdoor|street|road|alley|plaza|park|beach|rooftop|dock|pier|field|forest)\b/i
 const OUTDOOR_NOISE_NEGATIVE =
   'street, road, sidewalk, asphalt, traffic, car, vehicle, night street, city skyline, sky, ' +
-  'exterior building facade, window view of street, outdoor scenery, parking lot, rain-soaked street'
+  'exterior building facade, window view of street, outdoor scenery, parking lot, rain-soaked street, ' +
+  'wall lamp, vintage wall lantern, wet floor, reflective wet floor, water puddle on floor, glossy wet floor reflection'
 
 /** 按场景名生成空间类型负向（仅室内场景需要压室外元素） */
 export function sceneSpaceNegativeFor(scene: string): string {
@@ -113,7 +120,9 @@ export function emptySceneNegativeFor(lock: 'standard' | 'strong' = 'standard', 
  *  正向 prompt 写 "no street / no city" 会被 CLIP 当概念召唤（实测事故：古装掌柜定妆
  *  背景出现雨夜现代街景）——背景压制必须走负向通道，正向只写「要什么」。 */
 const CASTING_BG_NEGATIVE =
-  'street, city, cityscape, road, vehicles, outdoor scenery, rain, snow, crowd, background people, window view, detailed background, textured backdrop'
+  'street, city, cityscape, road, vehicles, outdoor scenery, rain, snow, crowd, background people, window view, detailed background, textured backdrop, ' +
+  'street lamp, floor lamp, standing lamp, light stand, studio light, tripod, lantern, candle, ' +
+  'wet ground, puddle, water reflection on ground, stone pavement, wet pavement, outdoor floor, wooden floor, carpet';
 
 export function castingNegativeFor(lock: 'standard' | 'strong' = 'standard', genre?: string): string {
   const era = eraNegativeFor(genre)

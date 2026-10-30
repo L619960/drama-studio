@@ -24,7 +24,8 @@ export async function tStart(host: ConversationToolsHost, pid: string | undefine
     : ['analyze', 'render']
   const newId = await host.director.start({
     title, genre, script,
-    gateStages: gateStages as DirectorStage[]
+    gateStages: gateStages as DirectorStage[],
+    existingProjectId: pid || undefined
   })
   host.lastProjectId = newId
   return { ok: true, text: JSON.stringify({ started: true, projectId: newId, title, gateStages }) }

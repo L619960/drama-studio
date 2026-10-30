@@ -8,6 +8,7 @@ import {
   shotFramePrompt,
   shotSizeCueFor,
   sceneNegativeFor,
+  castingNegativeFor,
   mergeNegative, REALISM_NEGATIVE
 } from '../../shared/imagePrompts'
 import { resolveCreation } from '../../shared/creationSettings'
@@ -248,21 +249,28 @@ export function registerAssetIpc(ctx: AssetIpcCtx): void {
       const ch = (await ctx.settingsStore.get()).creation.character
       const look = char.appearanceLock || `chinese person, ${char.description || char.name}, natural everyday appearance`
       const faceCount = Math.max(1, Math.min(3, ch.candidates || 1))
-      const wfName = ch.t2iWorkflow || undefined
-      const neg = { negative: sceneNegativeFor(ch.realismLock, project.genre) }
+      // 定妆照强制用 Flux2-Klein（cfg=4，负向词生效），Qwen-Rapid 是 cfg=1 蒸馏模型
+      // 负向词被完全忽略，会把 grey wall 画成雨夜街道。
+      const wfName = 'klein_t2i_clean'
+      const neg = { negative: castingNegativeFor(ch.realismLock, project.genre) }
       const baseDir = DATA_ROOT
       const faceCandRels: Array<{ rel: string; seed: number }> = []
       await stepLog(`faceCount=${faceCount} seedMode=${ch.seedMode} seed=${ch.seed} wf=${wfName || 'default'}`)
       for (let ci = 0; ci < faceCount; ci++) {
+        // 手动重抽：即使全局 seedMode=fixed，每次手动点"AI 生成"也换一个 seed，
+        // 否则改了 prompt 但 seed 不变，模型会倾向复现旧构图（灯/白布全部照旧）。
+        const seedBase = (Date.now() + ci * 9973) >>> 0
         const seed = ch.seedMode === 'fixed'
-          ? (ch.seed + ci * 9973) >>> 0
+          ? seedBase
           : Math.floor(Math.random() * 0xffffffff)
         const rel = faceCount === 1
           ? `projects/${input.projectId}/characters/${char.id}_face.png`
           : `projects/${input.projectId}/characters/${char.id}_face_c${ci}.png`
         await stepLog(`face c${ci} seed=${seed} start`)
+        const fullPrompt = faceCastingPrompt(look, { realismLock: ch.realismLock })
+        try { await fs.appendFile(join(DATA_ROOT, 'tmp', 'last-casting-prompt.txt'), `=== ${new Date().toISOString()} char=${char.id} seed=${seed} ===\nPOS: ${fullPrompt}\nNEG: ${neg.negative}\n\n`, 'utf8') } catch {}
         await ctx.imageService.generate(
-          faceCastingPrompt(look, { realismLock: ch.realismLock }),
+          fullPrompt,
           resolveInsideRoot(rel),
           { width: ch.faceWidth, height: ch.faceHeight, seed, workflowName: wfName, ...neg }
         )
@@ -306,7 +314,7 @@ export function registerAssetIpc(ctx: AssetIpcCtx): void {
       await stepLog(`cleanup face start`)
       try {
         await ctx.imageService.generate(
-          'Remove any small dark mole, tattoo, birthmark, wart, pimple or blemish on the face and forehead. Smooth and clean the facial skin surface completely. Keep the person identity, facial features, hairstyle, clothing, lighting, background and composition exactly the same. Do not change anything else.',
+          'Remove any small dark mole, tattoo, birthmark, wart, pimple or blemish on the face and forehead. Smooth and clean the facial skin surface completely. Keep the person identity, facial features, hairstyle, clothing, the plain grey wall background, lighting, and composition exactly the same. Do not change the background, do not add scenery, street, lamps, rain, or objects.',
           resolveInsideRoot(faceRel),
           {
             workflowName: 'qwen2511_i2i_edit',

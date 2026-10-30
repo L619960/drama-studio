@@ -44,7 +44,10 @@
       </div>
     </el-form-item>
     <el-form-item label="确认点">
-      <el-checkbox-group v-model="draft.gateStages">
+      <div class="gate-row">
+        <el-switch v-model="noGates" active-text="一口气跑到底（不在任何阶段暂停）" />
+      </div>
+      <el-checkbox-group v-if="!noGates" v-model="draft.gateStages">
         <el-checkbox v-for="g in GATE_OPTIONS" :key="g.value" :label="g.value">
           {{ g.label }}完成后暂停
         </el-checkbox>
@@ -76,6 +79,7 @@ const emit = defineEmits<{
 const draft = ref(emptyDraft())
 const genreQuick = ref('')
 const writingScript = ref(false)
+const noGates = ref(false)
 
 function emptyDraft(): {
   mode: 'idea' | 'script' | 'video'
@@ -102,6 +106,7 @@ function emptyDraft(): {
 watch(() => props.open, (open) => {
   if (open) {
     const keep = draft.value
+    noGates.value = false
     draft.value = {
       ...emptyDraft(),
       title: keep.title,
@@ -175,14 +180,14 @@ function submit(): void {
     title: draft.value.title.trim(),
     genre: draft.value.genre.trim(),
     script: draft.value.script.trim(),
-    gateStages: [...draft.value.gateStages],
+    gateStages: noGates.value ? [] : [...draft.value.gateStages],
     bgmAbsolutePath: draft.value.bgmPath || undefined
   })
 }
 </script>
 
 <style scoped>
-.genre-row, .prompt-row, .bgm-row {
+.genre-row, .prompt-row, .bgm-row, .gate-row {
   display: flex;
   align-items: center;
   gap: 8px;

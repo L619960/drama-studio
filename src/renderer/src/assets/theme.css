@@ -566,6 +566,29 @@ html.theme-warm body {
   --el-button-hover-text-color: var(--on-brand);
 }
 
+/* disabled 按钮：主题色覆盖了 Element Plus 默认的 --el-button-* 变量，
+   导致 disabled 态仍显示彩色背景（绿色"开始渲染"看似可点实则无反应）。
+   这里显式重置 disabled 态为统一灰态，所有 type 都生效。 */
+.el-button.is-disabled,
+.el-button.is-disabled:hover,
+.el-button.is-disabled:focus,
+.el-button.is-disabled:active {
+  --el-button-bg-color: var(--bg-input);
+  --el-button-border-color: var(--border-weak);
+  --el-button-text-color: var(--text-muted);
+  --el-button-hover-bg-color: var(--bg-input);
+  --el-button-hover-border-color: var(--border-weak);
+  --el-button-hover-text-color: var(--text-muted);
+  --el-button-active-bg-color: var(--bg-input);
+  --el-button-active-border-color: var(--border-weak);
+  --el-button-active-text-color: var(--text-muted);
+  --el-button-disabled-bg-color: var(--bg-input);
+  --el-button-disabled-border-color: var(--border-weak);
+  --el-button-disabled-text-color: var(--text-muted);
+  cursor: not-allowed;
+}
+.el-button.is-disabled [class*="el-icon"] { opacity: 0.5; }
+
 .el-tag {
   border-radius: 6px !important;
   border: 1px solid var(--border) !important;

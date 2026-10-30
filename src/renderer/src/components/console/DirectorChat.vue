@@ -84,6 +84,14 @@
       </div>
     </div>
 
+    <!-- 快捷指令按钮 -->
+    <div class="quick-actions">
+      <el-button size="small" plain @click="emit('useQuick', '继续')">继续</el-button>
+      <el-button size="small" plain @click="emit('useQuick', '暂停')">暂停</el-button>
+      <el-button size="small" plain @click="emit('useQuick', '看看进度')">看进度</el-button>
+      <el-button size="small" plain @click="emit('useQuick', '重渲失败镜头')">重渲失败</el-button>
+    </div>
+
     <div class="chat-input">
       <el-tooltip content="上传文件（txt/md/json/剧本等文本）" placement="top">
         <el-button circle :icon="Paperclip" :disabled="sending" class="chat-upload" @click="emit('upload')" />
@@ -447,6 +455,7 @@ watch(() => props.scrollTick, async () => {
   font-family: inherit;
 }
 
+.quick-actions { display: flex; gap: 6px; padding: 4px 0; flex-wrap: wrap; }
 .chat-input {
   display: flex;
   align-items: flex-end;

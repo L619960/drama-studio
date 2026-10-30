@@ -15,6 +15,7 @@
       @open-review="openReview"
       @open-audit="openPromptAudit"
       @start-render="startRender"
+      @approve-all="approveAll"
     />
 
     <!-- 分镜列表 + 右键菜单 + 拖拽排序（ShotTablePanel） -->
@@ -173,6 +174,20 @@ function editReviewingShot(): void {
 async function onReviewToggle(): Promise<void> {
   if (!reviewingShot.value) return
   await persistProject()
+}
+
+/** 全部通过：把所有 i2v 镜的 reviewed 设为 true，跳过逐镜审核 */
+async function approveAll(): Promise<void> {
+  if (!project.value) return
+  let count = 0
+  for (const s of project.value.shots) {
+    if (s.type === 'i2v' && !s.reviewed) {
+      s.reviewed = true
+      count++
+    }
+  }
+  await persistProject()
+  ElMessage.success(`已通过 ${count} 个分镜审核`)
 }
 
 // 对话框组件

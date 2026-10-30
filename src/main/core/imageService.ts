@@ -2,6 +2,7 @@ import type { ComfyUIClient } from './comfyuiClient'
 import type { WorkflowLoader } from './workflowLoader'
 import { REALISM_NEGATIVE, CINEMATIC_QUALITY_BLOCK } from '../../shared/imagePrompts'
 import { isTransientError } from './errorClassify'
+import path from 'node:path'
 
 export class ImageGenerateCancelled extends Error {
   constructor() {
@@ -120,6 +121,7 @@ export class ImageService {
         ? Math.floor(options.seed) >>> 0
         : Math.floor(Math.random() * 0xffffffff)
     const negative = options?.negative || REALISM_NEGATIVE
+    console.log(`[ImageService] wf=${name} seed=${seed} ${options?.width}x${options?.height} out=${path.basename(absOutput)}`)
 
     const checkpoints = await this.comfyui.getCheckpoints()
     if (checkpoints.length === 0) {

@@ -169,7 +169,15 @@ export class DirectorAgent extends EventEmitter {
 
   /** 启动全流程，返回 projectId */
   async start(input: DirectorStartInput): Promise<string> {
-    const project = await this.store.create(input.title, input.genre)
+    // 项目对话里开拍时复用已有项目，避免在当前项目下又新建一个空项目导致上下文错乱
+    let project
+    if (input.existingProjectId) {
+      project = await this.store.get(input.existingProjectId)
+      project.title = input.title || project.title
+      project.genre = input.genre || project.genre
+    } else {
+      project = await this.store.create(input.title, input.genre)
+    }
     // 原始剧本回存项目（剧本页可回看/编辑/重拆）
     project.script = input.script
     project.updatedAt = Date.now()
@@ -177,6 +185,8 @@ export class DirectorAgent extends EventEmitter {
     const state = this.freshState(project.id, input.title)
     const gateList = (input.gateStages || []).filter(g => g !== 'done')
     state.gateStages = gateList
+    // "一口气跑到底"：无 gateStages 时同时临时关闭分镜审核门禁（仅本项目生命周期）
+    ;(state as any).noShotGate = gateList.length === 0
     this.states.set(project.id, state)
     this.gates.set(project.id, new Set(gateList))
     this.persist(project.id).catch(() => {})

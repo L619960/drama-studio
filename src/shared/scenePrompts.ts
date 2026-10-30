@@ -87,22 +87,19 @@ export function faceCastingPrompt(
   lookEn: string,
   opts?: { realismLock?: 'standard' | 'strong'; genre?: string }
 ): string {
-  const look = castLookForGenre(sanitizeCastLook(lookEn).replace(
-    /\b(wet skin|wet face|water droplets|raindrops|rain-soaked skin|damp skin|beaded sweat|sweat|perspiration|soaked skin|glossy wet|wet|damp|soaked|drenched|moist|dewy|waterlogged)\b/gi,
-    ' '
-  ).replace(/\s{2,}/g, ' ').trim(), opts?.genre)
-    || 'chinese person, natural everyday appearance'
+  const look = castLookForGenre(lookEn.trim(), opts?.genre) || 'chinese person, natural everyday appearance'
   const lock = opts?.realismLock || 'standard'
   return joinParts(
+    'plain solid medium-grey painted wall background, passport ID photo style, mugshot, flat grey screen backdrop, even flat front lighting',
     'photorealistic casting headshot for live-action chinese short drama',
-    'tight head-and-shoulders close-up, front-facing, clear ocular landmarks and ear silhouette',
+    'tight head-and-shoulders close-up, chest-up framing, front-facing, clear ocular landmarks and ear silhouette',
     eraLockBlock(opts?.genre),
-    'healthy natural east-asian complexion, clean even skin tone, smooth supple skin with soft subtle pores, natural skin glow, no blemishes, no scars, no pockmarks, no stubble shadow, dry clean skin, no water droplets on face, no rain on skin, smooth flat forehead, no moles, no lumps, no bumps, no raised marks, perfectly clear skin surface',
+    'healthy natural east-asian complexion, clean even skin tone, smooth supple skin with soft subtle pores, natural skin glow, no blemishes, no scars, no pockmarks, smooth flat forehead, perfectly clear skin surface',
     identityLockBlock(look),
     realismPositiveExtra(lock),
     'neutral expression, natural everyday look, matte skin finish, minimal makeup',
-    'seamless plain solid grey studio cyclorama backdrop filling the entire frame, empty featureless background, isolated single subject, soft key + gentle fill',
-    'clean studio casting photography, soft even lighting, sharp focus, high detail, neutral color grading, no film grain, no texture exaggeration, no skin imperfections, no pores close-up, no bokeh artifacts',
+    'isolated single subject centered in frame, grey wall fills 100% of background behind head and shoulders',
+    'clean studio casting photography, sharp focus, high detail, neutral color grading, no film grain',
     'production still quality, continuity reference plate'
   )
 }
@@ -115,16 +112,17 @@ export function bodySheetPrompt(
   const look = castLookForGenre(lookEn.trim(), opts?.genre) || 'chinese person, natural everyday appearance'
   const lock = opts?.realismLock || 'standard'
   return joinParts(
+    'plain solid medium-grey painted wall background, passport ID photo style, flat grey screen backdrop, even flat front lighting',
     'photorealistic character turnaround reference sheet for live-action casting department',
-    'exactly three equal panels of the SAME person side by side: full front view, full side profile view, full back view — orthogonal 90-degree rotations, not three-quarter angles',
+    'exactly three equal panels of the SAME person side by side: full front view, full side profile view, full back view — orthogonal 90-degree rotations',
     eraLockBlock(opts?.genre),
     'identical face identity hairstyle and full-body outfit across all three panels',
-    'each panel: full body visible head to toe, standing straight facing the camera direction, neutral stance, arms relaxed at sides, accurate proportions, realistic clothing folds',
-    'even spacing between panels, panels separated by clean gaps, seamless plain solid grey studio backdrop filling the entire frame, empty featureless background, even softbox lighting, clean floor',
+    'each panel: full body visible head to toe, standing straight, neutral stance, arms relaxed at sides, accurate proportions, realistic clothing folds',
+    'even spacing between panels, grey wall fills 100% of frame',
     'healthy natural east-asian complexion, clean even skin tone, no blemishes, no scars, no pockmarks',
     identityLockBlock(look),
     realismPositiveExtra(lock),
-    'clean studio casting photography, soft even lighting, sharp focus, high detail, neutral color grading, no film grain, no texture exaggeration, no skin imperfections',
+    'clean studio casting photography, soft even lighting, sharp focus, high detail, neutral color grading, no film grain',
     'wardrobe continuity bible plate'
   )
 }
@@ -237,7 +235,26 @@ export function shotFramePrompt(opts: {
     return `exactly ${n} people in frame, no extra people, no background crowd`
   })()
   const propCue = opts.props?.length
-    ? `key props MUST appear exactly as listed, do not swap, reshape, or drop them: ${opts.props.join(', ')}`
+    ? (() => {
+        const a = (opts.action || '').toLowerCase()
+        const parts: string[] = []
+        for (const p of opts.props) {
+          const prop = p.toLowerCase()
+          // action 说"放下/放在地上" → 道具在地上，主角空手
+          if (/(place|put|lay|drop|set|leave).{0,40}(on the|on the ground|on the floor|down)/.test(a) && a.includes(prop)) {
+            parts.push(`${p} is placed on the wet ground/floor, NOT in anyone's hand; the subject's hands are empty`)
+          }
+          // action 说"拿着/握着" → 道具在主角手里
+          else if (/(hold|grip|clutch|carry|hold on|holding|gripping|clutching|carrying|reaching for|grabbing|takes|taking)/.test(a) && a.includes(prop)) {
+            parts.push(`${p} is held in the subject's hand exactly as the action describes`)
+          }
+          // action 没提这个道具 → 主角空手，不要自动塞给他
+          else {
+            parts.push(`the subject must NOT be holding ${p} — if ${p} appears at all, it must be in the other character's hand or in the background, NOT in the subject's hands`)
+          }
+        }
+        return `KEY PROPS: ${parts.join('; ')}. Do not swap, reshape, or magically hand props to the wrong person.`
+      })()
     : ''
   return joinParts(
     `photorealistic vertical ${phaseLabel} from live-action chinese short drama`,
@@ -264,6 +281,8 @@ export function shotFramePrompt(opts: {
       : `action resolve: ${opts.action}, same person identity and outfit as start frame`,
     propLockFromAction(opts.action),
     propCue,
+    'wardrobe lock: wear EXACTLY the outfit described in the locked identity above — same garments, same layers, same collar, same accessories; ' +
+      'do not add, remove, or substitute any garment or accessory',
     'matte natural skin, realistic fabric, practical location lighting',
     people,
     'cinematic color grade restrained, short-drama production still',

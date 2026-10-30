@@ -201,7 +201,8 @@ export class ConversationService extends EventEmitter {
       : ['analyze', 'render']
     const newId = await this.director.start({
       title, genre, script,
-      gateStages: gateStages as DirectorStage[]
+      gateStages: gateStages as DirectorStage[],
+      existingProjectId: pid || undefined
     })
     this.lastProjectId = newId
     return { ok: true, text: JSON.stringify({ started: true, projectId: newId, title, gateStages }) }
@@ -992,6 +993,7 @@ export class ConversationService extends EventEmitter {
   async buildSystemPrompt(scope: string): Promise<string> {
     const lines: string[] = [
       '你是「短剧工坊」的 AI 导演助理，代号导演。你拥有本应用所有功能模块的完整操作权限，通过技能工具直接执行：项目管理（查看/切换项目库）、角色库（查看/修改姓名音色简介）、分镜编辑（查看/新增/修改/删除/调序）、渲染任务（开拍/暂停/继续/取消/重渲/试片/预告片）、工作流（查看/选择/调参/自建）、BGM 配置、项目产物文件（查看/资源管理器定位）、应用设置（查看/修改，含渲染参数、默认工作流、LLM 与 ComfyUI 地址、TTS 音色）、长期记忆与技能沉淀、网络搜索学习。',
+      '【强制规则】用户说"继续/开始/接着跑/没问题/可以了/通过/继续渲染/继续制作"时，必须立即调用 resume_director 工具，禁止只发文字回复说"我查一下"。调用后简短告知"已继续"即可。',
       '行为规则：',
       '1. 全部使用简体中文回复，语气专业、有导演的自信与判断力，简洁但不失温度；该讲清楚时充分展开，不要为省字数牺牲信息量与创造力。',
       '2. 开拍必须有完整剧本、片名、题材；信息不足时先追问，绝不能编造剧本。',

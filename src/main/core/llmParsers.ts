@@ -126,11 +126,8 @@ export function normalizeBindings(result: AnalyzeResult): AnalyzeResult {
     } catch { return '' }
   }
   const cast = result.characters.map(c => ({ name: c.name, pinyin: pyOf(c.name) }))
-  result.shots = result.shots.map((s, i) => {
+  result.shots = result.shots.map((s) => {
     const claimed = claimPerformer(s, cast)
-    if (claimed.claimed) {
-      warnings.push(`提示词核对：第${i + 1}镜动作是${claimed.shot.characterName}，已从空镜改回人物镜，避免脸和服装失去定妆`)
-    }
     return claimed.shot
   })
   const lookOf = (s: { characterName?: string }): string => {
@@ -138,9 +135,9 @@ export function normalizeBindings(result: AnalyzeResult): AnalyzeResult {
     const c = result.characters.find(ch => ch.name === name || (ch.aliases || []).includes(name))
     return c?.lookEn || ''
   }
+  // alignStoryboardPrompts 串台防护保留，但 notes 不 push 到 warnings 刷屏
   const aligned = alignStoryboardPrompts(result.shots, lookOf)
   result.shots = aligned.shots
-  warnings.push(...aligned.notes)
 
   if (warnings.length > 0) {
     result.warnings = [...(result.warnings || []), ...warnings]

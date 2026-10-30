@@ -15,6 +15,9 @@
         <el-button type="warning" @click="emit('openReview')" :disabled="isRendering" :plain="!reviewMode">
           <el-icon><View /></el-icon> 分镜审核
         </el-button>
+        <el-button type="success" plain @click="emit('approveAll')" :disabled="isRendering">
+          <el-icon><Check /></el-icon> 全部通过
+        </el-button>
         <el-tooltip
           content="批量检查全部文生图/文生视频任务的正向与负向提示词：完整性、格式规范性、敏感内容"
           placement="bottom"
@@ -70,7 +73,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { MagicStick, View, DocumentChecked, Plus, EditPen } from '@element-plus/icons-vue'
+import { MagicStick, View, DocumentChecked, Plus, EditPen, Check } from '@element-plus/icons-vue'
 import type { Shot } from '../../../../shared/ipcTypes'
 
 const props = defineProps<{
@@ -90,6 +93,7 @@ const emit = defineEmits<{
   openReview: []
   openAudit: []
   startRender: []
+  approveAll: []
 }>()
 
 const router = useRouter()

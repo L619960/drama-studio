@@ -143,7 +143,7 @@ export async function generateShotFirstFrame(
           props: d.as.props
         }),
         firstAbs,
-        { width: sc.frameWidth, height: sc.frameHeight, shouldAbort: abort }
+        { width: sc.frameWidth, height: sc.frameHeight, shouldAbort: abort, workflowName: 'klein_t2i_clean' }
       )
       d.firstFramePath = firstRel
     } catch (e) {
@@ -277,7 +277,7 @@ export async function regenerateScenePano(
     await rt.image.generate(
       panoramaScenePrompt(board.description || board.name, undefined, { weatherHint: sc.weatherHint }),
       panoAbs,
-      { width: 1536, height: 768, seed, negative: emptySceneNegativeFor('standard', board.description || board.name) }
+      { width: 1536, height: 768, seed, negative: emptySceneNegativeFor('standard', board.description || board.name), workflowName: 'klein_t2i_clean' }
     )
     const viewsAbs = await rt.ffmpeg.cropPanoramaViews(panoAbs, scenesDir, {
       count: panoViewsCount,
@@ -331,10 +331,6 @@ export async function buildShots(
     characterMap.get(shot.characterName || '')?.appearanceLock || ''
   const aligned = alignStoryboardPrompts(analysis.shots, lookOf)
   analysis.shots = aligned.shots
-  if (aligned.notes.length) {
-    rt.log(projectId, 'scenes', 'warn',
-      `出图前提示词核对 ${aligned.notes.length} 处：${aligned.notes.slice(0, 6).join('；')}`)
-  }
   const s = await rt.settings.get()
   const shots: Shot[] = []
   const total = analysis.shots.length
@@ -394,7 +390,7 @@ export async function buildShots(
         await rt.image.generate(
           panoramaScenePrompt(u.sceneEn || u.name, u.emotion || undefined, { weatherHint: sc.weatherHint }),
           panoAbs,
-          { width: 1536, height: 768, seed, negative: emptySceneNegativeFor('standard', u.sceneEn || u.name), shouldAbort: abort }
+          { width: 1536, height: 768, seed, negative: emptySceneNegativeFor('standard', u.sceneEn || u.name), shouldAbort: abort, workflowName: 'klein_t2i_clean' }
         )
         const viewsAbs = await rt.ffmpeg.cropPanoramaViews(panoAbs, scenesDir, {
           count: panoViewsCount,
@@ -431,7 +427,7 @@ export async function buildShots(
           await rt.image.generate(
             scenePlatePrompt(u.sceneEn || u.name, u.emotion || undefined, plateOpts),
             path.join(rt.baseDir, rel),
-            { width: sc.plateWidth, height: sc.plateHeight, seed, negative: emptySceneNegativeFor('standard', u.sceneEn || u.name), shouldAbort: abort }
+            { width: sc.plateWidth, height: sc.plateHeight, seed, negative: emptySceneNegativeFor('standard', u.sceneEn || u.name), shouldAbort: abort, workflowName: 'klein_t2i_clean' }
           )
           candRels.push({ rel, seed })
         }
@@ -596,7 +592,7 @@ export async function buildShots(
           props: d.as.props
         }),
         path.join(rt.baseDir, lastRel),
-        { width: sc.frameWidth, height: sc.frameHeight, shouldAbort: abort }
+        { width: sc.frameWidth, height: sc.frameHeight, shouldAbort: abort, workflowName: 'klein_t2i_clean' }
       )
       d.lastFramePath = lastRel
       if (d.character) prevLastByChar.set(d.character.id, lastRel)

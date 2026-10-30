@@ -6,6 +6,7 @@
         <p class="subtitle">从剧本到成片的本地短剧工作台</p>
       </div>
       <div class="page-actions">
+        <el-input v-model="searchKw" placeholder="搜索片名/剧本关键词" clearable style="width: 220px" :prefix-icon="Search" />
         <el-button :loading="checkingComfy" @click="checkComfyUI">
           <el-icon><Connection /></el-icon>{{ checkingComfy ? '检测中...' : '检测 ComfyUI' }}
         </el-button>
@@ -68,7 +69,7 @@
 
     <div v-else class="project-grid">
       <article
-        v-for="(row, i) in projects"
+        v-for="(row, i) in filteredProjects"
         :key="row.id"
         class="glass-card project-card is-interactive"
         :class="{ selected: isSelected(row) }"
@@ -179,7 +180,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { confirmDanger, confirmAction } from '../utils/confirm'
 import {
-  Plus, Edit, EditPen, CopyDocument, Download, FolderOpened, Delete, Connection, VideoCamera
+  Plus, Edit, EditPen, CopyDocument, Download, FolderOpened, Delete, Connection, VideoCamera, Search
 } from '@element-plus/icons-vue'
 import type { Project } from '../../../shared/ipcTypes'
 import { GENRE_TEMPLATES } from '../../../shared/ipcTypes'
@@ -200,6 +201,14 @@ const { urlCache, ensureFileUrl, ensureFileUrls } = useFileUrl()
 const router = useRouter()
 const route = useRoute()
 const projects = ref<Project[]>([])
+const searchKw = ref('')
+const filteredProjects = computed(() => {
+  const kw = searchKw.value.trim().toLowerCase()
+  if (!kw) return projects.value
+  return projects.value.filter(p =>
+    p.title?.toLowerCase().includes(kw) || p.script?.toLowerCase().includes(kw)
+  )
+})
 const projectsLoaded = ref(false)
 const showCreateDialog = ref(false)
 const creating = ref(false)

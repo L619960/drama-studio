@@ -183,7 +183,7 @@ export async function regenerateScenePanoImpl(
     await agent.image.generate(
       panoramaScenePrompt(board.description || board.name, undefined, { weatherHint: sc.weatherHint }),
       panoAbs,
-      { width: 1536, height: 768, seed, negative: emptySceneNegativeFor('standard', board.description || board.name) }
+      { width: 1536, height: 768, seed, negative: emptySceneNegativeFor('standard', board.description || board.name), workflowName: 'klein_t2i_clean' }
     )
     const viewsAbs = await agent.ffmpeg.cropPanoramaViews(panoAbs, scenesDir, {
       count: panoViewsCount,

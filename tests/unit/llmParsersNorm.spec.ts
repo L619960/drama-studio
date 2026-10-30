@@ -48,9 +48,13 @@ describe('llmParsers.normalizeBindings 生成期串台改写（总实证修复�
     expect(p.toLowerCase()).toContain('the same person from the reference image')
     expect(p.toLowerCase()).toContain('moon-white')
   })
-  it('align 注记进 warnings（提示词核对）', () => {
+  it('align 改写不污染 warnings（串台改写已执行但不刷屏）', () => {
     const r = makeResult()
     const out = normalizeBindings(r)
-    expect((out.warnings || []).some(w => w.includes('提示词核对'))).toBe(true)
+    // align 注记不再 push 到 warnings 刷屏——代码层面已完成改写（见上一个用例），
+    // 但 warnings 只保留真正需要导演关注的冲突（如角色表不匹配）
+    // 这里验证 warnings 里没有残留的提示词核对噪音
+    const hasNoise = (out.warnings || []).some(w => w.includes('提示词核对'))
+    expect(hasNoise).toBe(false)
   })
 })

@@ -31,7 +31,7 @@ export async function buildCharacters(
   const concurrency = Math.max(1, Math.min(3, settingsSnap.render.assetConcurrency || 2))
   const ch = resolveCreation(settingsSnap).character
   const faceCount = Math.max(1, Math.min(4, ch.candidates || 1))
-  const wfOpt = ch.t2iWorkflow ? { workflowName: ch.t2iWorkflow } : {}
+  const wfOpt = ch.t2iWorkflow ? { workflowName: ch.t2iWorkflow } : { workflowName: 'klein_t2i_clean' }
   const abort = (): boolean => rt.isCancelled(projectId)
 
   // 时代锁：古风/年代剧注入 genre，定妆图按时代约束生成（杜绝现代服化道混入古装剧）
@@ -220,7 +220,7 @@ export async function buildPropAssets(rt: DirectorStageRuntime, projectId: strin
   const settingsSnap = await rt.settings.get()
   const concurrency = Math.max(1, Math.min(3, settingsSnap.render.assetConcurrency || 2))
   const ch = resolveCreation(settingsSnap).character
-  const wfOpt = ch.t2iWorkflow ? { workflowName: ch.t2iWorkflow } : {}
+  const wfOpt = ch.t2iWorkflow ? { workflowName: ch.t2iWorkflow } : { workflowName: 'klein_t2i_clean' }
   const neg = { negative: sceneNegativeFor(ch.realismLock) }
   const abort = (): boolean => rt.isCancelled(projectId)
   let doneCount = 0
@@ -276,7 +276,7 @@ export async function rerunCasting(rt: DirectorStageRuntime, projectId: string):
   if (!chars.length) return { ok: false, text: '项目暂无角色，无法重出定妆' }
   const settingsSnap = await rt.settings.get()
   const ch = resolveCreation(settingsSnap).character
-  const wfOpt = ch.t2iWorkflow ? { workflowName: ch.t2iWorkflow } : {}
+  const wfOpt = ch.t2iWorkflow ? { workflowName: ch.t2iWorkflow } : { workflowName: 'klein_t2i_clean' }
   const neg = { negative: castingNegativeFor(ch.realismLock) }
   const abort = (): boolean => rt.isCancelled(projectId)
   const genre = project.genre

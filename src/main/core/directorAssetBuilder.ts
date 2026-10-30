@@ -8,7 +8,7 @@ import {
   faceCastingPrompt, bodySheetPrompt, scenePlatePrompt, shotFramePrompt, SHOT_SIZE_CUE,
   panoramaScenePrompt, realismNegativeFor, sceneNegativeFor, emptySceneNegativeFor,
   frameCrowdNegativeFor, castingNegativeFor, stripOtherPersonClauses, mergeNegative,
-  stripDialogueDirections, castLookForGenre
+  stripDialogueDirections, castLookForGenre, oocWardrobeNegativeFor, ageDriftNegativeFor
 } from '../../shared/imagePrompts'
 import { resolveCreation } from '../../shared/creationSettings'
 import { hardenLookEnList } from '../../shared/castAppearance'
@@ -260,7 +260,7 @@ export async function buildPropAssetsImpl(
   const settingsSnap = await agent.settings.get()
   const concurrency = Math.max(1, Math.min(3, settingsSnap.render.assetConcurrency || 2))
   const ch = resolveCreation(settingsSnap).character
-  const wfOpt = ch.t2iWorkflow ? { workflowName: ch.t2iWorkflow } : {}
+  const wfOpt = ch.t2iWorkflow ? { workflowName: ch.t2iWorkflow } : { workflowName: 'klein_t2i_clean' }
   const neg = { negative: sceneNegativeFor(ch.realismLock) }
   const abort = (): boolean => isCancelledImpl(agent, projectId)
   let doneCount = 0
@@ -502,7 +502,8 @@ export async function generateShotFirstFrameImpl(
         firstAbs,
         {
           width: sc.frameWidth, height: sc.frameHeight, shouldAbort: abort,
-          negative: mergeNegative(realismNegativeFor('standard'), frameCrowdNegativeFor(d.characterIds.length || 1))
+          negative: mergeNegative(realismNegativeFor('standard'), frameCrowdNegativeFor(d.characterIds.length || 1), oocWardrobeNegativeFor(look || ''), ageDriftNegativeFor(look || '')),
+          workflowName: 'klein_t2i_clean'
         }
       )
       d.firstFramePath = firstRel
@@ -583,7 +584,7 @@ export async function buildShotsImpl(
         await agent.image.generate(
           panoramaScenePrompt(u.sceneEn || u.name, u.emotion || undefined, { weatherHint: sc.weatherHint }),
           panoAbs,
-          { width: 1536, height: 768, seed, negative: emptySceneNegativeFor('standard', u.sceneEn || u.name), shouldAbort: abort }
+          { width: 1536, height: 768, seed, negative: emptySceneNegativeFor('standard', u.sceneEn || u.name), shouldAbort: abort, workflowName: 'klein_t2i_clean' }
         )
         const viewsAbs = await agent.ffmpeg.cropPanoramaViews(panoAbs, scenesDir, {
           count: panoViewsCount,
@@ -617,7 +618,7 @@ export async function buildShotsImpl(
           await agent.image.generate(
             scenePlatePrompt(u.sceneEn || u.name, u.emotion || undefined, plateOpts),
             path.join(agent.baseDir, rel),
-            { width: sc.plateWidth, height: sc.plateHeight, seed, negative: emptySceneNegativeFor('standard', u.sceneEn || u.name), shouldAbort: abort }
+            { width: sc.plateWidth, height: sc.plateHeight, seed, negative: emptySceneNegativeFor('standard', u.sceneEn || u.name), shouldAbort: abort, workflowName: 'klein_t2i_clean' }
           )
           candRels.push({ rel, seed })
         }
@@ -781,7 +782,8 @@ export async function buildShotsImpl(
         path.join(agent.baseDir, lastRel),
         {
           width: sc.frameWidth, height: sc.frameHeight, shouldAbort: abort,
-          negative: mergeNegative(realismNegativeFor('standard'), frameCrowdNegativeFor(d.characterIds.length || 1))
+          negative: mergeNegative(realismNegativeFor('standard'), frameCrowdNegativeFor(d.characterIds.length || 1), oocWardrobeNegativeFor(look || ''), ageDriftNegativeFor(look || '')),
+          workflowName: 'klein_t2i_clean'
         }
       )
       d.lastFramePath = lastRel

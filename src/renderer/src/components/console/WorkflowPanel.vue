@@ -10,7 +10,9 @@
         <el-tag v-else type="info" effect="plain" size="small" class="state-tag">待命</el-tag>
       </div>
       <div class="control-actions">
-        <el-button v-if="!running" type="primary" :icon="VideoPlay" @click="openStartDialog">开始任务</el-button>
+        <el-button v-if="!running" type="primary" :icon="VideoPlay" @click="onStartClick">
+          {{ leftoverCount > 0 ? '继续上次任务' : '开始任务' }}
+        </el-button>
         <template v-else>
           <el-button v-if="!paused" type="warning" :icon="VideoPause" @click="emit('pause')">暂停</el-button>
           <el-button v-else type="success" :icon="VideoPlay" @click="emit('resume')">继续</el-button>
@@ -30,6 +32,16 @@
       </div>
     </header>
 
+    <!-- 常驻进度条：当前阶段 + 百分比 + 镜头进度 -->
+    <div v-if="state" class="progress-bar-wrap">
+      <div class="progress-label">
+        <span class="progress-stage">{{ currentStageLabel }}</span>
+        <span class="progress-percent">{{ currentPercent }}%</span>
+        <span class="progress-shots" v-if="state.totalShots">镜头 {{ state.doneShots || 0 }}/{{ state.totalShots }}</span>
+      </div>
+      <el-progress :percentage="currentPercent" :status="paused ? 'warning' : (currentPercent >= 100 ? 'success' : '')" :stroke-width="6" :show-text="false" />
+    </div>
+
     <el-alert
       v-if="paused"
       class="pause-alert"
@@ -48,7 +60,7 @@
       :closable="false"
       show-icon
       :title="`上次任务未完成：${failedCount} 镜失败、${pendingCount} 镜待渲染`"
-      description="流水线已结束但镜头未全部产出。可重试失败镜头或续渲待渲染镜头，也可以在分镜页逐镜处理。"
+      description="流水线已结束但镜头未全部产出。点下方「继续待渲染」可一键续渲所有待渲染镜头（含分镜审核门禁）；也可以在分镜页逐镜确认首帧后再渲。"
     >
       <div class="leftover-actions">
         <el-button
@@ -63,13 +75,11 @@
 </el-button>
         <el-button
           v-if="pendingCount > 0"
-          size="small"
           type="primary"
-          plain
           :icon="VideoPlay"
           @click="emit('retryPending')"
         >
-续渲待渲染 ({{ pendingCount }})
+继续待渲染 ({{ pendingCount }})
 </el-button>
       </div>
     </el-alert>
@@ -190,6 +200,30 @@ const pendingCount = computed(() => {
 })
 const leftoverCount = computed(() => failedCount.value + pendingCount.value)
 
+// 常驻进度条：当前阶段名 + 百分比
+const STAGE_LABELS: Record<string, string> = {
+  analyze: '剧本解析', casting: '角色定妆', scenes: '场景与首帧',
+  render: '镜头渲染', combine: '合成', subtitle: '字幕', review: '复审', bgm: '配乐', done: '完成'
+}
+const currentStageLabel = computed(() => {
+  const s = props.state
+  if (!s) return ''
+  for (const st of ['analyze','casting','scenes','render','combine','subtitle','review','bgm','done'] as const) {
+    const info = s.stages?.[st]
+    if (info && (info.status === 'running' || info.status === 'paused')) return STAGE_LABELS[st] || st
+  }
+  return s.stages?.done?.status === 'done' ? '完成' : '待开始'
+})
+const currentPercent = computed(() => {
+  const s = props.state
+  if (!s) return 0
+  for (const st of ['analyze','casting','scenes','render','combine','subtitle','review','bgm','done'] as const) {
+    const info = s.stages?.[st]
+    if (info && (info.status === 'running' || info.status === 'paused')) return Math.round(info.percent ?? 0)
+  }
+  return s.stages?.done?.status === 'done' ? 100 : 0
+})
+
 // ===== 工作流列表：按能力标签过滤（视频/图像分别给对应下拉） =====
 const workflows = ref<WorkflowMeta[]>([])
 onMounted(async () => {
@@ -206,6 +240,16 @@ const imageWorkflows = computed(() => workflows.value.filter(w => !w.capability 
 
 function openStartDialog(): void {
   emit('update:startDialogVisible', true)
+}
+
+function onStartClick(): void {
+  // 有未完成镜头时直接续渲，不弹新剧对话框
+  if (leftoverCount.value > 0) {
+    if (pendingCount.value > 0) emit('retryPending')
+    else if (failedCount.value > 0) emit('retryFailed')
+    return
+  }
+  openStartDialog()
 }
 
 function confirmStart(input: DirectorStartInput): void {
@@ -256,6 +300,11 @@ function confirmStart(input: DirectorStartInput): void {
   color: var(--text-muted);
 }
 .pause-alert { border-radius: 8px; }
+.progress-bar-wrap { padding: 8px 16px; background: var(--el-fill-color-light, #f5f7fa); border-radius: 8px; margin-bottom: 8px; }
+.progress-label { display: flex; gap: 12px; align-items: center; margin-bottom: 4px; font-size: 12px; }
+.progress-stage { font-weight: 600; color: var(--el-color-primary, #409eff); }
+.progress-percent { color: var(--el-text-color-primary, #303133); font-variant-numeric: tabular-nums; }
+.progress-shots { color: var(--el-text-color-secondary, #909399); margin-left: auto; }
 .leftover-alert { border-radius: 8px; }
 .leftover-alert :deep(.el-alert__content) { width: 100%; }
 .leftover-actions { display: flex; gap: 8px; margin-top: 8px; }

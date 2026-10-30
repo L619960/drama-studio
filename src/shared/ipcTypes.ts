@@ -1020,6 +1020,8 @@ export interface DirectorStartInput {
   bgmAbsolutePath?: string
   /** 阶段间确认点：列出的阶段结束后暂停，等待用户点"继续" */
   gateStages?: DirectorStage[]
+  /** 复用已有项目 ID（项目对话里开拍时传入，避免重复创建空项目） */
+  existingProjectId?: string
 }
 
 // ===== 导演技能（可配置技能框架）=====

@@ -105,7 +105,9 @@ export function emitStateImpl(agent: DirectorAgent, projectId: string): void {
   if (!state) return
   state.cancelled = agent.cancelled.has(projectId)
   agent.emit('progress', { type: 'director:progress', projectId, state })
-  void persistImpl(agent, projectId)
+  // 项目目录可能已被用户删除（删除项目时未等 director 收尾），写盘 ENOENT 属预期，
+  // 不能让它变成 unhandledRejection 刷错日志。
+  void persistImpl(agent, projectId).catch(() => undefined)
 }
 
 export async function persistImpl(agent: DirectorAgent, projectId: string): Promise<void> {
@@ -153,6 +155,9 @@ export async function pauseUntilShotsReviewedImpl(
   projectId: string
 ): Promise<boolean> {
   const settings = await agent.settings.get()
+  // 本项目"一口气跑到底"临时关闭分镜审核门禁
+  const projState = agent.states.get(projectId)
+  if ((projState as any)?.noShotGate) return true
   const gate = settings.render?.shotReviewGate ?? 'block'
   if (gate === 'off') return true
   const project = await agent.store.get(projectId)
