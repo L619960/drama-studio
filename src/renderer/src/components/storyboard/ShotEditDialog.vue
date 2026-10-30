@@ -100,14 +100,21 @@
           <el-button
             size="small"
             style="margin-left:8px"
-            :disabled="!form.voice"
+            :disabled="!effectiveVoice"
             :loading="previewingVoice"
             @click="previewVoice"
           >
-            <el-icon><VideoPlay /></el-icon>试听
+            <el-icon><VideoPlay /></el-icon>{{ form.voice ? '试听' : '试听角色音色' }}
           </el-button>
         </div>
-        <div class="form-tip">留空使用角色音色；试听用当前台词（无台词试听固定句）</div>
+        <audio
+          v-if="previewUrl"
+          :src="previewUrl"
+          controls
+          autoplay
+          class="voice-preview"
+        />
+        <div class="form-tip">留空使用角色音色；试听为固定示范句（不读当前台词）</div>
       </el-form-item>
       <el-form-item label="类型">
         <el-radio-group v-model="form.type">
@@ -309,6 +316,12 @@ const form = ref({
   negativeEn: ''
 })
 const previewingVoice = ref(false)
+/** 试听产物地址：生成后就地内联播放，不弹全屏 loading、不打断编辑 */
+const previewUrl = ref('')
+/** 实际生效音色：分镜显式指定 > 所选角色音色 */
+const effectiveVoice = computed(() => form.value.voice || selectedChars().find(c => c.voice)?.voice || '')
+// 换音色后旧试听音频失效，收起内联播放器
+watch(() => form.value.voice, () => { previewUrl.value = '' })
 
 const scenePreview = computed(() => {
   if (form.value.sceneImagePath) return form.value.sceneImagePath
@@ -318,6 +331,7 @@ const scenePreview = computed(() => {
 
 function open(shot: Shot | null): void {
   savedThisOpen = false
+  previewUrl.value = ''
   editingShot.value = shot
   form.value = shot
     ? {
@@ -365,12 +379,14 @@ function open(shot: Shot | null): void {
   visible.value = true
 }
 
-/** 试听分镜音色：用当前台词（无台词用固定句）走 tts.preview */
+/** 试听音色：用固定示范句走 tts.preview，结果就地内联播放 */
 async function previewVoice(): Promise<void> {
-  if (!form.value.voice) return
+  const voice = effectiveVoice.value
+  if (!voice) return
   previewingVoice.value = true
   try {
-    await window.api.tts.preview(form.value.voice)
+    const rel = await window.api.tts.preview(voice)
+    previewUrl.value = await ensureFileUrl(rel)
   } catch (e) {
     ElMessage.error(`试听失败：${e instanceof Error ? e.message : String(e)}`)
   } finally {
@@ -566,4 +582,5 @@ defineExpose({ open, isVisible: visible })
   color: var(--text-muted); font-size: 12px;
 }
 .form-tip { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+.voice-preview { width: 100%; margin-top: 8px; }
 </style>

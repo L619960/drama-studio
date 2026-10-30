@@ -145,6 +145,14 @@
               <el-option label="叠化" value="dissolve" />
               <el-option label="强切" value="smash" />
             </el-select>
+            <el-button
+              size="small"
+              :loading="rerenderingShotId === shot.id"
+              :disabled="rerenderingShotId !== ''"
+              @click="rerenderShot(shot)"
+            >
+              重渲此镜
+            </el-button>
           </div>
         </div>
       </div>
@@ -396,6 +404,26 @@ async function saveShotEdits(_shot: Shot): Promise<void> {
     }, 600)
   } catch (e) {
     ElMessage.error(`保存剪辑参数失败：${e instanceof Error ? e.message : String(e)}`)
+  }
+}
+
+/** 重渲此镜：按当前分镜参数重新入队；完成后由 onProjectUpdated 自动刷新本页 */
+const rerenderingShotId = ref('')
+async function rerenderShot(shot: Shot): Promise<void> {
+  if (rerenderingShotId.value) return
+  rerenderingShotId.value = shot.id
+  try {
+    const res = await window.api.render.start(projectId.value, [shot.id])
+    shot.status = 'pending'
+    if (res.warnedShots.length > 0) {
+      ElMessage.warning(`第 ${shot.index} 镜首帧未核对，已按「告警放行」入队渲染`)
+    } else {
+      ElMessage.success(`第 ${shot.index} 镜已重新入队渲染，完成后自动刷新`)
+    }
+  } catch (e) {
+    ElMessage.error(`重渲失败：${e instanceof Error ? e.message : String(e)}`)
+  } finally {
+    rerenderingShotId.value = ''
   }
 }
 

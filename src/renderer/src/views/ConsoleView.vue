@@ -307,9 +307,9 @@ const rerenderingShotId = ref('')
 type RerenderPayload = { shotId: string; prompt: string; dialogue: string; negative: string; workflow: string }
 async function rerenderOneShot(payload: RerenderPayload, opts: { skipGate?: boolean } = {}): Promise<void> {
   const p = project.value
-  if (!p) return
+  if (!p) throw new Error('项目数据未加载，请刷新后重试')
   const shot = p.shots.find(s => s.id === payload.shotId)
-  if (!shot) return
+  if (!shot) throw new Error('镜头不存在，可能已被删除')
   // 重渲会作废首帧审核：warn 模式下先确认，取消则不改动分镜状态
   if (!opts.skipGate && !(await confirmUnreviewedRender(p, [shot.id], {
     reason: '提示词/工作流已改动，首帧审核会作废。',
@@ -340,28 +340,44 @@ async function onRerenderShot(payload: RerenderPayload): Promise<void> {
   rerenderingShotId.value = payload.shotId
   try {
     await rerenderOneShot(payload)
-    ElMessage.success(`第 ${payload.shotId} 镜已重新入队渲染`)
+    const idx = project.value?.shots.find(s => s.id === payload.shotId)?.index
+    ElMessage.success(`第 ${idx ?? payload.shotId} 镜已重新入队渲染`)
   } catch (e) {
     ElMessage.error(`重渲失败：${e instanceof Error ? e.message : String(e)}`)
   } finally {
     rerenderingShotId.value = ''
   }
 }
-/** 批量重渲：逐镜串行入队（render.start 内部已有队列/去重） */
+/** 批量重渲：逐镜串行入队（render.start 内部已有队列/去重）；结果按成功/失败如实反馈 */
 async function onRerenderShots(payloads: RerenderPayload[]): Promise<void> {
-  if (rerenderingShotId.value) return
+  if (rerenderingShotId.value || payloads.length === 0) return
   if (project.value && !(await confirmUnreviewedRender(project.value, payloads.map(pl => pl.shotId), {
     reason: '提示词/工作流已改动，首帧审核会作废。',
     treatAllAsUnreviewed: true
   }))) return
-  rerenderingShotId.value = payloads[0]?.shotId || 'batch'
+  rerenderingShotId.value = 'batch'
+  let ok = 0
+  const failures: string[] = []
   try {
     for (const pl of payloads) {
-      try { await rerenderOneShot(pl, { skipGate: true }) } catch (e) { ElMessage.error(`镜 ${pl.shotId} 重渲失败：${e instanceof Error ? e.message : String(e)}`) }
+      try {
+        await rerenderOneShot(pl, { skipGate: true })
+        ok++
+      } catch (e) {
+        const idx = project.value?.shots.find(s => s.id === pl.shotId)?.index
+        failures.push(`第${idx ?? pl.shotId}镜：${e instanceof Error ? e.message : String(e)}`)
+      }
     }
-    ElMessage.success(`${payloads.length} 镜已重新入队渲染`)
   } finally {
     rerenderingShotId.value = ''
+  }
+  const detail = `${failures.slice(0, 3).join('；')}${failures.length > 3 ? ' 等' : ''}`
+  if (ok === 0) {
+    ElMessage.error(`全部 ${payloads.length} 镜重渲失败：${detail}`)
+  } else if (failures.length > 0) {
+    ElMessage.warning(`${ok} 镜已入队渲染，${failures.length} 镜失败（${detail}）`)
+  } else {
+    ElMessage.success(`${ok} 镜已重新入队渲染`)
   }
 }
 
