@@ -1,7 +1,7 @@
 # 任务看板 · 2026-10-30
 
-> 基线：分支 `feat/agent-autonomy`，最新提交 `f0b2d08`
-> 门禁现状：`typecheck` ✅ · `npm test` 1808/1808（111 文件）✅ · `npm run build` ✅ · `eslint` 0 warning（0 error）
+> 基线：分支 `feat/agent-autonomy`，最新提交 `b7b31e3`
+> 门禁现状：`typecheck` ✅ · `npm test` 1810/1810（111 文件）✅ · `npm run build` ✅ · `eslint` 0 warning（0 error）
 > 本文以代码实测为准，已修正 `docs/remediation-plan-2026-10-27.md` / `docs/technical-audit-2026-10-30.md` 中过时结论。
 
 ## 优先级定义
@@ -70,7 +70,7 @@
 | REQ-02 | 门禁待处理结构化（`pendingGates` + 审看定位 CTA） | ✅ 已交付：`DirectorState.pendingGates`（完整镜号不截断）+ 暂停卡片带「去审看」CTA + 分镜页消费 `?review=id` 自动打开审核；补 3 例单测 | — | M |
 | REQ-03 | 重启后中断任务「一键继续」入口 | ✅ 已交付：`director:listInterrupted` 扫描磁盘中断/残留任务 + 项目列表琥珀横幅逐项「从断点继续」，补 2 例单测 | — | M |
 | REQ-04 | 门禁 warn 二次确认与「一口气跑到底」联动 | ✅ 已交付：warn 放行改「去审看/仍要渲染/取消」三选一 + 同批镜 30 分钟去重；控制台常驻「确认点已关闭」chip，点击恢复默认门禁（剩余阶段生效）；补 5 例单测 | REQ-02 | M |
-| REQ-05 | 常驻导演运行条 / 全局任务面板 | 待开始 | REQ-01、REQ-02 | L |
+| REQ-05 | 常驻导演运行条 / 全局任务面板 | ✅ 已交付：`director:finished` 终态事件 + App 底部 `DirectorRunBar`（任意页面阶段/进度/暂停/继续/停止、多任务 Popover、完成绿/失败红入口、暂停 tooltip 诚实化），补 2 例单测 | REQ-01、REQ-02 | L |
 
 ## 依赖关系
 
@@ -114,3 +114,4 @@ P1-C1（flake 修复）─→ P1-D1 大批量补测（避免新增用例继承�
 | 2026-10-31 00:24 | 批次 4 收口 `37b7940`：P2-4 增加 mac(dmg/zip)/linux(AppImage/deb) 打包目标与 `build:mac`/`build:linux`；P2-8 新增三平台 CI（lint/typecheck/test/build + tag 分平台打包）；P2-6 评估不引入 Pinia。四门全绿（1788 用例），mac/linux 产物与 CI 实跑待对应 runner 验证 |
 | 2026-10-31 00:56 | REQ-03 `fdba5dc`：新增 `director:listInterrupted`（扫描中断标记/残留 running，项目名回退 project.json）、项目列表琥珀横幅与逐项「从断点继续」，补 2 例单测。四门全绿（1803 用例） |
 | 2026-10-31 01:10 | REQ-04 `f0b2d08`：warn 放行三选一确认与 30 分钟同批去重、`director:enableGates` 中途恢复默认门禁 + 控制台橙色 chip，补 5 例单测。四门全绿（1808 用例） |
+| 2026-10-31 01:28 | REQ-05 `b7b31e3`：`director:finished` 终态事件 + 底部常驻 `DirectorRunBar`（任意页面控制/多任务面板/完成失败入口），补 2 例单测。四门全绿（1810 用例）；Phase 1（P0 5 条）全部交付 |
