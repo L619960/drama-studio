@@ -310,6 +310,9 @@ export class DirectorAgent extends EventEmitter {
     state.heal = undefined
     state.failedShotIds = []
     state.cancelled = false
+    // P0-1：续跑后清除「任务中断」标记，UI 的中断提示随之消失
+    state.interrupted = false
+    state.interruptedStage = undefined
 
     // 阶段门重建：只保留续跑范围内的门
     this.gates.set(projectId, new Set(state.gateStages.filter(g => stageIndexOf(g) >= stageIndexOf(stage))))

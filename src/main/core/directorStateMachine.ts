@@ -288,8 +288,11 @@ export async function hydrateImpl(
       state.finishedAt = Date.now()
       // 残留的 running 阶段转为 error：否则 UI 永久转圈，且「从此重跑」按钮
       // （仅对 done/error 阶段显示）不会出现，断点续跑入口被锁死
+      // 记录第一个中断阶段：UI 用它定位「从上次失败阶段继续」入口
+      let interruptedStage: DirectorStage | undefined
       for (const stage of STAGE_ORDER) {
         if (state.stages[stage].status === 'running') {
+          if (!interruptedStage) interruptedStage = stage
           state.stages[stage] = {
             status: 'error',
             message: '应用重启导致该阶段中断',
@@ -297,6 +300,9 @@ export async function hydrateImpl(
           }
         }
       }
+      // P0-1：标记「任务中断」，供 UI 展示明确提示 + 一键继续入口
+      state.interrupted = true
+      state.interruptedStage = interruptedStage
       // 续用日志序号器：从磁盘日志的最大 id 起算，保证唯一
       const maxId = state.logs.reduce((m, l) => Math.max(m, typeof l.id === 'number' ? l.id : 0), 0)
       const seq = Math.max(agent.logSeq.get(projectId) || 0, maxId) + 1
@@ -305,7 +311,9 @@ export async function hydrateImpl(
         id: seq,
         stage: 'done',
         level: 'warn',
-        message: '应用重启，上次任务已中断（渲染产物保留，可从失败阶段重跑续传）',
+        message: interruptedStage
+          ? `应用重启，上次任务已中断（中断于「${STAGE_LABELS[interruptedStage]}」阶段，渲染产物保留，可从该阶段重跑续传）`
+          : '应用重启，上次任务已中断（渲染产物保留，可从失败阶段重跑续传）',
         timestamp: Date.now()
       })
       repaired = true

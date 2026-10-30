@@ -225,6 +225,67 @@ describe('hydrateImpl：崩溃恢复', () => {
     expect(got).toBe(existing)
     expect(got!.title).toBe('内存版')
   })
+
+  // ===== P0-1：任务中断标记 + 一键继续入口定位 =====
+  it('P0-1：残留 running → 置 interrupted=true 并记录 interruptedStage', async () => {
+    const agent = makeAgent(tmpDir)
+    const projDir = path.join(tmpDir, 'projects', 'p_int')
+    await fs.mkdir(projDir, { recursive: true })
+    const disk = makeState('p_int')
+    disk.stages.render.status = 'running'
+    await fs.writeFile(path.join(projDir, 'director-state.json'), JSON.stringify(disk))
+
+    const restored = await hydrateImpl(agent, 'p_int')
+    expect(restored!.interrupted).toBe(true)
+    expect(restored!.interruptedStage).toBe('render')
+  })
+
+  it('P0-1：多个 running 阶段 → interruptedStage 取流水线顺序第一个', async () => {
+    const agent = makeAgent(tmpDir)
+    const projDir = path.join(tmpDir, 'projects', 'p_multi')
+    await fs.mkdir(projDir, { recursive: true })
+    const disk = makeState('p_multi')
+    // scenes 与 render 同时 running（异常中断的边界态）
+    disk.stages.scenes.status = 'running'
+    disk.stages.render.status = 'running'
+    await fs.writeFile(path.join(projDir, 'director-state.json'), JSON.stringify(disk))
+
+    const restored = await hydrateImpl(agent, 'p_multi')
+    // scenes 在 STAGE_ORDER 中先于 render → 取 scenes
+    expect(restored!.interruptedStage).toBe('scenes')
+    // 两个阶段都降级为 error
+    expect(restored!.stages.scenes.status).toBe('error')
+    expect(restored!.stages.render.status).toBe('error')
+  })
+
+  it('P0-1：无 running 阶段（正常结束态）→ 不置 interrupted 标记', async () => {
+    const agent = makeAgent(tmpDir)
+    const projDir = path.join(tmpDir, 'projects', 'p_done')
+    await fs.mkdir(projDir, { recursive: true })
+    const disk = makeState('p_done')
+    disk.running = false
+    disk.paused = false
+    disk.stages.done.status = 'done'
+    await fs.writeFile(path.join(projDir, 'director-state.json'), JSON.stringify(disk))
+
+    const restored = await hydrateImpl(agent, 'p_done')
+    expect(restored!.interrupted).toBeUndefined()
+    expect(restored!.interruptedStage).toBeUndefined()
+  })
+
+  it('P0-1：中断日志包含阶段名，便于用户定位', async () => {
+    const agent = makeAgent(tmpDir)
+    const projDir = path.join(tmpDir, 'projects', 'p_log')
+    await fs.mkdir(projDir, { recursive: true })
+    const disk = makeState('p_log')
+    disk.stages.casting.status = 'running'
+    await fs.writeFile(path.join(projDir, 'director-state.json'), JSON.stringify(disk))
+
+    const restored = await hydrateImpl(agent, 'p_log')
+    const interruptedLog = restored!.logs.find(l => l.message.includes('应用重启'))
+    expect(interruptedLog).toBeTruthy()
+    expect(interruptedLog!.message).toContain('角色建档')
+  })
 })
 
 describe('recoverAllImpl：启动扫描残留', () => {

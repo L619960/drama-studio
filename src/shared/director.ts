@@ -52,6 +52,10 @@ export interface DirectorState {
   analysis?: AnalyzeResult | null
   startedAt: number
   finishedAt?: number
+  /** 上次任务因应用重启/崩溃中断（由 hydrate 修复时置位）：UI 展示「任务中断」提示 + 一键继续入口 */
+  interrupted?: boolean
+  /** 中断时正在执行的阶段：用于「从上次失败阶段继续」按钮定位 */
+  interruptedStage?: DirectorStage
   /** 最近 300 条中文执行日志（环形截断） */
   logs: DirectorLogEntry[]
 }

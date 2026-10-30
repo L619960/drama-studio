@@ -52,6 +52,36 @@
       description="进行中的渲染已安全完成，流水线已挂起。检查产物无误后点「继续」进入下一阶段，或点「停止任务」终止。"
     />
 
+    <!-- P0-1 任务中断提示：应用重启/崩溃导致上次任务中断，给出明确入口而非卡死态 -->
+    <el-alert
+      v-if="interrupted"
+      class="interrupted-alert"
+      type="error"
+      :closable="false"
+      show-icon
+      :title="interruptedTitle"
+      description="已完成的素材与渲染产物全部保留，不会重跑。确认无误后点下方按钮从中断阶段继续；若 ComfyUI 未启动，请先启动后再继续。"
+    >
+      <div class="interrupted-actions">
+        <el-button
+          v-if="interruptedStage"
+          type="primary"
+          :icon="RefreshRight"
+          @click="emit('resumeFrom', interruptedStage)"
+        >
+          从「{{ STAGE_LABELS[interruptedStage] }}」继续
+        </el-button>
+        <el-button
+          v-if="!interruptedStage && pendingCount > 0"
+          type="primary"
+          :icon="VideoPlay"
+          @click="emit('retryPending')"
+        >
+          继续待渲染 ({{ pendingCount }})
+        </el-button>
+      </div>
+    </el-alert>
+
     <!-- 残留任务提示：上次任务结束后仍有未完成镜头（失败/待渲染），可一键续渲 -->
     <el-alert
       v-if="!running && !paused && leftoverCount > 0"
@@ -138,6 +168,9 @@ import {
 import DirectorStartForm from '../project/DirectorStartForm.vue'
 import StageTimeline from './StageTimeline.vue'
 import LogPanel from './LogPanel.vue'
+// 阶段中文标签复用唯一实现（与主进程 directorConstants.STAGE_LABELS 文案对齐，
+// 避免中断提示标题与执行日志对同一阶段出现两种叫法）
+import { STAGE_LABELS } from '../../composables/useDirectorState'
 import {
   type DirectorState, type DirectorStage, type DirectorLogEntry,
   type Project, type WorkflowMeta, type WorkflowCapability,
@@ -200,11 +233,20 @@ const pendingCount = computed(() => {
 })
 const leftoverCount = computed(() => failedCount.value + pendingCount.value)
 
-// 常驻进度条：当前阶段名 + 百分比
-const STAGE_LABELS: Record<string, string> = {
-  analyze: '剧本解析', casting: '角色定妆', scenes: '场景与首帧',
-  render: '镜头渲染', combine: '合成', subtitle: '字幕', review: '复审', bgm: '配乐', done: '完成'
-}
+// ===== P0-1 任务中断提示 =====
+// interrupted 由主进程 hydrate 修复残留 running 状态时置位；interruptedStage 记录中断所在阶段
+const interrupted = computed(() => !!props.state?.interrupted && !props.running && !props.paused)
+const interruptedStage = computed<DirectorStage | undefined>(() => {
+  const st = props.state?.interruptedStage
+  return st && st !== 'done' ? st : undefined
+})
+const interruptedTitle = computed(() => {
+  const st = interruptedStage.value
+  return st
+    ? `上次任务已中断：停在「${STAGE_LABELS[st]}」阶段`
+    : '上次任务已中断（应用重启或异常退出）'
+})
+
 const currentStageLabel = computed(() => {
   const s = props.state
   if (!s) return ''
@@ -300,6 +342,9 @@ function confirmStart(input: DirectorStartInput): void {
   color: var(--text-muted);
 }
 .pause-alert { border-radius: 8px; }
+.interrupted-alert { border-radius: 8px; }
+.interrupted-alert :deep(.el-alert__content) { width: 100%; }
+.interrupted-actions { display: flex; gap: 8px; margin-top: 8px; }
 .progress-bar-wrap { padding: 8px 16px; background: var(--el-fill-color-light, #f5f7fa); border-radius: 8px; margin-bottom: 8px; }
 .progress-label { display: flex; gap: 12px; align-items: center; margin-bottom: 4px; font-size: 12px; }
 .progress-stage { font-weight: 600; color: var(--el-color-primary, #409eff); }
