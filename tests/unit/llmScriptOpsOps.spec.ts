@@ -11,7 +11,8 @@ vi.mock('../../src/main/core/llmHttp', () => ({
   httpChatRaw: vi.fn()
 }))
 vi.mock('../../src/main/core/llmRequest', () => ({
-  logLlmError: vi.fn()
+  logLlmError: vi.fn(),
+  LLM_DUMP_DIR: '/tmp/drama-studio-tmp'
 }))
 vi.mock('../../src/main/core/llmPostProcess', () => ({
   enforcePromptLengths: vi.fn(async (_gs: unknown, scenes: unknown[], shots: unknown[], characters: unknown[]) => ({

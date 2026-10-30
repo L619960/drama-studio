@@ -17,7 +17,7 @@ import { analyzeSystemPrompt } from './llmPromptsAnalyze'
 // （含 claimPerformer + alignStoryboardPrompts 生成期拦截），替代 private normalizeBindings
 import { normalizeBindings as llmNormalizeBindings } from './llmParsers'
 import { httpChat, httpChatRaw } from './llmHttp'
-import { logLlmError } from './llmRequest'
+import { logLlmError, LLM_DUMP_DIR } from './llmRequest'
 import { enforcePromptLengths, backfillMissingProps } from './llmPostProcess'
 
 /** 批量 AI 补写字段时传给 LLM 的本镜上下文（防止串戏/脑补） */
@@ -470,7 +470,7 @@ export async function analyzeOp(
   const raw = await httpChat(getSettings, system, script, sb.temperature, 1200000, 32768, opts?.signal)
   // 解析容错：LLM 在 promptEn/negativeEn 等长文本字段里写入裸换行/控制字符会让 JSON.parse 失败
   // → 先剥离控制字符（字符串内裸换行替换为空格），仍失败则带修复指令重试一次
-  const dumpDir = path.join(process.env.APPDATA || process.cwd(), 'drama-studio', 'drama-studio', 'tmp')
+  const dumpDir = LLM_DUMP_DIR
   let cleaned = raw.replace(/```(?:json)?/g, '').trim()
   let start = cleaned.indexOf('{')
   let end = cleaned.lastIndexOf('}')

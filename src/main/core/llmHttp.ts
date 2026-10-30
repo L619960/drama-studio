@@ -4,13 +4,13 @@
  * - chat：系统+用户单轮对话，含 429/5xx 重试与 400/422 thinking 参数回退
  * - chatRaw：直接提交完整 body（多模态等自定义结构）
  * - test：连通性探针
- * 行为与原 LLMService 内联实现一字不差（含双嵌套 tmp 诊断落盘路径）。
+ * 行为与原 LLMService 内联实现一字不差（诊断落盘统一走 LLM_DUMP_DIR）。
  */
 import axios from 'axios'
 import fs from 'node:fs'
 import path from 'node:path'
 import type { AppSettings } from '../../shared/ipcTypes'
-import { logLlmError } from './llmRequest'
+import { logLlmError, LLM_DUMP_DIR } from './llmRequest'
 import { createLogger } from './logger'
 
 const log = createLogger('LLM')
@@ -185,7 +185,7 @@ export async function httpChat(
   if (!content) {
     // 诊断：长请求空响应时把响应结构落盘，区分「超时」「choices 空」「content 空」
     try {
-      const dumpDir = path.join(process.env.APPDATA || process.cwd(), 'drama-studio', 'drama-studio', 'tmp')
+      const dumpDir = LLM_DUMP_DIR
       fs.mkdirSync(dumpDir, { recursive: true })
       fs.writeFileSync(path.join(dumpDir, 'analyze-empty-response.json'),
         JSON.stringify({ ts: Date.now(), model: s.llm.model, keys: Object.keys(resp.data || {}), choicesLen: resp.data?.choices?.length, usage: resp.data?.usage }, null, 2), 'utf-8')

@@ -12,7 +12,8 @@ vi.mock('../../src/main/core/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() })
 }))
 vi.mock('../../src/main/core/llmRequest', () => ({
-  logLlmError: vi.fn(() => 'boom')
+  logLlmError: vi.fn(() => 'boom'),
+  LLM_DUMP_DIR: '/tmp/drama-studio-tmp'
 }))
 vi.mock('node:fs', () => {
   const m = { mkdirSync: vi.fn(), writeFileSync: vi.fn() }
