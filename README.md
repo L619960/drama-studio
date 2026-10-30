@@ -16,12 +16,15 @@
 npm install
 npm run dev          # 开发模式
 npm run typecheck    # 类型检查
+npm run lint         # ESLint（0 warning 基线）
+npm run test         # Vitest 单测
+npm run test:e2e     # Playwright 窗口 smoke
 npm run build:win    # 打包 Windows 安装包
 ```
 
 ### 3. ComfyUI 模型部署
 
-参考项目内 `项目记忆.md` 的「MiniMax H3 本地推理」章节，按目录放置以下模型：
+参考 `docs/model-download-2026-10-27.md` 的「H3 主链路」章节，按目录放置以下模型：
 
 | 模型文件 | 大小 | ComfyUI 路径 |
 |---|---|---|
@@ -40,7 +43,7 @@ drama-studio/
 ├── src/
 │   ├── main/                     主进程（业务逻辑中心）
 │   │   ├── index.ts              入口 + 窗口创建 + IPC 注册
-│   │   ├── core/                 核心服务层（76 个模块）
+│   │   ├── core/                 核心服务层（75 个模块）
 │   │   │   ├── director*/        AI 导演子模块（状态机/流水线/资产/手动/完成）
 │   │   │   ├── taskQueue*.ts     渲染队列（8 文件拆分：调度/重试/渲染/音频/一致性/提示词）
 │   │   │   ├── conversation*/    AI 对话系统（session/service/agentLoop + 4 类 tool dispatcher）
@@ -63,11 +66,11 @@ drama-studio/
 │   │   │   ├── childProcessManager.ts  子进程生命周期管理
 │   │   │   ├── errorHandler.ts / errorClassify.ts  全局异常兜底 + 临时/持久错误分类
 │   │   │   └── logger.ts         统一日志工具（createLogger 封装）
-│   │   ├── ipc/                  IPC handler（16 个 handler 文件 + shared.ts 统一包装）
+│   │   ├── ipc/                  IPC handler（17 个文件：16 个 handler + shared.ts 统一包装）
 │   │   └── agent/                MCP 协议桥接
 │   ├── preload/index.ts          预加载桥接（contextBridge + sandbox CJS 输出）
-│   ├── renderer/src/             Vue 3 渲染层（28 组件 + 12 composables）
-│   │   ├── views/                7 个页面视图
+│   ├── renderer/src/             Vue 3 渲染层（28 组件 + 11 composables）
+│   │   ├── views/                10 个页面视图
 │   │   ├── components/           业务组件（console/storyboard/settings/common）
 │   │   ├── composables/          组合函数（directorState/directorChat/inputMemory 等）
 │   │   ├── router/               vue-router
@@ -81,8 +84,8 @@ drama-studio/
 │       ├── imagePrompts.ts       负面提示词预设
 │       └── ...                   其他共享模块（castAppearance/scenePrompts/assetReuse 等）
 ├── workflows/                    ComfyUI 工作流模板（h3_i2v/h3_r2v/wan22_i2v/latentsync/builtin_t2i）
-├── tests/unit/                   Vitest 单元测试（37 文件 / 301 用例）
-├── test/                         Playwright E2E smoke 测试
+├── tests/unit/                   Vitest 单元测试（92 文件 / 1597 用例）
+├── e2e/                          Playwright E2E smoke 测试
 ├── docs/                         技术文档（含 IPC 安全清单、技术审计报告）
 ├── electron.vite.config.ts       三分构建配置（main/preload/renderer）+ Element Plus 按需引入 + 代码分割
 ├── electron-builder.yml          NSIS Windows 打包配置
@@ -98,7 +101,7 @@ drama-studio/
 - **无台词镜头** → `minimax_h3_i2v`（图生视频，原生环境音）
 - 切换方式：全局（设置→工作流）/ 单项目（编辑 project.json `defaultWorkflow`）/ 单镜头（编辑 shot JSON `workflow`）
 
-## 关键约束（参见 `项目记忆.md`）
+## 关键约束（参见 `docs/` 内技术审计与治理文档）
 
 - LTX/Wan 视频帧数必须 25n+1（H3 不受此约束，用 17k+5 网格 @24fps）
 - 关键交接动作（递接物品/开门上车/拥抱/转身离开）必须独立成镜
