@@ -54,6 +54,22 @@ export class ImageService {
     absOutput: string,
     options?: ImageGenerateOptions
   ): Promise<void> {
+    // P2-3: 磁盘剩余空间检查（<5GB 警告）
+    try {
+      const dir = path.dirname(absOutput)
+      // diskUsage 是 Node 19+ API，无 @types/node 时用 any 绕过类型检查
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const diskUsage = (require('node:fs') as any).diskUsage as (p: string, cb: (err: unknown, stats?: { free: number }) => void) => void
+      await new Promise<void>((resolve) => {
+        diskUsage(dir, (_err: unknown, stats?: { free: number }) => {
+          if (stats) {
+            const freeGB = stats.free / 1024 / 1024 / 1024
+            if (freeGB < 5) console.warn(`[P2-3] 磁盘剩余 ${freeGB.toFixed(1)}GB < 5GB，建议清理`)
+          }
+          resolve()
+        })
+      })
+    } catch { /* 磁盘检查失败不阻塞 */ }
     const retries = options?.retries ?? 2
     let width = options?.width ?? 768
     let height = options?.height ?? 1152
@@ -201,6 +217,36 @@ export class ImageService {
       await this.comfyui.downloadFromFullPath(img.fullpath, absOutput)
     } else {
       await this.comfyui.download(img.filename, img.subfolder, img.type, absOutput)
+    }
+  }
+
+  /**
+   * Face restore 后处理：用 CodeFormer 修复首帧 i2i 融合导致的五官漂移。
+   * 失败不阻塞流程（仅打 warn）。
+   */
+  async restoreFace(absInput: string, absOutput: string): Promise<void> {
+    try {
+      const listed = await this.workflow.list()
+      if (!listed.some((w) => w.name === 'face_restore')) {
+        console.warn('[ImageService] face_restore workflow 不存在，跳过 face restore')
+        return
+      }
+      const inputName = await this.comfyui.uploadImage(absInput)
+      const vars: Record<string, string> = { INPUT_IMAGE: inputName }
+      const graph = await this.workflow.buildGraph('face_restore', vars)
+      const { promptId } = await this.comfyui.submit(graph)
+      const output = await this.comfyui.waitForCompletion(promptId, undefined, 120000)
+      const images = output.images
+      if (!images || images.length === 0) throw new Error('face restore 无输出')
+      const img = images[0]
+      if (img.fullpath) {
+        await this.comfyui.downloadFromFullPath(img.fullpath, absOutput)
+      } else {
+        await this.comfyui.download(img.filename, img.subfolder, img.type, absOutput)
+      }
+      console.log(`[ImageService] face restore done: ${path.basename(absOutput)}`)
+    } catch (err) {
+      console.warn(`[ImageService] face restore 失败（不阻塞）:`, err instanceof Error ? err.message : err)
     }
   }
 

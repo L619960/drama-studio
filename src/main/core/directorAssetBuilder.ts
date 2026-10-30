@@ -507,6 +507,47 @@ export async function generateShotFirstFrameImpl(
         }
       )
       d.firstFramePath = firstRel
+      // P1-3: face restore 后处理（CodeFormer），修复 i2i 融合导致的五官漂移
+      try {
+        const restoredAbs = firstAbs.replace(/\.png$/, '_fr.png')
+        await agent.image.restoreFace(firstAbs, restoredAbs)
+        await fs.rename(restoredAbs, firstAbs)
+      } catch { /* face restore 失败不阻塞 */ }
+      // P1-1: 人脸相似度比对（首帧 vs 定妆照），低于阈值重抽 1 次
+      if (faceAbs) {
+        try {
+          const { execFileSync } = require('node:child_process')
+          const pyOut = execFileSync(
+            'D:\\ComfyUI-V20\\python\\python.exe',
+            ['E:\\drama-studio\\tmp\\face_sim.py', faceAbs, firstAbs],
+            { timeout: 60000, encoding: 'utf-8' }
+          )
+          const lastLine = pyOut.trim().split('\n').pop() || '{}'
+          const result = JSON.parse(lastLine)
+          console.log(`[P1-1] face sim score=${result.score} faces1=${result.faces1} faces2=${result.faces2}`)
+          if (result.score >= 0 && result.score < 0.4) {
+            console.warn(`[P1-1] face sim low (${result.score}), regenerating once...`)
+            // 重抽 1 次
+            await agent.image.generate(
+              shotFramePrompt({
+                phase: 'start', lookEn: look, scene: plateHint, action: frameAction,
+                shotSizeCue: sizeCue, emotion: dMasked.as.emotion || undefined,
+                camera: dMasked.as.camera || undefined, lighting: dMasked.as.lighting,
+                facing: dMasked.as.facing, continuity: dMasked.as.continuity,
+                characterCount: d.characterIds.length || 1, props: d.as.props
+              }),
+              firstAbs,
+              {
+                width: sc.frameWidth, height: sc.frameHeight, shouldAbort: abort,
+                negative: mergeNegative(realismNegativeFor('standard'), frameCrowdNegativeFor(d.characterIds.length || 1), oocWardrobeNegativeFor(look || ''), ageDriftNegativeFor(look || '')),
+                workflowName: 'klein_t2i_clean'
+              }
+            )
+          }
+        } catch (e) {
+          console.warn('[P1-1] face sim check failed (non-blocking):', e instanceof Error ? e.message : e)
+        }
+      }
     } catch (e) {
       if (e instanceof ImageGenerateCancelled) throw e
       if (faceAbs) {

@@ -6,6 +6,7 @@
         <el-radio-button value="all">全部</el-radio-button>
         <el-radio-button value="warn">仅警告/错误</el-radio-button>
       </el-radio-group>
+      <el-button size="small" plain @click="exportLogs">导出</el-button>
       <span class="log-hint">{{ logHover ? '已暂停滚动 · 移开鼠标恢复' : '已完成阶段自动折叠 · 新消息自动滚底' }}</span>
     </div>
     <div ref="logBoxRef" class="log-box" @mouseenter="logHover = true" @mouseleave="logHover = false">
@@ -106,6 +107,18 @@ const logsByStage = computed(() => {
 // el-collapse v-model 在父子分离场景下用 :model-value + @update
 function onStagesUpdate(val: string | string[]): void {
   emit('update:expandedStages', Array.isArray(val) ? val as DirectorStage[] : [val as DirectorStage])
+}
+
+/** 导出日志为 txt */
+function exportLogs(): void {
+  const lines = props.localLogs.map(e => `[${e.timestamp ? new Date(e.timestamp).toISOString().slice(11,23) : ''}] [${e.level || 'info'}] ${e.stage || ''}: ${e.message || ''}`)
+  const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `drama-studio-logs-${new Date().toISOString().slice(0,10)}.txt`
+  a.click()
+  URL.revokeObjectURL(url)
 }
 
 // ===== 新日志自动滚底（悬停时完全暂停，移开后恢复） =====
