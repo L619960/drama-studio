@@ -4,6 +4,36 @@
       <el-form-item label="场景">
         <el-input v-model="form.scene" placeholder="如：雨夜天台" />
       </el-form-item>
+      <el-form-item label="镜头语言">
+        <div class="meta-row">
+          <el-select v-model="form.shotSize" clearable placeholder="景别（未设定）" style="width: 130px">
+            <el-option v-for="o in SHOT_SIZE_OPTIONS" :key="o.value" :label="o.label" :value="o.value" />
+          </el-select>
+          <el-select
+            v-model="form.camera"
+            clearable
+            filterable
+            allow-create
+            default-first-option
+            placeholder="机位/运镜（未设定）"
+            style="flex: 1"
+          >
+            <el-option v-for="o in CAMERA_OPTIONS" :key="o.value" :label="o.label" :value="o.value" />
+          </el-select>
+          <el-select
+            v-model="form.emotion"
+            clearable
+            filterable
+            allow-create
+            default-first-option
+            placeholder="情绪（未设定）"
+            style="width: 150px"
+          >
+            <el-option v-for="o in EMOTION_OPTIONS" :key="o.value" :label="o.label" :value="o.value" />
+          </el-select>
+        </div>
+        <div class="form-tip">景别/机位/情绪会注入首帧与视频提示词；未设定时按默认中景、平视、自然表演生成</div>
+      </el-form-item>
       <el-form-item label="动作提示词" required>
         <div class="prompt-row">
           <el-input
@@ -202,10 +232,11 @@ export type ShotDraft = Omit<Shot, 'id' | 'index' | 'status'>
 import { ref, watch, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { MagicStick, Upload, VideoPlay } from '@element-plus/icons-vue'
-import type { Character, WorkflowMeta, SceneBoard } from '../../../../shared/ipcTypes'
+import type { Character, WorkflowMeta, SceneBoard, ShotSize } from '../../../../shared/ipcTypes'
 import { characterPrimaryRef, normalizeSceneKey } from '../../../../shared/ipcTypes'
 import { scenePlatePrompt, shotFramePrompt, sceneNegativeFor } from '../../../../shared/imagePrompts'
 import { useFileUrl } from '../../composables/useFileUrl'
+import { SHOT_SIZE_OPTIONS, CAMERA_OPTIONS, EMOTION_OPTIONS } from '../../utils/shotMeta'
 
 const props = defineProps<{
   projectId: string
@@ -253,6 +284,9 @@ watch(visible, (v) => {
 
 const form = ref({
   scene: '',
+  shotSize: '' as '' | ShotSize,
+  camera: '',
+  emotion: '',
   action: '',
   dialogue: '',
   type: 'i2v' as 'i2v' | 't2v',
@@ -288,6 +322,9 @@ function open(shot: Shot | null): void {
   form.value = shot
     ? {
         scene: shot.scene,
+        shotSize: shot.shotSize || '',
+        camera: shot.camera || '',
+        emotion: shot.emotion || '',
         action: shot.action,
         dialogue: shot.dialogue,
         type: shot.type,
@@ -310,7 +347,8 @@ function open(shot: Shot | null): void {
         negativeEn: shot.negativeEn || ''
       }
     : {
-        scene: '', action: '', dialogue: '', type: 'i2v', characterIds: [], props: [],
+        scene: '', shotSize: '', camera: '', emotion: '',
+        action: '', dialogue: '', type: 'i2v', characterIds: [], props: [],
         frames: props.defaultFrames, seed: Math.floor(Math.random() * 1000000),
         workflow: '', voice: '', sceneBoardId: matchSceneBoardId(''), sceneImagePath: '',
         firstFramePath: '', lastFramePath: '', frameSeconds: 4,
@@ -477,6 +515,9 @@ function save() {
   savedThisOpen = true
   emit('save', {
     scene: form.value.scene,
+    shotSize: form.value.shotSize || undefined,
+    camera: form.value.camera.trim() || undefined,
+    emotion: form.value.emotion.trim() || undefined,
     action: form.value.action,
     dialogue: form.value.dialogue,
     type: form.value.type,
@@ -514,6 +555,7 @@ defineExpose({ open, isVisible: visible })
 
 <style scoped>
 .prompt-row { display: flex; width: 100%; }
+.meta-row { display: flex; gap: 8px; width: 100%; flex-wrap: wrap; }
 .scene-image { display: flex; align-items: center; gap: 12px; }
 .scene-thumb {
   width: 160px; height: 90px; object-fit: cover; border-radius: 6px;

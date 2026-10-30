@@ -22,20 +22,20 @@
                 <span v-if="!shot.characterIds.length" style="color:#c0504d">未绑定角色</span>
               </span>
             </div>
-            <div class="review-meta-row"><span class="meta-label">景别</span><span class="meta-value">{{ shot.shotSize || '未设（默认中景）' }}</span></div>
-            <div class="review-meta-row"><span class="meta-label">机位/运镜</span><span class="meta-value">{{ shot.camera || '未设' }}</span></div>
-            <div class="review-meta-row"><span class="meta-label">情绪/表情</span><span class="meta-value">{{ shot.emotion || '未设' }}</span></div>
+            <div class="review-meta-row"><span class="meta-label">景别</span><span class="meta-value">{{ displayShotSize(shot.shotSize) }}</span></div>
+            <div class="review-meta-row"><span class="meta-label">机位/运镜</span><span class="meta-value">{{ shot.camera ? metaLabel(CAMERA_OPTIONS, shot.camera) : '未设定' }}</span></div>
+            <div class="review-meta-row"><span class="meta-label">情绪/表情</span><span class="meta-value">{{ shot.emotion ? metaLabel(EMOTION_OPTIONS, shot.emotion) : '未设定' }}</span></div>
             <div class="review-meta-row"><span class="meta-label">关键道具</span><span class="meta-value">{{ shot.props?.length ? shot.props.join('、') : '未列' }}</span></div>
           </div>
           <div class="review-checklist">
             <div class="checklist-title">踩坑核对清单（对照生成的分镜图逐项看）</div>
-            <div class="check-item" :class="{ ok: !!shot.camera, bad: !shot.camera }">
-              <span class="check-dot">{{ shot.camera ? '✓' : '⚠' }}</span>
-              <span class="check-text">{{ shot.camera ? '机位/视角已设定：' + shot.camera : '视角/机位未设定——看分镜图视角是否有代入感' }}</span>
+            <div class="check-item" :class="shot.camera ? 'ok' : 'unset'">
+              <span class="check-dot">{{ shot.camera ? '✓' : '–' }}</span>
+              <span class="check-text">{{ shot.camera ? '机位/视角已设定：' + metaLabel(CAMERA_OPTIONS, shot.camera) : '机位/视角未设定（默认平视）——可在「编辑本镜」补录' }}</span>
             </div>
-            <div class="check-item" :class="{ ok: !!shot.emotion, bad: !shot.emotion }">
-              <span class="check-dot">{{ shot.emotion ? '✓' : '⚠' }}</span>
-              <span class="check-text">{{ shot.emotion ? '表情/情绪已设定：' + shot.emotion : '表情/情绪未设定——看人物表情状态是否符合剧情' }}</span>
+            <div class="check-item" :class="shot.emotion ? 'ok' : 'unset'">
+              <span class="check-dot">{{ shot.emotion ? '✓' : '–' }}</span>
+              <span class="check-text">{{ shot.emotion ? '表情/情绪已设定：' + metaLabel(EMOTION_OPTIONS, shot.emotion) : '表情/情绪未设定——看人物表情状态是否符合剧情' }}</span>
             </div>
             <div class="check-item" :class="{ ok: shot.characterIds.length > 0, bad: shot.characterIds.length === 0 }">
               <span class="check-dot">{{ shot.characterIds.length ? '✓' : '⚠' }}</span>
@@ -53,9 +53,9 @@
               <span class="check-dot">{{ shot.props?.length ? '✓' : '⚠' }}</span>
               <span class="check-text">{{ shot.props?.length ? '道具已锁定：' + shot.props.join('、') : '未列道具——本镜有道具的请补填，防止道具变样/消失' }}</span>
             </div>
-            <div class="check-item" :class="{ ok: !!shot.shotSize, bad: !shot.shotSize }">
-              <span class="check-dot">{{ shot.shotSize ? '✓' : '⚠' }}</span>
-              <span class="check-text">{{ shot.shotSize ? '景别已设定：' + shot.shotSize + '，核对构图是否符合景别' : '景别未设定——核对构图与取景' }}</span>
+            <div class="check-item" :class="shot.shotSize ? 'ok' : 'unset'">
+              <span class="check-dot">{{ shot.shotSize ? '✓' : '–' }}</span>
+              <span class="check-text">{{ shot.shotSize ? '景别已设定：' + displayShotSize(shot.shotSize) + '，核对构图是否符合景别' : '景别未设定（默认中景）——核对构图与取景' }}</span>
             </div>
             <div class="check-confirm">
               <el-checkbox
@@ -87,6 +87,7 @@
           <span style="font-size:13px;color:var(--text-muted);margin:0 6px;">
             {{ total ? `第 ${index + 1} / ${total} 镜` : '' }}
           </span>
+          <span class="key-hint">→ 下一镜 · Enter 通过并下一镜 · Esc 关闭</span>
           <div style="flex:1" />
           <el-button :loading="regenerating" @click="regenerateFirst">
             <el-icon><MagicStick /></el-icon> 重出首帧（定妆图参考）
@@ -102,13 +103,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, ArrowRight, MagicStick, RefreshLeft } from '@element-plus/icons-vue'
 import { useFileUrl } from '../../composables/useFileUrl'
 import type { Character, Shot } from '../../../../shared/ipcTypes'
 import { characterPrimaryRef } from '../../../../shared/ipcTypes'
 import { shotFramePrompt } from '../../../../shared/imagePrompts'
+import { CAMERA_OPTIONS, EMOTION_OPTIONS, metaLabel, displayShotSize } from '../../utils/shotMeta'
 
 const props = defineProps<{
   shot: Shot | null
@@ -130,6 +132,25 @@ const emit = defineEmits<{
 
 // v-model:visible（:model-value + @update:model-value 语义，拆分后弹窗双向绑定不破）
 const visible = defineModel<boolean>('visible', { default: false })
+
+/** REQ-09：审核快捷键 —— → 下一镜；Enter 标记通过并下一镜；Esc 由 el-dialog 默认关闭 */
+function onKeydown(e: KeyboardEvent): void {
+  if (!visible.value || !props.shot) return
+  if (e.key === 'ArrowRight') {
+    e.preventDefault()
+    if (props.index < props.total - 1) emit('navigate', props.index + 1)
+    return
+  }
+  if (e.key === 'Enter' && !e.isComposing) {
+    e.preventDefault()
+    props.shot.reviewed = true
+    emit('reviewed')
+    if (props.index < props.total - 1) emit('navigate', props.index + 1)
+  }
+}
+
+onMounted(() => window.addEventListener('keydown', onKeydown))
+onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
 function getCharacterName(id: string) {
   return props.characters.find(c => c.id === id)?.name || '未知'
@@ -271,6 +292,9 @@ async function regenerateLast(): Promise<void> {
 .check-item.bad .check-dot { color: #c0504d; }
 .check-item.ok .check-text { color: var(--text-secondary); }
 .check-item.bad .check-text { color: #8a5a3c; }
+.check-item.unset .check-dot { color: var(--text-muted); }
+.check-item.unset .check-text { color: var(--text-secondary); }
+.key-hint { font-size: 12px; color: var(--text-muted); margin-left: 4px; }
 .check-confirm { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border-strong); }
 .check-confirm .form-tip { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
 </style>

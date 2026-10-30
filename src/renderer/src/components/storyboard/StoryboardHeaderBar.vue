@@ -15,7 +15,7 @@
         <el-button type="warning" @click="emit('openReview')" :disabled="isRendering" :plain="!reviewMode">
           <el-icon><View /></el-icon> 分镜审核
         </el-button>
-        <el-button type="success" plain @click="emit('approveAll')" :disabled="isRendering">
+        <el-button v-if="reviewGateEnabled" type="success" plain @click="emit('approveAll')" :disabled="isRendering">
           <el-icon><Check /></el-icon> 全部通过
         </el-button>
         <el-tooltip
@@ -83,6 +83,8 @@ const props = defineProps<{
   hasPendingShots: boolean
   rendering: boolean
   reviewMode: boolean
+  /** REQ-09：设置里分镜首帧门控为 off 时无需审核，「全部通过」不出现 */
+  reviewGateEnabled: boolean
   auditLoading: boolean
   shots: Shot[]
 }>()

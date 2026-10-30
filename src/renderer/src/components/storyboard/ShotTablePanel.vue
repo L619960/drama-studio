@@ -86,8 +86,19 @@
       </el-table-column>
       <el-table-column label="审核提示" width="130" show-overflow-tooltip>
         <template #default="{ row }">
-          <el-tooltip v-if="row.auditHint" :content="row.auditHint" placement="top">
-            <el-tag type="warning" size="small" style="cursor:pointer">⚠ 待整改</el-tag>
+          <el-tooltip
+            v-if="row.auditHint"
+            :content="`点击编辑修正：${row.auditHint}`"
+            placement="top"
+          >
+            <el-tag
+              type="warning"
+              size="small"
+              class="audit-tag"
+              @click.stop="emit('edit', shots.indexOf(row))"
+            >
+              ⚠ 待整改
+            </el-tag>
           </el-tooltip>
           <span v-else class="wf-default">—</span>
         </template>
@@ -266,6 +277,7 @@ function onDrop(e: DragEvent) {
 .prompt-text { font-family: ui-monospace, Consolas, monospace; font-size: 12px; color: var(--text-secondary); }
 .wf-tag { font-family: ui-monospace, Consolas, monospace; font-size: 12px; color: var(--warning); }
 .wf-default { font-size: 12px; color: var(--text-muted); }
+.audit-tag { cursor: pointer; }
 .drag-handle {
   cursor: grab;
   color: var(--text-muted);

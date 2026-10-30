@@ -8,6 +8,7 @@
       :has-pending-shots="hasPendingShots"
       :rendering="rendering"
       :review-mode="reviewMode"
+      :review-gate-enabled="shotReviewGate !== 'off'"
       :audit-loading="auditLoading"
       :shots="shots"
       @add-shot="addShot"
@@ -143,6 +144,8 @@ const currentShotId = ref<string | null>(null)
 const reviewVisible = ref(false)
 const reviewIndex = ref(-1)
 const reviewMode = ref(false)
+/** REQ-09：分镜首帧门控（off 时审核无意义，「全部通过」按钮隐藏） */
+const shotReviewGate = ref<'off' | 'warn' | 'block'>('block')
 const reviewingShot = computed(() =>
   reviewIndex.value >= 0 && reviewIndex.value < shots.value.length
     ? shots.value[reviewIndex.value]
@@ -200,18 +203,22 @@ async function onReviewToggle(): Promise<void> {
   await persistProject()
 }
 
-/** 全部通过：把所有 i2v 镜的 reviewed 设为 true，跳过逐镜审核 */
+/** 全部通过：把所有 i2v 镜的 reviewed 设为 true，跳过逐镜审核（REQ-09：红色确认，防一键误伤） */
 async function approveAll(): Promise<void> {
   if (!project.value) return
-  let count = 0
-  for (const s of project.value.shots) {
-    if (s.type === 'i2v' && !s.reviewed) {
-      s.reviewed = true
-      count++
-    }
+  const unreviewed = project.value.shots.filter(s => s.type === 'i2v' && !s.reviewed)
+  if (unreviewed.length === 0) {
+    ElMessage.info('所有人物镜都已核对，无需再次通过')
+    return
   }
+  const ok = await confirmDanger(
+    `将标记 ${unreviewed.length} 个镜头为「首帧已核对」，此操作会覆盖渲染门禁确认，之后不会逐镜再拦。确定全部通过吗？`,
+    { title: '全部通过确认', confirmText: '全部通过' }
+  )
+  if (!ok) return
+  for (const s of unreviewed) s.reviewed = true
   await persistProject()
-  ElMessage.success(`已通过 ${count} 个分镜审核`)
+  ElMessage.success(`已通过 ${unreviewed.length} 个分镜审核`)
 }
 
 // 对话框组件
@@ -313,6 +320,7 @@ onMounted(async () => {
     ])
     if (s?.render?.defaultFrames) defaultFrames.value = s.render.defaultFrames
     autoSaveEnabled.value = s?.general?.autoSave ?? true
+    shotReviewGate.value = s?.render?.shotReviewGate ?? 'block'
     if (s?.creation?.edit) {
       defaultFrames.value = s.creation.edit.defaultFrames
       defaultShotSize.value = {
