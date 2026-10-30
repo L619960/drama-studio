@@ -33,8 +33,6 @@ import {
   emitStateImpl
 } from '../../src/main/core/directorStateMachine'
 
-type MockAgent = ReturnType<typeof makeAgent>
-
 function makeState(projectId: string): DirectorState {
   const stages = {} as Record<DirectorStage, StageState>
   for (const s of STAGE_ORDER) stages[s] = { status: 'pending', message: '', percent: 0 }
@@ -86,7 +84,8 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
-  await fs.rm(tmpDir, { recursive: true, force: true })
+  // Windows 上状态文件句柄可能尚未释放，rm 偶发 EBUSY → 重试退避，避免 CI flaky
+  await fs.rm(tmpDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })
 })
 
 describe('freshStateImpl / getStateImpl', () => {
