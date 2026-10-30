@@ -261,6 +261,7 @@ export class DirectorAgent extends EventEmitter {
     const state = this.states.get(projectId)
     if (state) {
       state.paused = false
+      state.pendingGates = []
       this.emitState(projectId)
     }
     this.waiters.get(projectId)?.()
@@ -315,6 +316,7 @@ export class DirectorAgent extends EventEmitter {
     state.paused = false
     state.finishedAt = undefined
     state.reviewIssues = undefined
+    state.pendingGates = []
     state.heal = undefined
     state.failedShotIds = []
     state.cancelled = false

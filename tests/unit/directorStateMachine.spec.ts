@@ -28,6 +28,7 @@ import {
   isCancelledImpl,
   currentStageImpl,
   maybeGateImpl,
+  pauseUntilShotsReviewedImpl,
   hydrateImpl,
   recoverAllImpl,
   clearStateImpl,
@@ -394,6 +395,58 @@ describe('listActiveStatesImpl：并行活跃任务', () => {
     agent.states.set('a', a)
     agent.states.set('b', b)
     expect(listActiveStatesImpl(agent)[0].projectId).toBe('b')
+  })
+})
+
+describe('pauseUntilShotsReviewedImpl：结构化门禁负载', () => {
+  function makeProject(ids: string[]) {
+    return {
+      shots: ids.map((id, i) => ({
+        id, index: i + 1, type: 'i2v' as const, reviewed: undefined as boolean | undefined,
+        firstFramePath: ''
+      }))
+    }
+  }
+
+  it('block 模式：pendingGates 写入完整镜号清单，恢复后清空', async () => {
+    const agent = makeAgent(tmpDir)
+    agent.states.set('p1', makeState('p1'))
+    agent.settings.get = vi.fn(async () => ({ render: { shotReviewGate: 'block' } }))
+    agent.store.get = vi.fn(async () => makeProject(['a', 'b', 'c', 'd', 'e', 'f']))
+
+    const promise = pauseUntilShotsReviewedImpl(agent, 'p1')
+    await vi.waitFor(() => {
+      const st = agent.states.get('p1')!
+      expect(st.paused).toBe(true)
+      expect(st.pendingGates).toEqual([{
+        stage: 'render', reason: 'shotReview',
+        unreviewedShotIds: ['a', 'b', 'c', 'd', 'e', 'f']
+      }])
+    })
+    agent.waiters.get('p1')!()
+    await promise
+    expect(agent.states.get('p1')!.pendingGates).toEqual([])
+  })
+
+  it('warn 模式：告警放行，不暂停也不写负载', async () => {
+    const agent = makeAgent(tmpDir)
+    agent.states.set('p1', makeState('p1'))
+    agent.settings.get = vi.fn(async () => ({ render: { shotReviewGate: 'warn' } }))
+    agent.store.get = vi.fn(async () => makeProject(['a']))
+    await expect(pauseUntilShotsReviewedImpl(agent, 'p1')).resolves.toBe(true)
+    expect(agent.states.get('p1')!.paused).toBe(false)
+    expect(agent.states.get('p1')!.pendingGates).toBeUndefined()
+  })
+
+  it('无待审镜：清理残留 pendingGates 并放行', async () => {
+    const agent = makeAgent(tmpDir)
+    const st = makeState('p1')
+    st.pendingGates = [{ stage: 'render', reason: 'shotReview', unreviewedShotIds: ['old'] }]
+    agent.states.set('p1', st)
+    agent.settings.get = vi.fn(async () => ({ render: { shotReviewGate: 'block' } }))
+    agent.store.get = vi.fn(async () => ({ shots: [] }))
+    await expect(pauseUntilShotsReviewedImpl(agent, 'p1')).resolves.toBe(true)
+    expect(agent.states.get('p1')!.pendingGates).toEqual([])
   })
 })
 

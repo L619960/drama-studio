@@ -67,7 +67,7 @@
 | 编号 | 任务 | 状态 | 依赖 | 工作量 |
 | --- | --- | --- | --- | --- |
 | REQ-01 | 渲染队列可观测（`queue:list` 快照 + ETA + `director:listActiveStates` + `useTaskBoard` + 队列页 indeterminate） | ✅ 已交付：主进程队列快照/ETA/活跃任务通道 + `useTaskBoard` 聚合 + QueueView 不确定态与 ETA 展示，补 10 例单测 | — | M |
-| REQ-02 | 门禁待处理结构化（`pendingGates` + 审看定位 CTA） | 待开始 | — | M |
+| REQ-02 | 门禁待处理结构化（`pendingGates` + 审看定位 CTA） | ✅ 已交付：`DirectorState.pendingGates`（完整镜号不截断）+ 暂停卡片带「去审看」CTA + 分镜页消费 `?review=id` 自动打开审核；补 3 例单测 | — | M |
 | REQ-03 | 重启后中断任务「一键继续」入口 | 待开始 | — | M |
 | REQ-04 | 门禁 warn 二次确认与「一口气跑到底」联动 | 待开始 | REQ-02 | M |
 | REQ-05 | 常驻导演运行条 / 全局任务面板 | 待开始 | REQ-01、REQ-02 | L |

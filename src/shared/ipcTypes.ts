@@ -985,6 +985,17 @@ export interface DirectorLogEntry {
   timestamp: number
 }
 
+/** 门禁待处理原因：分镜首帧审核 / 阶段确认点 / 成片复审 */
+export type GateReason = 'shotReview' | 'stageReview' | 'finalReview'
+
+/** 结构化门禁负载：UI 据此显示「停在哪道门、哪几个镜待审、点哪里去审」 */
+export interface PendingGate {
+  stage: DirectorStage
+  reason: GateReason
+  /** 待审镜头 id 清单（完整不截断；stageReview/finalReview 可为空） */
+  unreviewedShotIds: string[]
+}
+
 export interface DirectorState {
   projectId: string
   title: string
@@ -1000,6 +1011,8 @@ export interface DirectorState {
   failedShotIds: string[]
   /** 成片复审问题清单（review 阶段产出） */
   reviewIssues?: string[]
+  /** 门禁待处理结构化清单（paused 时填写，resume/cancel 后清空） */
+  pendingGates?: PendingGate[]
   /** AI 自愈诊断：阶段失败时 LLM 诊断结论与修复建议（UI 在对应阶段卡片展示） */
   heal?: { stage: DirectorStage; diagnosis: string; suggestion: string }
   finalPath?: string

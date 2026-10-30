@@ -48,9 +48,16 @@
       type="warning"
       :closable="false"
       show-icon
-      title="任务已停在阶段确认点"
-      description="进行中的渲染已安全完成，流水线已挂起。检查产物无误后点「继续」进入下一阶段，或点「停止任务」终止。"
-    />
+      :title="pausedTitle"
+      :description="pausedDescription"
+    >
+      <!-- REQ-02：门禁待处理结构化 CTA —— 一眼看到待审镜数，一键定位到分镜审核 -->
+      <div v-if="pendingShotCount > 0" class="interrupted-actions">
+        <el-button type="primary" :icon="EditPen" @click="goReviewPendingShots">
+          去审看（{{ pendingShotCount }} 镜待核对）
+        </el-button>
+      </div>
+    </el-alert>
 
     <!-- P0-1 任务中断提示：应用重启/崩溃导致上次任务中断，给出明确入口而非卡死态 -->
     <el-alert
@@ -162,8 +169,9 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import {
-  VideoPlay, VideoPause, Delete, CircleCloseFilled, RefreshRight
+  VideoPlay, VideoPause, Delete, CircleCloseFilled, RefreshRight, EditPen
 } from '@element-plus/icons-vue'
 import DirectorStartForm from '../project/DirectorStartForm.vue'
 import StageTimeline from './StageTimeline.vue'
@@ -232,6 +240,31 @@ const pendingCount = computed(() => {
   return Math.max(0, total - done - failed)
 })
 const leftoverCount = computed(() => failedCount.value + pendingCount.value)
+
+// ===== REQ-02 门禁待处理：结构化 pendingGates 渲染为可点 CTA =====
+const router = useRouter()
+const pendingGate = computed(() => props.state?.pendingGates?.find(g => g.reason === 'shotReview'))
+const pendingShotCount = computed(() => pendingGate.value?.unreviewedShotIds.length ?? 0)
+const pausedTitle = computed(() =>
+  pendingShotCount.value > 0
+    ? `等待分镜审核：${pendingShotCount.value} 个镜头未核对首帧`
+    : '任务已停在阶段确认点'
+)
+const pausedDescription = computed(() =>
+  pendingShotCount.value > 0
+    ? '进行中的渲染已安全完成。请先逐镜核对分镜图（勾选确认），全部审完后点「继续」进入渲染。'
+    : '进行中的渲染已安全完成，流水线已挂起。检查产物无误后点「继续」进入下一阶段，或点「停止任务」终止。'
+)
+/** 跳到分镜页并定位第一个待审镜（StoryboardView 消费 ?review=shotId 自动打开审核弹窗） */
+function goReviewPendingShots(): void {
+  const pid = props.state?.projectId || props.project?.id
+  const first = pendingGate.value?.unreviewedShotIds[0]
+  if (!pid) return
+  void router.push({
+    path: `/project/${pid}/storyboard`,
+    query: first ? { review: first } : undefined
+  })
+}
 
 // ===== P0-1 任务中断提示 =====
 // interrupted 由主进程 hydrate 修复残留 running 状态时置位；interruptedStage 记录中断所在阶段

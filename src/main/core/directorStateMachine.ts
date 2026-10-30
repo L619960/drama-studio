@@ -138,6 +138,8 @@ export async function maybeGateImpl(
   const state = agent.states.get(projectId)
   if (!state) return
   state.paused = true
+  // 结构化门禁负载：阶段确认点无需镜头清单
+  state.pendingGates = [{ stage: afterStage, reason: 'stageReview', unreviewedShotIds: [] }]
   agent.pauseRequested.delete(projectId)
   logImpl(agent, projectId, afterStage, 'warn',
     `「${STAGE_LABELS[afterStage]}」阶段已完成，任务暂停，确认后继续`)
@@ -167,7 +169,12 @@ export async function pauseUntilShotsReviewedImpl(
   const project = await agent.store.get(projectId)
   const unreviewed = project.shots
     .filter(s => s.type === 'i2v' && !reviewedIsValid(s.type, s.reviewed, s.firstFramePath))
-  if (unreviewed.length === 0) return true
+  // 已无待审镜：清理可能残留的门禁负载，避免暂停告警幽灵存在
+  if (unreviewed.length === 0) {
+    const st = agent.states.get(projectId)
+    if (st) st.pendingGates = []
+    return true
+  }
   if (gate === 'warn') {
     logImpl(agent, projectId, 'render', 'warn', `${unreviewed.length} 镜未核对分镜图（按设置告警放行）`)
     return true
@@ -175,12 +182,21 @@ export async function pauseUntilShotsReviewedImpl(
   const state = agent.states.get(projectId)
   if (!state) return false
   state.paused = true
+  // 完整镜号清单交给 UI（不再只把前 5 个拼进 message 字符串）
+  state.pendingGates = [{
+    stage: 'render',
+    reason: 'shotReview',
+    unreviewedShotIds: unreviewed.map(s => s.id)
+  }]
   const names = unreviewed.slice(0, 5).map(s => `第${s.index}镜`).join('、')
   logImpl(agent, projectId, 'render', 'warn',
     `分镜审核门：${unreviewed.length} 镜未核对分镜图，已暂停等待审核（可在分镜页逐镜核对/重出首帧后继续）`)
   setStageImpl(agent, projectId, 'render', 'paused',
     `等待分镜审核：${names}${unreviewed.length > 5 ? ` 等 ${unreviewed.length} 镜` : ''}未核对分镜图`, 0)
   await new Promise<void>(resolve => agent.waiters.set(projectId, resolve))
+  // 恢复/取消后门禁负载失效：UI 的待审清单/CTA 随之消失
+  const after = agent.states.get(projectId)
+  if (after) after.pendingGates = []
   return !isCancelledImpl(agent, projectId)
 }
 

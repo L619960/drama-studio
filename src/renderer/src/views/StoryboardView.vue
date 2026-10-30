@@ -101,7 +101,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useHotkeys } from '../composables/useHotkeys'
 import { clearFileUrlCache, useFileUrl } from '../composables/useFileUrl'
 import { useRouteProjectId } from '../composables/useRouteProjectId'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import type { Project, Shot, WorkflowMeta, ProgressEvent, PromptAuditReport, PromptAuditTask, PromptBulkFillProgress } from '../../../shared/ipcTypes'
 import { snapshot } from '../utils/snapshot'
@@ -118,6 +118,7 @@ import ShotReviewDialog from '../components/storyboard/ShotReviewDialog.vue'
 const { urlCache: assetUrls, ensureFileUrls } = useFileUrl()
 
 const router = useRouter()
+const route = useRoute()
 const projectId = useRouteProjectId((id) => { void loadProject(id) })
 
 const project = ref<Project | null>(null)
@@ -164,6 +165,23 @@ function openReview(): void {
 function openReviewAt(index: number): void {
   reviewIndex.value = index
   reviewVisible.value = true
+}
+
+/**
+ * REQ-02：控制台门禁卡片「去审看」会带 ?review=<shotId> 跳转过来，
+ * 定位该镜并自动打开审核弹窗；消费后清理 query，避免刷新重复弹出。
+ */
+function consumeReviewQuery(): void {
+  const target = route.query.review
+  if (typeof target !== 'string' || !project.value) return
+  void router.replace({ query: { ...route.query, review: undefined } })
+  const idx = project.value.shots.findIndex(s => s.id === target)
+  if (idx < 0) {
+    ElMessage.warning('该镜头已不存在，请手动选择需要审核的镜头')
+    return
+  }
+  reviewMode.value = true
+  openReviewAt(idx)
 }
 
 function editReviewingShot(): void {
@@ -324,6 +342,7 @@ async function loadProject(id?: string) {
       return
     }
     project.value = p
+    consumeReviewQuery()
   } catch {
     ElMessage.error('项目不存在或已被删除')
     void router.replace('/')
