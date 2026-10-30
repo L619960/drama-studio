@@ -1,5 +1,5 @@
 <template>
-  <el-form label-width="88px">
+  <el-form ref="formRef" :model="draft" :rules="rules" label-width="88px" scroll-to-error>
     <el-form-item label="入口">
       <el-radio-group v-model="draft.mode">
         <el-radio value="idea">有想法</el-radio>
@@ -7,10 +7,10 @@
         <el-radio value="video">有视频</el-radio>
       </el-radio-group>
     </el-form-item>
-    <el-form-item label="片名" required>
+    <el-form-item label="片名" prop="title">
       <el-input v-model="draft.title" maxlength="40" placeholder="如：总裁的隐婚新娘" />
     </el-form-item>
-    <el-form-item label="题材" required>
+    <el-form-item label="题材" prop="genre">
       <div class="genre-row">
         <el-input v-model="draft.genre" clearable placeholder="输入或选择题材" style="flex: 1" />
         <el-select v-model="genreQuick" placeholder="常用题材" style="width: 180px" @change="pickGenre">
@@ -18,13 +18,13 @@
         </el-select>
       </div>
     </el-form-item>
-    <el-form-item v-if="draft.mode === 'idea'" label="想法" required>
+    <el-form-item v-if="draft.mode === 'idea'" label="想法" prop="idea">
       <div class="prompt-row">
         <el-input v-model="draft.idea" type="textarea" :rows="3" placeholder="写一句灵感，AI 扩写成剧本" style="flex: 1" />
         <el-button :loading="writingScript" size="small" @click="generateScript">AI 写剧本</el-button>
       </div>
     </el-form-item>
-    <el-form-item v-if="draft.mode === 'video'" label="视频" required>
+    <el-form-item v-if="draft.mode === 'video'" label="视频" prop="videoPath">
       <div class="prompt-row">
         <el-input :model-value="draft.videoPath" readonly placeholder="选择本地视频" style="flex: 1" />
         <el-button size="small" @click="selectVideo">选择视频</el-button>
@@ -32,8 +32,9 @@
           AI 拆成剧本
         </el-button>
       </div>
+      <p class="video-tip">上传的视频仅用于让 AI 拆解剧本，不会出现在成片里。</p>
     </el-form-item>
-    <el-form-item label="剧本" required>
+    <el-form-item label="剧本" prop="script">
       <el-input v-model="draft.script" type="textarea" :rows="8" placeholder="粘贴完整剧本，或先用上方入口生成" />
     </el-form-item>
     <el-form-item label="BGM">
@@ -66,6 +67,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import type { FormInstance, FormRules } from 'element-plus'
 import { GENRE_TEMPLATES, type DirectorStage, type DirectorStartInput } from '../../../../shared/ipcTypes'
 import { DEFAULT_DIRECTOR_GATES } from '../../../../shared/pipelineGuards'
 import { GATE_OPTIONS } from '../../composables/useDirectorState'
@@ -76,10 +78,35 @@ const emit = defineEmits<{
   cancel: []
 }>()
 
+const formRef = ref<FormInstance>()
 const draft = ref(emptyDraft())
 const genreQuick = ref('')
 const writingScript = ref(false)
 const noGates = ref(false)
+
+/**
+ * RC-11：字段缺失用 el-form rules 定位到具体输入框（红字 + 自动聚焦），
+ * 不再只弹一条 toast 让用户自己找。入口/剧本是提交硬条件，想法/视频按入口模式动态必填。
+ */
+const rules: FormRules = {
+  title: [{ required: true, whitespace: true, message: '请填写片名', trigger: 'blur' }],
+  genre: [{ required: true, whitespace: true, message: '请填写题材', trigger: 'blur' }],
+  idea: [{
+    validator: (_rule, value, callback) => {
+      if (draft.value.mode === 'idea' && !String(value ?? '').trim()) callback(new Error('请写一句灵感'))
+      else callback()
+    },
+    trigger: 'blur'
+  }],
+  videoPath: [{
+    validator: (_rule, value, callback) => {
+      if (draft.value.mode === 'video' && !String(value ?? '').trim()) callback(new Error('请选择视频（或用它拆解剧本）'))
+      else callback()
+    },
+    trigger: 'change'
+  }],
+  script: [{ required: true, whitespace: true, message: '请粘贴或生成剧本', trigger: 'blur' }]
+}
 
 function emptyDraft(): {
   mode: 'idea' | 'script' | 'video'
@@ -172,10 +199,15 @@ async function selectBgm(): Promise<void> {
   }
 }
 
-function submit(): void {
-  if (!draft.value.title.trim()) { ElMessage.warning('请填写片名'); return }
-  if (!draft.value.genre.trim()) { ElMessage.warning('请填写题材'); return }
-  if (!draft.value.script.trim()) { ElMessage.warning('请粘贴或生成剧本'); return }
+async function submit(): Promise<void> {
+  const form = formRef.value
+  if (!form) return
+  try {
+    await form.validate()
+  } catch (err) {
+    focusFirstInvalid(err)
+    return
+  }
   emit('submit', {
     title: draft.value.title.trim(),
     genre: draft.value.genre.trim(),
@@ -183,6 +215,20 @@ function submit(): void {
     gateStages: noGates.value ? [] : [...draft.value.gateStages],
     bgmAbsolutePath: draft.value.bgmPath || undefined
   })
+}
+
+/** 校验失败：滚动并聚焦到第一个出错的输入框（红字提示 + 光标定位） */
+function focusFirstInvalid(err: unknown): void {
+  if (!err || typeof err !== 'object') return
+  const first = Object.keys(err)[0]
+  if (!first) return
+  const form = formRef.value as unknown as {
+    scrollToField?: (prop: string) => void
+    fields?: Array<{ prop?: string; $el?: HTMLElement }>
+  } | undefined
+  form?.scrollToField?.(first)
+  const item = form?.fields?.find(f => f.prop === first)
+  item?.$el?.querySelector<HTMLElement>('input, textarea')?.focus()
 }
 </script>
 
@@ -206,6 +252,12 @@ function submit(): void {
   color: var(--text-muted);
   line-height: 1.7;
   margin: 0 0 12px;
+}
+.video-tip {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-muted);
 }
 .form-actions {
   display: flex;

@@ -47,6 +47,17 @@
         <!-- 创作四模块（分镜生成/人物形象/场景图/视频剪辑） -->
         <CreationGroup ref="creationGroupRef" :settings="settings" :active-section="activeSection" />
 
+        <!-- 环境检查：重新运行首跑三步向导（跳过引导后仍可从这里回来） -->
+        <div v-show="activeSection === 'check'" class="section">
+          <h2>环境检查</h2>
+          <el-form label-width="140px">
+            <el-form-item label="首跑引导">
+              <el-button @click="openOnboarding">重新运行环境检查</el-button>
+              <span class="form-tip" style="margin-left: 8px">检查 LLM / ComfyUI / 工作流库，并重新走一遍三步上手引导</span>
+            </el-form-item>
+          </el-form>
+        </div>
+
         <!-- 渲染 -->
         <div v-show="activeSection === 'render'" class="section">
           <h2>渲染</h2>
@@ -226,11 +237,12 @@ import { ref, reactive, onMounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
   Setting, VideoCamera, Service, Microphone, Brush, Check, Folder, Key, MagicStick,
-  Film, User, PictureFilled, Scissor
+  Film, User, PictureFilled, Scissor, Odometer
 } from '@element-plus/icons-vue'
 import type { AppSettings } from '../../../shared/ipcTypes'
 import { DEFAULT_CREATION } from '../../../shared/creationSettings'
 import { throttleTap } from '../utils/throttle'
+import { ONBOARDING_OPEN_EVENT } from '../utils/onboarding'
 import CreationGroup from '../components/settings/CreationGroup.vue'
 import WorkflowSection from '../components/settings/WorkflowSection.vue'
 import ComfyuiSection from '../components/settings/ComfyuiSection.vue'
@@ -253,6 +265,7 @@ const navItems = [
   { key: 'render', label: '渲染', icon: VideoCamera },
   { key: 'workflow', label: '工作流', icon: Folder },
   { key: 'comfyui', label: 'ComfyUI', icon: Service },
+  { key: 'check', label: '环境检查', icon: Odometer },
   { key: 'tts', label: 'TTS 语音', icon: Microphone },
   { key: 'llm', label: 'LLM', icon: MagicStick },
   { key: 'appearance', label: '外观', icon: Brush },
@@ -379,6 +392,11 @@ async function loadSettings() {
   } catch {
     // 使用默认
   }
+}
+
+/** 通知 App 重新打开首跑向导（含环境检查 + 一键启动 ComfyUI） */
+function openOnboarding(): void {
+  window.dispatchEvent(new Event(ONBOARDING_OPEN_EVENT))
 }
 
 async function saveSettings() {

@@ -111,6 +111,8 @@
       </el-main>
       <!-- REQ-05：底部常驻导演运行条，任何页面可见/可控 -->
       <DirectorRunBar />
+      <!-- REQ-06：首次启动三步引导（设置页可重新触发） -->
+      <FirstRunWizard v-model="onboardingVisible" />
     </el-container>
   </el-container>
 </template>
@@ -125,6 +127,8 @@ import { useHotkeys } from './composables/useHotkeys'
 import { useActiveProject, forgetLastProjectIfMissing } from './composables/useActiveProject'
 import { useRenderActivity } from './composables/useRenderActivity'
 import DirectorRunBar from './components/layout/DirectorRunBar.vue'
+import FirstRunWizard from './components/onboarding/FirstRunWizard.vue'
+import { ONBOARDING_OPEN_EVENT, isOnboarded } from './utils/onboarding'
 
 const route = useRoute()
 const router = useRouter()
@@ -143,6 +147,7 @@ watch(() => route.path, (p) => { if (p.endsWith('/queue')) acknowledgeRenderActi
 const comfyuiConnected = ref(false)
 const comfyChecking = ref(false)
 const sidebarCollapsed = ref(false)
+const onboardingVisible = ref(false)
 let comfyTimer: ReturnType<typeof setInterval> | null = null
 let dialogGuardTimer: number | null = null
 
@@ -176,6 +181,10 @@ function onComfyRecheck(): void {
   void refreshComfyStatus()
 }
 
+function onOpenOnboarding(): void {
+  onboardingVisible.value = true
+}
+
 onMounted(async () => {
   // 渲染活动徽标常驻订阅（App 级，进程级生命周期；HMR 时 composable 内部先清旧再订阅）
   subscribeRenderActivity()
@@ -187,6 +196,9 @@ onMounted(async () => {
     .catch(() => undefined)
   comfyTimer = setInterval(() => void refreshComfyStatus(), 15_000)
   window.addEventListener('comfyui:recheck', onComfyRecheck)
+  window.addEventListener(ONBOARDING_OPEN_EVENT, onOpenOnboarding)
+  // 首次启动（无 onboarded 标记）弹三步引导；跳过后不再打扰
+  if (!isOnboarded()) onboardingVisible.value = true
   // 弹窗关闭防线：theme.css 已让 is-closing 瞬态收尾（根治过渡中断卡死），
   // 此处兜底处理极端残留——closing 超 1.5s 未清理的节点强制移除，避免遮罩残留阻塞交互
   dialogGuardTimer = window.setInterval(() => {
@@ -212,6 +224,7 @@ onUnmounted(() => {
   if (comfyTimer) clearInterval(comfyTimer)
   if (dialogGuardTimer !== null) clearInterval(dialogGuardTimer)
   window.removeEventListener('comfyui:recheck', onComfyRecheck)
+  window.removeEventListener(ONBOARDING_OPEN_EVENT, onOpenOnboarding)
   unsubscribeRenderActivity()
 })
 

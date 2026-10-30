@@ -1,7 +1,7 @@
 # 任务看板 · 2026-10-30
 
-> 基线：分支 `feat/agent-autonomy`，最新提交 `b7b31e3`
-> 门禁现状：`typecheck` ✅ · `npm test` 1810/1810（111 文件）✅ · `npm run build` ✅ · `eslint` 0 warning（0 error）
+> 基线：分支 `feat/agent-autonomy`，最新提交 `85f05e3`
+> 门禁现状：`typecheck` ✅ · `npm test` 1815/1815（112 文件）✅ · `npm run build` ✅ · `eslint` 0 warning（0 error）
 > 本文以代码实测为准，已修正 `docs/remediation-plan-2026-10-27.md` / `docs/technical-audit-2026-10-30.md` 中过时结论。
 
 ## 优先级定义
@@ -72,6 +72,12 @@
 | REQ-04 | 门禁 warn 二次确认与「一口气跑到底」联动 | ✅ 已交付：warn 放行改「去审看/仍要渲染/取消」三选一 + 同批镜 30 分钟去重；控制台常驻「确认点已关闭」chip，点击恢复默认门禁（剩余阶段生效）；补 5 例单测 | REQ-02 | M |
 | REQ-05 | 常驻导演运行条 / 全局任务面板 | ✅ 已交付：`director:finished` 终态事件 + App 底部 `DirectorRunBar`（任意页面阶段/进度/暂停/继续/停止、多任务 Popover、完成绿/失败红入口、暂停 tooltip 诚实化），补 2 例单测 | REQ-01、REQ-02 | L |
 
+### Phase 2（P1，9 条）
+
+| 编号 | 任务 | 状态 | 依赖 | 工作量 |
+| --- | --- | --- | --- | --- |
+| REQ-06 | 首跑引导向导（三步 + 一键启动 ComfyUI + 表单级校验 + 视频模式 tip） | ✅ 已交付：新增 `components/onboarding/FirstRunWizard.vue`（环境检查复用 `system.selfcheck`/`SelfCheckPanel`、ComfyUI 离线一键拉起 + 2s×30 轮询、示例片名/题材建项目后进控制台、可跳过）；设置页新增「环境检查 → 重新运行」入口；`DirectorStartForm` 改 el-form rules 红字定位 + 自动聚焦，视频模式补「视频不进成片」tip；补 5 例单测 | — | M |
+
 ## 依赖关系
 
 ```
@@ -115,3 +121,4 @@ P1-C1（flake 修复）─→ P1-D1 大批量补测（避免新增用例继承�
 | 2026-10-31 00:56 | REQ-03 `fdba5dc`：新增 `director:listInterrupted`（扫描中断标记/残留 running，项目名回退 project.json）、项目列表琥珀横幅与逐项「从断点继续」，补 2 例单测。四门全绿（1803 用例） |
 | 2026-10-31 01:10 | REQ-04 `f0b2d08`：warn 放行三选一确认与 30 分钟同批去重、`director:enableGates` 中途恢复默认门禁 + 控制台橙色 chip，补 5 例单测。四门全绿（1808 用例） |
 | 2026-10-31 01:28 | REQ-05 `b7b31e3`：`director:finished` 终态事件 + 底部常驻 `DirectorRunBar`（任意页面控制/多任务面板/完成失败入口），补 2 例单测。四门全绿（1810 用例）；Phase 1（P0 5 条）全部交付 |
+| 2026-10-31 02:20 | REQ-06：首跑三步向导 `FirstRunWizard`（环境检查/一键启动 ComfyUI 轮询/示例项目/跳过标记）+ 设置页「重新运行环境检查」入口 + 开拍单 el-form rules 定位聚焦与视频模式 tip，补 5 例单测。四门全绿（1815 用例） |
