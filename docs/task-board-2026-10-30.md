@@ -1,7 +1,7 @@
 # 任务看板 · 2026-10-30
 
-> 基线：分支 `feat/agent-autonomy`，最新提交 `26aee24`
-> 门禁现状：`typecheck` ✅ · `npm test` 1597/1597（92 文件）✅ · `npm run build` ✅ · `eslint` 82 warning（0 error）
+> 基线：分支 `feat/agent-autonomy`，最新提交 `97ce4a0`
+> 门禁现状：`typecheck` ✅ · `npm test` 1597/1597（92 文件）✅ · `npm run build` ✅ · `eslint` 0 warning（0 error）
 > 本文以代码实测为准，已修正 `docs/remediation-plan-2026-10-27.md` / `docs/technical-audit-2026-10-30.md` 中过时结论。
 
 ## 优先级定义
@@ -45,7 +45,7 @@
 
 | 编号 | 任务 | 状态 | 依赖 | 阻塞点 | 工作量 |
 | --- | --- | --- | --- | --- | --- |
-| P2-1 | Q-03 ESLint 82 条 warning（unused / no-explicit-any / empty catch） | 🔜 | — | 需逐条判断，禁止为消警告改行为 | M |
+| P2-1 | Q-03 ESLint 82 条 warning（unused / no-explicit-any / empty catch） | ✅ 已交付 `97ce4a0`（82 → 0） | — | — | M |
 | P2-2 | D-01 README 模块数与目录结构过时 | 🔜 | — | 需与当前 74 个 core 模块对齐 | S |
 | P2-3 | D-05 `scripts/archive` 存量脚本清理 | 🔜 | — | 需确认无 CI 引用 | S |
 | P2-4 | E-01 跨平台打包（electron-builder 仅 Windows 配置） | 🔜 | — | 需 mac/linux 目标声明与验证环境 | M |
@@ -87,3 +87,4 @@ P1-C1（flake 修复）─→ P1-D1 大批量补测（避免新增用例继承�
 | 2026-10-30 22:50 | 批次 2：素材路径白名单 `assetPathGuard` 接入 `taskQueue` / `imageService` / `set_project_bgm`，新增 10 条单测；全量 1558 用例全绿，build 通过 |
 | 2026-10-30 23:05 | P1-B2 二次确认 `1ad1d80`：新增 `renderGate` 预判，接入 Storyboard/Queue/Console；抽 `renderTargetShots` 与主进程共用，1560 用例全绿 |
 | 2026-10-30 23:11 | P1-D1 第一批 `26aee24`：4 个 core 模块补测 37 例，92 文件 / 1597 用例全绿，build 通过 |
+| 2026-10-30 23:34 | P2-1 `97ce4a0`：ESLint 82 → 0 warning（tests 目录关闭 no-explicit-any，源码清理未用绑定/导入/无用赋值，行为不变）；四门全绿 |
