@@ -6,6 +6,7 @@
  */
 
 import { CINEMATIC_QUALITY_BLOCK, REALISM_POSITIVE, SHOT_SIZE_CUE } from './promptConstants'
+import { INDOOR_SPACE_RE, OUTDOOR_SPACE_RE, REPUBLICAN_GENRE_RE } from './promptLexicon'
 import { joinParts } from './promptUtils'
 import { identityLockBlock, stripModernWardrobe, isPeriodGenre } from './castAppearance'
 import { motionCueFromAction } from './motion'
@@ -21,17 +22,21 @@ import { propLockFromAction } from './narrativeBeats'
  */
 export function eraLockBlock(genre: string | undefined): string {
   const g = (genre || '').trim()
-  if (/民国/.test(g)) {
-    return 'period-accurate 1930s republican-era chinese setting: qipao, changshan, vintage decor, ' +
+  if (REPUBLICAN_GENRE_RE.test(g)) {
+    return (
+      'period-accurate 1930s republican-era chinese setting: qipao, changshan, vintage decor, ' +
       'rickshaws and period automobiles of that era'
+    )
   }
   if (isPeriodGenre(g)) {
-    return 'period-accurate ancient chinese costume drama, chinese wuxia martial-arts style, strictly chinese historical aesthetic: ' +
+    return (
+      'period-accurate ancient chinese costume drama, chinese wuxia martial-arts style, strictly chinese historical aesthetic: ' +
       'loose hanfu robe with cloth belt, classical chinese hairstyles with hairpins or topknots, ancient chinese architecture of wood and stone, lantern or torch lighting, ' +
       'weapons are chinese-style only: a single jian sword, dao blade, pudao, or spear — exactly ONE weapon in hand, no second weapon, no Japanese katana, no ninja weapons, ' +
       'facial covering if any is an ancient chinese cloth veil wrapped around the LOWER HALF of the face only, from nose down to chin, forehead, eyebrows, hairline and hair bun fully visible and unobstructed, never covering the upper face, never a full-face wrap, never only eyes visible, ' +
       'no modern clothing, no uniforms, no street lights, no asphalt, no glass buildings, no cars, no electronics, ' +
       'no katana, no gun, no military uniform, no face mask, no tactical gear, no ninja, no samurai, no Japanese armor'
+    )
   }
   if (g) {
     return 'modern contemporary setting, current-era clothing and props consistent with the script'
@@ -46,33 +51,28 @@ export function castLookForGenre(lookEn: string, genre: string | undefined): str
 
 /** 景别 → 提示词 cue（未知值回退中景；供 videoMotionPrompt/shotFramePrompt 共用） */
 export function shotSizeCueFor(shotSize?: string): string {
-  if (shotSize && SHOT_SIZE_CUE[shotSize.toLowerCase()]) return SHOT_SIZE_CUE[shotSize.toLowerCase()]
-  return SHOT_SIZE_CUE.medium
+  if (!shotSize) return SHOT_SIZE_CUE.medium
+  return SHOT_SIZE_CUE[shotSize.toLowerCase()] ?? SHOT_SIZE_CUE.medium
 }
 
 /**
  * 室内/室外锁：中文场景名直接进英文提示词时，模型常把室内写成街景
  * （实测「男厕所」被画成雨夜户外小便所）。这里按关键词显式声明 interior/exterior，
- * 让场景板/首帧的取景落在正确的空间类型上。
+ * 让场景板/首帧的取景落在正确的空间类型上。空间判定词表由 promptLexicon 单一维护。
+ * sceneIsIndoor：全景分支据此换掉 360° 环绕描述（见 panoramaScenePrompt）。
  */
-const INDOOR_SCENE_RE =
-  /室内|室|房|厕|洗手间|卫生间|厅|店|办公室|办公|厨房|走廊|楼道|电梯|包间|包厢|卧室|浴室|大厅|前台|化妆间|车厢|车内|餐厅|酒吧|会所|会议室|\b(indoor|interior|inside|restroom|bathroom|toilet|lobby|office|room|suite|restaurant|bar|elevator|corridor|hallway|store|shop|kitchen)\b/i
-const OUTDOOR_SCENE_RE =
-  /街|路|巷|广场|公园|海边|海滩|山|桥|天台|露台|工地|码头|停车场|院|小区|野外|郊外|田|河|湖|车站|站台|\b(outdoor|outdoors|street|road|alley|plaza|park|beach|rooftop|parking lot|dock|pier|field|forest)\b/i
-
-/** 场景是否为「室内空间」：全景分支需据此换掉 360° 环绕描述（见 panoramaScenePrompt） */
 export function sceneIsIndoor(scene: string): boolean {
   const s = (scene || '').trim()
   if (!s) return false
-  return INDOOR_SCENE_RE.test(s) && !OUTDOOR_SCENE_RE.test(s)
+  return INDOOR_SPACE_RE.test(s) && !OUTDOOR_SPACE_RE.test(s)
 }
 
 export function interiorCueFor(scene: string): string {
   const s = (scene || '').trim()
   if (!s) return ''
   if (/\binterior\b/i.test(s)) return ''
-  const indoor = INDOOR_SCENE_RE.test(s)
-  const outdoor = OUTDOOR_SCENE_RE.test(s)
+  const indoor = INDOOR_SPACE_RE.test(s)
+  const outdoor = OUTDOOR_SPACE_RE.test(s)
   // 室内：必须把「四面墙+顶棚包围、无室外视野」写死，否则模型会把室内写成临街公厕/街景
   if (indoor && !outdoor) {
     return 'fully enclosed interior set, interior walls and ceiling surround the camera on every side'
@@ -84,7 +84,7 @@ export function interiorCueFor(scene: string): string {
 /** 面部定妆：头肩特写，锁 lookEn（古风/年代剧注入时代锁，杜绝现代服化道） */
 export function faceCastingPrompt(
   lookEn: string,
-  opts?: { realismLock?: 'standard' | 'strong'; genre?: string }
+  opts?: { realismLock?: 'standard' | 'strong'; genre?: string },
 ): string {
   const look = castLookForGenre(lookEn.trim(), opts?.genre) || 'chinese person, natural everyday appearance'
   const lock = opts?.realismLock || 'standard'
@@ -99,14 +99,14 @@ export function faceCastingPrompt(
     'neutral expression, natural everyday look, matte skin finish, minimal makeup',
     'isolated single subject centered in frame, grey wall fills 100% of background behind head and shoulders',
     'clean studio casting photography, sharp focus, high detail, neutral color grading, fine natural grain',
-    'production still quality, continuity reference plate'
+    'production still quality, continuity reference plate',
   )
 }
 
 /** 全身标准三视图：同一人三面板（正面/侧面/背面），锁 lookEn（古风/年代剧注入时代锁） */
 export function bodySheetPrompt(
   lookEn: string,
-  opts?: { realismLock?: 'standard' | 'strong'; genre?: string }
+  opts?: { realismLock?: 'standard' | 'strong'; genre?: string },
 ): string {
   const look = castLookForGenre(lookEn.trim(), opts?.genre) || 'chinese person, natural everyday appearance'
   const lock = opts?.realismLock || 'standard'
@@ -122,7 +122,7 @@ export function bodySheetPrompt(
     identityLockBlock(look),
     realismPositiveExtra(lock),
     'clean studio casting photography, soft even lighting, sharp focus, high detail, neutral color grading, fine natural grain',
-    'wardrobe continuity bible plate'
+    'wardrobe continuity bible plate',
   )
 }
 
@@ -132,7 +132,7 @@ export function bodySheetPrompt(
 export function panoramaScenePrompt(
   scene: string,
   mood?: string,
-  opts?: { weatherHint?: 'auto' | 'rainy' | 'clear'; genre?: string }
+  opts?: { weatherHint?: 'auto' | 'rainy' | 'clear'; genre?: string },
 ): string {
   const weather =
     opts?.weatherHint === 'rainy'
@@ -168,7 +168,7 @@ export function panoramaScenePrompt(
       : 'real-world materials, dry clean ground, natural surface wear',
     'period-accurate materials and objects that belong to the story era',
     'natural atmospheric haze, documentary location photography, subtle grain',
-    'photoreal live-action location photography, unretouched real surfaces and materials'
+    'photoreal live-action location photography, unretouched real surfaces and materials',
   )
 }
 
@@ -176,7 +176,7 @@ export function panoramaScenePrompt(
 export function scenePlatePrompt(
   scene: string,
   mood?: string,
-  opts?: { weatherHint?: 'auto' | 'rainy' | 'clear'; emptyStrict?: boolean; genre?: string }
+  opts?: { weatherHint?: 'auto' | 'rainy' | 'clear'; emptyStrict?: boolean; genre?: string },
 ): string {
   const weather =
     opts?.weatherHint === 'rainy'
@@ -187,8 +187,8 @@ export function scenePlatePrompt(
   const empty =
     opts?.emptyStrict === false
       ? 'location plate, minimal distant silhouettes allowed only if tiny and unrecognizable'
-      // 同全景：人物压制走负向，正向只写「无人使用中的场地」
-      : 'uninhabited deserted location, purely architectural and furnishing detail, empty floor'
+      : // 同全景：人物压制走负向，正向只写「无人使用中的场地」
+        'uninhabited deserted location, purely architectural and furnishing detail, empty floor'
   return joinParts(
     'photorealistic vertical empty establishing plate from live-action chinese short drama',
     'production design location plate, locked set for episode continuity',
@@ -204,7 +204,7 @@ export function scenePlatePrompt(
       : 'real-world materials, dry clean ground, natural surface wear',
     'period-accurate materials and objects that belong to the story era',
     'natural atmospheric haze, documentary location photography, subtle grain',
-    'photoreal live-action location photography, unretouched real surfaces and materials'
+    'photoreal live-action location photography, unretouched real surfaces and materials',
   )
 }
 
@@ -214,20 +214,21 @@ export function shotFramePrompt(opts: {
   lookEn: string
   scene: string
   action: string
-  shotSizeCue?: string
-  emotion?: string
-  continuity?: string
-  camera?: string
-  lighting?: string
-  facing?: string
+  shotSizeCue?: string | undefined
+  emotion?: string | undefined
+  continuity?: string | undefined
+  camera?: string | undefined
+  lighting?: string | undefined
+  facing?: string | undefined
   /** 画面人物数量（1=单人，2=双人，N=多人）；缺省 1。防止多人镜被强制画成单人 */
-  characterCount?: number
+  characterCount?: number | undefined
   /** 关键道具（英文名词数组）：画面必须出现且不得替换/变形/消失 */
-  props?: string[]
+  props?: string[] | undefined
 }): string {
-  const phaseLabel = opts.phase === 'start'
-    ? 'START KEYFRAME — beginning of the beat, holdable still for I2V'
-    : 'END KEYFRAME — terminal pose after the beat, continuity handoff'
+  const phaseLabel =
+    opts.phase === 'start'
+      ? 'START KEYFRAME — beginning of the beat, holdable still for I2V'
+      : 'END KEYFRAME — terminal pose after the beat, continuity handoff'
   const people = (() => {
     const n = Math.max(1, Math.floor(opts.characterCount ?? 1))
     if (n <= 1) return 'single person only, the frame contains only this one protagonist, clear unoccupied background'
@@ -240,16 +241,26 @@ export function shotFramePrompt(opts: {
         for (const p of opts.props) {
           const prop = p.toLowerCase()
           // action 说"放下/放在地上" → 道具在地上，主角空手
-          if (/(place|put|lay|drop|set|leave).{0,40}(on the|on the ground|on the floor|down)/.test(a) && a.includes(prop)) {
+          if (
+            /(place|put|lay|drop|set|leave).{0,40}(on the|on the ground|on the floor|down)/.test(a) &&
+            a.includes(prop)
+          ) {
             parts.push(`${p} is placed on the wet ground/floor, NOT in anyone's hand; the subject's hands are empty`)
           }
           // action 说"拿着/握着" → 道具在主角手里
-          else if (/(hold|grip|clutch|carry|hold on|holding|gripping|clutching|carrying|reaching for|grabbing|takes|taking)/.test(a) && a.includes(prop)) {
+          else if (
+            /(hold|grip|clutch|carry|hold on|holding|gripping|clutching|carrying|reaching for|grabbing|takes|taking)/.test(
+              a,
+            ) &&
+            a.includes(prop)
+          ) {
             parts.push(`${p} is held in the subject's hand exactly as the action describes`)
           }
           // action 没提这个道具 → 主角空手，不要自动塞给他
           else {
-            parts.push(`the ${p} rests in the other character's hand or in the background, away from the subject's hands`)
+            parts.push(
+              `the ${p} rests in the other character's hand or in the background, away from the subject's hands`,
+            )
           }
         }
         return `KEY PROPS: ${parts.join('; ')}. Each prop stays with the same person and keeps its shape through the shot.`
@@ -262,19 +273,13 @@ export function shotFramePrompt(opts: {
     `LOCKED LOCATION: ${stripSoundCuesForImage(opts.scene)}`,
     interiorCueFor(opts.scene),
     'remain at the LOCKED LOCATION above, the same physical place through the shot',
-    opts.lighting
-      ? `LIGHTING LOCK: ${opts.lighting}, same key direction and color temperature as the video shot`
-      : '',
-    opts.facing
-      ? `BLOCKING LOCK: ${opts.facing}, same screen position and facing as the video shot`
-      : '',
+    opts.lighting ? `LIGHTING LOCK: ${opts.lighting}, same key direction and color temperature as the video shot` : '',
+    opts.facing ? `BLOCKING LOCK: ${opts.facing}, same screen position and facing as the video shot` : '',
     opts.continuity,
     opts.camera
       ? `camera direction: ${opts.camera}, motivated smooth continuous move`
       : 'camera: static eye-level, stable tripod',
-    opts.emotion
-      ? `performance: ${opts.emotion}, nuanced micro-expression, natural minimal makeup`
-      : '',
+    opts.emotion ? `performance: ${opts.emotion}, nuanced micro-expression, natural minimal makeup` : '',
     opts.phase === 'start'
       ? `action onset: ${opts.action}`
       : `action resolve: ${opts.action}, same person identity and outfit as start frame`,
@@ -285,7 +290,7 @@ export function shotFramePrompt(opts: {
     people,
     'cinematic color grade restrained, short-drama production still',
     CINEMATIC_QUALITY_BLOCK,
-    REALISM_POSITIVE
+    REALISM_POSITIVE,
   )
 }
 
@@ -348,7 +353,7 @@ export function videoMotionPrompt(opts: {
       ? 'dialogue performance: natural Mandarin lip sync, emotional subtext in eyes, restrained jaw and cheek motion'
       : 'mouth stays closed, quiet breathing and fabric movement only',
     'filmic temporal coherence, props that appear must persist',
-    CINEMATIC_QUALITY_BLOCK
+    CINEMATIC_QUALITY_BLOCK,
   )
 }
 
@@ -379,24 +384,26 @@ export function timelineProtocolBlock(opts: {
   const sec = Math.max(0.5, Math.round(opts.sec * 10) / 10 || 0)
   const end = Math.max(0, Math.round((sec - 0.4) * 10) / 10)
   const mid = Math.max(0, Math.round(((sec - 0.4) / 2) * 10) / 10)
-  const opening = (opts.firstFrameEn || '').trim()
-    || 'same subject, layout, lighting and tone as the reference'
-  const middle = (opts.midFrameEn || '').trim()
-    || (opts.motionEn || '').trim()
-    || 'the specified single motion progressing at constant speed'
-  const ending = (opts.lastFrameEn || '').trim()
-    || 'the motion completes and settles'
-  const endingRule = opts.transition === 'dissolve'
-    ? 'Ending rule: framing, color temperature and brightness stay steady through the final 0.5s for a clean dissolve'
-    : 'Ending rule: during the final 0.4s the camera and all motion settle to a clean, stable final frame as a hard-cut point'
-  return [
-    `TIMELINE PROTOCOL — target duration ~${sec.toFixed(1)}s at ${opts.fps} fps, one single continuous shot`,
-    `At 0.0s: opening frame matches the reference exactly, ${opening}`,
-    `At ${mid.toFixed(1)}s: ${middle}, moving at one constant smooth speed`,
-    `At ${end.toFixed(1)}s: ${ending}`,
-    'Frame rules: continuous incremental motion only, one constant smooth speed, every frame advances the action, single unbroken take with a steady camera, background geometry locked, lighting and exposure continuous at constant brightness',
-    endingRule
-  ].join('. ') + '.'
+  const opening = (opts.firstFrameEn || '').trim() || 'same subject, layout, lighting and tone as the reference'
+  const middle =
+    (opts.midFrameEn || '').trim() ||
+    (opts.motionEn || '').trim() ||
+    'the specified single motion progressing at constant speed'
+  const ending = (opts.lastFrameEn || '').trim() || 'the motion completes and settles'
+  const endingRule =
+    opts.transition === 'dissolve'
+      ? 'Ending rule: framing, color temperature and brightness stay steady through the final 0.5s for a clean dissolve'
+      : 'Ending rule: during the final 0.4s the camera and all motion settle to a clean, stable final frame as a hard-cut point'
+  return (
+    [
+      `TIMELINE PROTOCOL — target duration ~${sec.toFixed(1)}s at ${opts.fps} fps, one single continuous shot`,
+      `At 0.0s: opening frame matches the reference exactly, ${opening}`,
+      `At ${mid.toFixed(1)}s: ${middle}, moving at one constant smooth speed`,
+      `At ${end.toFixed(1)}s: ${ending}`,
+      'Frame rules: continuous incremental motion only, one constant smooth speed, every frame advances the action, single unbroken take with a steady camera, background geometry locked, lighting and exposure continuous at constant brightness',
+      endingRule,
+    ].join('. ') + '.'
+  )
 }
 
 /** 强表情判定：剧情明确要求大笑/大哭/尖叫/愤怒等夸张表演时，表情锁定需放行表情
@@ -419,10 +426,10 @@ export function faceExpressionLockFor(emotion?: string, action?: string): string
 /** 古装镜时代锁：正向写朝代，不点名现代物件（点名会把物件召进画面）；负面时代隔离另行注入 */
 export function periodLockFor(genre: string | undefined): string {
   const g = (genre || '').trim()
-  if (/民国/.test(g)) {
+  if (REPUBLICAN_GENRE_RE.test(g)) {
     return 'period-accurate 1930s republican-era setting, only materials and objects of that era'
   }
-  if (/古装|宫廷|仙侠|玄幻|武侠|穿越/.test(g)) {
+  if (isPeriodGenre(g)) {
     return 'ancient chinese period setting, only stone, wood, bamboo, cloth, jade and metal of that era, hanfu or wuxia robes, lantern or torch light'
   }
   return ''

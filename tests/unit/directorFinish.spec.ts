@@ -7,7 +7,7 @@ import {
   evictFinishedStatesImpl,
   auditSingleShotImpl,
   renderShotsWithAuditImpl,
-  approveShotsImpl
+  approveShotsImpl,
 } from '../../src/main/core/directorFinish'
 import { freshStateImpl } from '../../src/main/core/directorStateMachine'
 
@@ -38,16 +38,16 @@ function makeAgent(over: Record<string, any> = {}) {
       getDuration: vi.fn(async () => 3),
       looksLikeBlankVideo: vi.fn(async () => false),
       fileExists: vi.fn(async () => true),
-      getVideoInfo: vi.fn(async () => ({ durationSec: 5, hasAudio: true }))
+      getVideoInfo: vi.fn(async () => ({ durationSec: 5, hasAudio: true })),
     },
     queue: {
       start: vi.fn(async () => undefined),
       waitForFinish: vi.fn(async () => undefined),
       on: vi.fn(),
-      off: vi.fn()
+      off: vi.fn(),
     },
     llm: { auditImage: vi.fn() },
-    ...over
+    ...over,
   }
   return agent
 }
@@ -60,7 +60,7 @@ describe('directorFinish', () => {
   })
 
   afterEach(async () => {
-    await new Promise(r => setTimeout(r, 60))
+    await new Promise((r) => setTimeout(r, 60))
     await fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })
   })
 
@@ -135,7 +135,22 @@ describe('directorFinish', () => {
       finishImpl(agent, 'p1', '渲染失败过多')
 
       expect(state.stages.done.message).toBe('渲染失败过多')
+      expect(state.stages.done.status).toBe('error')
       expect(state.logs.some((l: any) => l.level === 'error' && l.message === '渲染失败过多')).toBe(true)
+    })
+
+    it('无成片路径且无 doneMessage → 不算成功（避免失败链路被渲染成绿色完成态）', () => {
+      const agent = makeAgentWithDir()
+      const state = freshStateImpl(agent, 'p1', 't')
+      agent.states.set('p1', state)
+
+      finishImpl(agent, 'p1')
+
+      expect(state.stages.done.status).toBe('error')
+      expect(state.stages.done.message).toBe('未产出成片')
+      const finished = agent.emit.mock.calls.find((c: any[]) => c[0] === 'finished')?.[1]
+      expect(finished).toMatchObject({ success: false, cancelled: false })
+      expect(state.logs.some((l: any) => l.level === 'error' && l.message.includes('未产出成片'))).toBe(true)
     })
 
     it('REQ-05：正常完成发出 success=true 的终态事件', () => {
@@ -152,7 +167,7 @@ describe('directorFinish', () => {
         projectId: 'p1',
         success: true,
         cancelled: false,
-        finalPath: 'projects/p1/final.mp4'
+        finalPath: 'projects/p1/final.mp4',
       })
     })
 
@@ -164,7 +179,10 @@ describe('directorFinish', () => {
       finishImpl(agent, 'p1', '审批未通过')
       const failed = agent.emit.mock.calls.find((c: any[]) => c[0] === 'finished')?.[1]
       expect(failed).toMatchObject({
-        type: 'director:finished', success: false, cancelled: false, failedShotIds: ['s1']
+        type: 'director:finished',
+        success: false,
+        cancelled: false,
+        failedShotIds: ['s1'],
       })
       expect(failed.message).toBe('审批未通过')
 
@@ -175,7 +193,10 @@ describe('directorFinish', () => {
       finishImpl(agent2, 'p2')
       const cancelled = agent2.emit.mock.calls.find((c: any[]) => c[0] === 'finished')?.[1]
       expect(cancelled).toMatchObject({
-        type: 'director:finished', success: false, cancelled: true, failedShotIds: []
+        type: 'director:finished',
+        success: false,
+        cancelled: true,
+        failedShotIds: [],
       })
     })
   })
@@ -214,18 +235,21 @@ describe('directorFinish', () => {
       const agent = makeAgentWithDir()
       const project = { characters: [], sceneBoards: [] }
 
-      await expect(auditSingleShotImpl(agent, 'p1', baseShot as never, project as never, []))
-        .resolves.toMatchObject({ passed: false, reason: '产物文件缺失', durationSec: -1 })
+      await expect(auditSingleShotImpl(agent, 'p1', baseShot as never, project as never, [])).resolves.toMatchObject({
+        passed: false,
+        reason: '产物文件缺失',
+        durationSec: -1,
+      })
 
-      await expect(auditSingleShotImpl(
-        agent, 'p1', { ...baseShot, segmentPath: 'missing.mp4' } as never, project as never, []
-      )).resolves.toMatchObject({ passed: false, reason: '产物文件不存在' })
+      await expect(
+        auditSingleShotImpl(agent, 'p1', { ...baseShot, segmentPath: 'missing.mp4' } as never, project as never, []),
+      ).resolves.toMatchObject({ passed: false, reason: '产物文件不存在' })
 
       await touch('a.mp4')
       agent.ffmpeg.getDuration.mockRejectedValueOnce(new Error('ffprobe 失败'))
-      await expect(auditSingleShotImpl(
-        agent, 'p1', { ...baseShot, segmentPath: 'a.mp4' } as never, project as never, []
-      )).resolves.toMatchObject({ passed: false, reason: '视频信息读取失败' })
+      await expect(
+        auditSingleShotImpl(agent, 'p1', { ...baseShot, segmentPath: 'a.mp4' } as never, project as never, []),
+      ).resolves.toMatchObject({ passed: false, reason: '视频信息读取失败' })
     })
 
     it('时长过短 / 纯色黑帧判定未通过', async () => {
@@ -241,8 +265,10 @@ describe('directorFinish', () => {
 
       agent.ffmpeg.getDuration.mockResolvedValue(3)
       agent.ffmpeg.looksLikeBlankVideo.mockResolvedValueOnce(true)
-      await expect(auditSingleShotImpl(agent, 'p1', shot, project, []))
-        .resolves.toMatchObject({ passed: false, reason: '画面疑似纯色/黑帧' })
+      await expect(auditSingleShotImpl(agent, 'p1', shot, project, [])).resolves.toMatchObject({
+        passed: false,
+        reason: '画面疑似纯色/黑帧',
+      })
     })
 
     it('rerender 模式下 i2v 一致性偏低判定未通过并给修复提示', async () => {
@@ -262,12 +288,12 @@ describe('directorFinish', () => {
       const shot = { ...baseShot, segmentPath: 'a.mp4' } as never
       const project = { characters: [], sceneBoards: [] } as never
 
-      await expect(auditSingleShotImpl(agent, 'p1', shot, project, [{ id: 'x' } as never], true))
-        .resolves.toMatchObject({ passed: true, vision: false })
+      await expect(
+        auditSingleShotImpl(agent, 'p1', shot, project, [{ id: 'x' } as never], true),
+      ).resolves.toMatchObject({ passed: true, vision: false })
       expect(agent.llm.auditImage).not.toHaveBeenCalled()
 
-      await expect(auditSingleShotImpl(agent, 'p1', shot, project, []))
-        .resolves.toMatchObject({ passed: true })
+      await expect(auditSingleShotImpl(agent, 'p1', shot, project, [])).resolves.toMatchObject({ passed: true })
       expect(agent.llm.auditImage).not.toHaveBeenCalled()
     })
 
@@ -277,10 +303,17 @@ describe('directorFinish', () => {
       const shot = { ...baseShot, segmentPath: 'a.mp4' } as never
       const project = { characters: [], sceneBoards: [] } as never
       agent.states.set('p1', freshStateImpl(agent, 'p1', 't'))
-      agent.llm.auditImage.mockResolvedValue({ visionUnavailable: true, passed: true, blockedProblems: [], fixHint: '' })
+      agent.llm.auditImage.mockResolvedValue({
+        visionUnavailable: true,
+        passed: true,
+        blockedProblems: [],
+        fixHint: '',
+      })
 
-      await expect(auditSingleShotImpl(agent, 'p1', shot, project, [{ id: 'x' } as never]))
-        .resolves.toMatchObject({ passed: true, vision: false })
+      await expect(auditSingleShotImpl(agent, 'p1', shot, project, [{ id: 'x' } as never])).resolves.toMatchObject({
+        passed: true,
+        vision: false,
+      })
       await auditSingleShotImpl(agent, 'p1', shot, project, [{ id: 'x' } as never])
 
       const warnings = agent.states.get('p1')?.logs.filter((l: any) => l.message.includes('不支持视觉输入')) || []
@@ -293,20 +326,30 @@ describe('directorFinish', () => {
       const shot = { ...baseShot, segmentPath: 'a.mp4', index: 2 } as never
       const project = {
         characters: [{ id: 'c1', name: '林夏', appearanceLock: 'long hair' }],
-        sceneBoards: [{ id: 'b1', name: '天台' }]
+        sceneBoards: [{ id: 'b1', name: '天台' }],
       } as never
 
       agent.llm.auditImage.mockResolvedValueOnce({
-        passed: false, blockedProblems: ['出现第二人', '道具缺失'], fixHint: '重渲'
+        passed: false,
+        blockedProblems: ['出现第二人', '道具缺失'],
+        fixHint: '重渲',
       })
-      await expect(auditSingleShotImpl(agent, 'p1', shot, project, [{ id: 'x' } as never]))
-        .resolves.toMatchObject({ passed: false, reason: '出现第二人；道具缺失', fixHint: '重渲', vision: true })
+      await expect(auditSingleShotImpl(agent, 'p1', shot, project, [{ id: 'x' } as never])).resolves.toMatchObject({
+        passed: false,
+        reason: '出现第二人；道具缺失',
+        fixHint: '重渲',
+        vision: true,
+      })
 
       agent.llm.auditImage.mockResolvedValueOnce({
-        passed: true, blockedProblems: [], fixHint: '可优化构图'
+        passed: true,
+        blockedProblems: [],
+        fixHint: '可优化构图',
       })
-      await expect(auditSingleShotImpl(agent, 'p1', shot, project, [{ id: 'x' } as never]))
-        .resolves.toMatchObject({ passed: true, fixHint: '可优化构图' })
+      await expect(auditSingleShotImpl(agent, 'p1', shot, project, [{ id: 'x' } as never])).resolves.toMatchObject({
+        passed: true,
+        fixHint: '可优化构图',
+      })
     })
   })
 
@@ -317,7 +360,7 @@ describe('directorFinish', () => {
       agent.states.set('p1', state)
       agent.cancelled.add('p1')
       agent.store.get.mockResolvedValue({
-        shots: [{ id: 's1', status: 'pending' }]
+        shots: [{ id: 's1', status: 'pending' }],
       })
 
       await renderShotsWithAuditImpl(agent, 'p1', new Map())
@@ -334,14 +377,14 @@ describe('directorFinish', () => {
       const base = {
         shots: [
           { id: 's1', index: 1, scene: '天台', status: 'pending', segmentPath: 's1.mp4', action: '' },
-          { id: 's2', index: 2, scene: '车内', status: 'failed', segmentPath: '', action: '' }
-        ]
+          { id: 's2', index: 2, scene: '车内', status: 'failed', segmentPath: '', action: '' },
+        ],
       }
       agent.store.get
         .mockResolvedValueOnce(base)
         .mockResolvedValueOnce({
           ...base,
-          shots: [{ ...base.shots[0], status: 'done' }, base.shots[1]]
+          shots: [{ ...base.shots[0], status: 'done' }, base.shots[1]],
         })
         .mockResolvedValueOnce(base)
       const durations = new Map<string, number>()
@@ -352,7 +395,7 @@ describe('directorFinish', () => {
       expect(durations.get('s1')).toBe(3)
       expect(state.stages.render.message).toContain('渲染 1/2')
       const doneLog = state.logs.find((l: any) => l.message.includes('第1镜'))
-      expect(doneLog.message).toContain('渲染完成')
+      expect(doneLog!.message).toContain('渲染完成')
       expect(agent.queue.off).toHaveBeenCalled()
     })
   })
@@ -364,9 +407,9 @@ describe('directorFinish', () => {
 
     it('全部通过：返回时长映射与空问题列表', async () => {
       const agent = makeAgentWithDir()
-      agent.store.get.mockResolvedValue(project([
-        { id: 's1', index: 1, scene: '天台', status: 'done', segmentPath: 'a.mp4', frames: 81, type: 't2v' }
-      ]))
+      agent.store.get.mockResolvedValue(
+        project([{ id: 's1', index: 1, scene: '天台', status: 'done', segmentPath: 'a.mp4', frames: 81, type: 't2v' }]),
+      )
 
       const r = await approveShotsImpl(agent, 'p1')
 
@@ -378,7 +421,7 @@ describe('directorFinish', () => {
     it('分段缺失：换 seed 重渲并复检，仍失败则拦下', async () => {
       const agent = makeAgentWithDir()
       const shots = [
-        { id: 's1', index: 1, scene: '天台', status: 'done', segmentPath: 'a.mp4', frames: 81, type: 't2v', seed: 1 }
+        { id: 's1', index: 1, scene: '天台', status: 'done', segmentPath: 'a.mp4', frames: 81, type: 't2v', seed: 1 },
       ]
       agent.store.get.mockResolvedValue(project(shots))
       agent.ffmpeg.fileExists.mockResolvedValue(false)
@@ -388,16 +431,18 @@ describe('directorFinish', () => {
       expect(r.approved).toBe(false)
       expect(r.retryIds).toEqual(['s1'])
       expect(r.problems[0]).toContain('分段文件缺失')
-      expect(typeof shots[0].seed).toBe('number')
+      expect(typeof shots[0]?.seed).toBe('number')
       expect(agent.queue.start).toHaveBeenCalledWith('p1', ['s1'])
       expect(agent.store.save).toHaveBeenCalled()
     })
 
     it('无音轨拦下', async () => {
       const agent = makeAgentWithDir()
-      agent.store.get.mockResolvedValue(project([
-        { id: 's1', index: 1, scene: '天台', status: 'done', segmentPath: 'a.mp4', frames: 81, type: 't2v', seed: 1 }
-      ]))
+      agent.store.get.mockResolvedValue(
+        project([
+          { id: 's1', index: 1, scene: '天台', status: 'done', segmentPath: 'a.mp4', frames: 81, type: 't2v', seed: 1 },
+        ]),
+      )
       agent.ffmpeg.getVideoInfo.mockResolvedValue({ durationSec: 5, hasAudio: false })
 
       const r = await approveShotsImpl(agent, 'p1')
@@ -408,12 +453,21 @@ describe('directorFinish', () => {
 
     it('角色混淆拦下', async () => {
       const agent = makeAgentWithDir()
-      agent.store.get.mockResolvedValue(project([
-        {
-          id: 's2', index: 2, scene: '车内', status: 'done', segmentPath: 'b.mp4',
-          frames: 81, type: 't2v', seed: 2, roleConfusion: true
-        }
-      ]))
+      agent.store.get.mockResolvedValue(
+        project([
+          {
+            id: 's2',
+            index: 2,
+            scene: '车内',
+            status: 'done',
+            segmentPath: 'b.mp4',
+            frames: 81,
+            type: 't2v',
+            seed: 2,
+            roleConfusion: true,
+          },
+        ]),
+      )
 
       const r = await approveShotsImpl(agent, 'p1')
 
@@ -424,12 +478,20 @@ describe('directorFinish', () => {
     it('一致性偏低只告警放行，不触发重渲', async () => {
       const agent = makeAgentWithDir()
       agent.settings.get.mockResolvedValue({ render: { consistencyMode: 'rerender' } })
-      agent.store.get.mockResolvedValue(project([
-        {
-          id: 's1', index: 1, scene: '天台', status: 'done', segmentPath: 'a.mp4',
-          frames: 81, type: 'i2v', consistencyScore: 0.1
-        }
-      ]))
+      agent.store.get.mockResolvedValue(
+        project([
+          {
+            id: 's1',
+            index: 1,
+            scene: '天台',
+            status: 'done',
+            segmentPath: 'a.mp4',
+            frames: 81,
+            type: 'i2v',
+            consistencyScore: 0.1,
+          },
+        ]),
+      )
 
       const r = await approveShotsImpl(agent, 'p1')
 

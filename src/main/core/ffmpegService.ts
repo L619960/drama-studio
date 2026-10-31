@@ -3,6 +3,7 @@ import * as path from 'node:path'
 import * as os from 'node:os'
 import ffmpeg from 'fluent-ffmpeg'
 import type { FfmpegCommand, FfprobeData } from 'fluent-ffmpeg'
+import type { ChildProcess } from 'node:child_process'
 import ffmpegBinary from 'ffmpeg-static'
 import ffprobePackage from 'ffprobe-static'
 import { childProcessManager } from './childProcessManager'
@@ -37,11 +38,11 @@ export class FFmpegService {
     const bundledFfmpeg = this.unpackedPath(ffmpegBinary || (ffmpegBinary as unknown as { default?: string })?.default)
     const bundledFfprobe = this.unpackedPath(ffprobePackage?.path)
 
-    if (bundledFfmpeg && await this.canRun(bundledFfmpeg, ['-version'])) {
+    if (bundledFfmpeg && (await this.canRun(bundledFfmpeg, ['-version']))) {
       this.ffmpegPath = bundledFfmpeg
       ffmpeg.setFfmpegPath(bundledFfmpeg)
     }
-    if (bundledFfprobe && await this.canRun(bundledFfprobe, ['-version'])) {
+    if (bundledFfprobe && (await this.canRun(bundledFfprobe, ['-version']))) {
       this.ffprobePath = bundledFfprobe
       ffmpeg.setFfprobePath(bundledFfprobe)
     }
@@ -49,17 +50,17 @@ export class FFmpegService {
     // 2) ComfyUI 整合包内置的 imageio-ffmpeg
     if (!this.ffmpegPath) {
       const imageio = await this.findImageioFfmpeg()
-      if (imageio && await this.canRun(imageio, ['-version'])) {
+      if (imageio && (await this.canRun(imageio, ['-version']))) {
         this.ffmpegPath = imageio
         ffmpeg.setFfmpegPath(imageio)
       }
     }
 
     // 3) 系统 PATH
-    if (await this.canRun('ffmpeg', ['-version']) && !this.ffmpegPath) {
+    if ((await this.canRun('ffmpeg', ['-version'])) && !this.ffmpegPath) {
       this.ffmpegPath = 'ffmpeg'
     }
-    if (await this.canRun('ffprobe', ['-version']) && !this.ffprobePath) {
+    if ((await this.canRun('ffprobe', ['-version'])) && !this.ffprobePath) {
       this.ffprobePath = 'ffprobe'
     }
 
@@ -71,9 +72,7 @@ export class FFmpegService {
   /** asar 内路径不可执行，映射到 app.asar.unpacked */
   private unpackedPath(p?: string | null): string | null {
     if (!p || typeof p !== 'string') return null
-    return p.includes('app.asar') && !p.includes('app.asar.unpacked')
-      ? p.replace('app.asar', 'app.asar.unpacked')
-      : p
+    return p.includes('app.asar') && !p.includes('app.asar.unpacked') ? p.replace('app.asar', 'app.asar.unpacked') : p
   }
 
   private async canRun(bin: string, args: string[]): Promise<boolean> {
@@ -97,11 +96,9 @@ export class FFmpegService {
 
   /** 搜索常见 ComfyUI 目录下的 imageio_ffmpeg */
   private async findImageioFfmpeg(): Promise<string | null> {
-    const roots = [
-      ...this.extraComfyRoots,
-      process.env.COMFYUI_ROOT,
-      path.join(os.homedir(), 'ComfyUI')
-    ].filter((v): v is string => Boolean(v))
+    const roots = [...this.extraComfyRoots, process.env.COMFYUI_ROOT, path.join(os.homedir(), 'ComfyUI')].filter(
+      (v): v is string => Boolean(v),
+    )
 
     for (const root of roots) {
       const dir = path.join(root, 'python', 'Lib', 'site-packages', 'imageio_ffmpeg', 'binaries')
@@ -125,7 +122,7 @@ export class FFmpegService {
   async cropPanoramaViews(
     panoAbs: string,
     outDir: string,
-    opts: { count: number; outW: number; outH: number; prefix?: string }
+    opts: { count: number; outW: number; outH: number; prefix?: string },
   ): Promise<string[]> {
     const count = Math.max(2, Math.min(6, Math.floor(opts.count) || 4))
     const outW = Math.max(64, Math.floor(opts.outW))
@@ -137,10 +134,12 @@ export class FFmpegService {
     for (let i = 0; i < count; i++) {
       const out = path.join(outDir, `${prefix}_view_${i}.png`)
       await this.runFfmpeg([
-        '-y', '-i', panoAbs,
+        '-y',
+        '-i',
+        panoAbs,
         '-vf',
         `crop=iw/${count}:iw/${count}*${outH}/${outW}:iw*${i}/${count}:0,scale=${outW}:${outH}:flags=lanczos`,
-        out
+        out,
       ])
       outPaths.push(out)
     }
@@ -166,7 +165,7 @@ export class FFmpegService {
       const { stdout } = await childProcessManager.execFile(
         this.ffmpegPath || 'ffmpeg',
         [...probeArgs, '-f', 'null', '-'],
-        { windowsHide: true, label: 'ffmpeg-probe' }
+        { windowsHide: true, label: 'ffmpeg-probe' },
       )
       const m = /Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/.exec(stdout)
       if (m) duration = Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3])
@@ -178,16 +177,23 @@ export class FFmpegService {
     // 均匀采样：用 fps=1/duration*n 保证全片铺开，避免只在片头取样
     const interval = Math.max(0.5, duration / n)
     const args = [
-      '-hide_banner', '-loglevel', 'error',
-      '-i', inputPath,
-      '-vf', `fps=1/${interval.toFixed(3)},scale=-2:480`,
-      '-frames:v', String(n),
-      '-q:v', '4',
-      '-y', out
+      '-hide_banner',
+      '-loglevel',
+      'error',
+      '-i',
+      inputPath,
+      '-vf',
+      `fps=1/${interval.toFixed(3)},scale=-2:480`,
+      '-frames:v',
+      String(n),
+      '-q:v',
+      '4',
+      '-y',
+      out,
     ]
     await this.runFfmpeg(args)
-    const files = (await fs.readdir(outDir)).filter(f => /^frame_\d+\.jpg$/.test(f)).sort()
-    return files.map(f => path.join(outDir, f)).slice(0, n)
+    const files = (await fs.readdir(outDir)).filter((f) => /^frame_\d+\.jpg$/.test(f)).sort()
+    return files.map((f) => path.join(outDir, f)).slice(0, n)
   }
 
   /**
@@ -199,12 +205,19 @@ export class FFmpegService {
     await fs.mkdir(path.dirname(outAbs), { recursive: true })
     const t = Math.max(0.02, Number(timeSec) || 0.06)
     await this.runFfmpeg([
-      '-hide_banner', '-loglevel', 'error',
-      '-ss', t.toFixed(3),
-      '-i', inputPath,
-      '-frames:v', '1',
-      '-q:v', '3',
-      '-y', outAbs
+      '-hide_banner',
+      '-loglevel',
+      'error',
+      '-ss',
+      t.toFixed(3),
+      '-i',
+      inputPath,
+      '-frames:v',
+      '1',
+      '-q:v',
+      '3',
+      '-y',
+      outAbs,
     ])
   }
 
@@ -215,7 +228,7 @@ export class FFmpegService {
   async tileImages(
     images: string[],
     outPath: string,
-    opts: { cols: number; cellW: number; cellH: number }
+    opts: { cols: number; cellW: number; cellH: number },
   ): Promise<void> {
     if (!images.length) throw new Error('tileImages: 无输入图片')
     const cols = Math.max(1, Math.floor(opts.cols))
@@ -229,15 +242,16 @@ export class FFmpegService {
       parts.push(`[${i}:v]scale=${cellW}:${cellH}:flags=lanczos[a${i}]`)
       labels.push(`a${i}`)
     }
-    const layout = images
-      .map((_, i) => `${(i % cols) * cellW}_${Math.floor(i / cols) * cellH}`)
-      .join('|')
+    const layout = images.map((_, i) => `${(i % cols) * cellW}_${Math.floor(i / cols) * cellH}`).join('|')
     const outLabel = `[${labels.join('][')}]xstack=inputs=${images.length}:layout=${layout}[out]`
     await this.runFfmpeg([
-      '-y', ...images.flatMap(p => ['-i', p]),
-      '-filter_complex', [...parts, outLabel].join(';'),
-      '-map', '[out]',
-      outPath
+      '-y',
+      ...images.flatMap((p) => ['-i', p]),
+      '-filter_complex',
+      [...parts, outLabel].join(';'),
+      '-map',
+      '[out]',
+      outPath,
     ])
   }
 
@@ -282,7 +296,7 @@ export class FFmpegService {
     audioPath: string | undefined,
     outputPath: string,
     onProgress?: SegmentProgress,
-    leadSec = 0
+    leadSec = 0,
   ): Promise<string> {
     await fs.mkdir(path.dirname(outputPath), { recursive: true })
     const tmpOut = outputPath + '.part.mp4'
@@ -291,10 +305,7 @@ export class FFmpegService {
       return this.runSegmentWithSilence(videoPath, tmpOut, outputPath, onProgress)
     }
 
-    const [videoDur, audioDur] = await Promise.all([
-      this.getDuration(videoPath),
-      this.getDuration(audioPath)
-    ])
+    const [videoDur, audioDur] = await Promise.all([this.getDuration(videoPath), this.getDuration(audioPath)])
     const TOLERANCE = 0.3
     // 音频被延迟 leadSec 秒后，其实际结束时刻：
     const audioEnd = audioDur + leadSec
@@ -308,12 +319,13 @@ export class FFmpegService {
         .input(audioPath)
         .complexFilter([
           `[0:v]fps=25,tpad=stop_mode=clone:stop_duration=${pad2.toFixed(3)}[v]`,
-          `[1:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo${delayFilter},apad[a]`
+          `[1:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo${delayFilter},apad[a]`,
         ])
         .outputOptions([
           '-map [v]',
           '-map [a]',
-          '-t', target.toFixed(3),
+          '-t',
+          target.toFixed(3),
           '-c:v libx264',
           '-crf 23',
           '-preset medium',
@@ -321,11 +333,11 @@ export class FFmpegService {
           '-c:a aac',
           '-b:a 192k',
           '-ar 48000',
-          '-movflags +faststart'
+          '-movflags +faststart',
         ])
         .on('progress', (p) => onProgress?.(this.clampPercent(p.percent))),
       tmpOut,
-      outputPath
+      outputPath,
     )
   }
 
@@ -334,7 +346,7 @@ export class FFmpegService {
     videoPath: string,
     tmpOut: string,
     outputPath: string,
-    onProgress?: SegmentProgress
+    onProgress?: SegmentProgress,
   ): Promise<string> {
     return this.run(
       ffmpeg()
@@ -353,11 +365,11 @@ export class FFmpegService {
           '-b:a 192k',
           '-ar 48000',
           '-shortest',
-          '-movflags +faststart'
+          '-movflags +faststart',
         ])
         .on('progress', (p) => onProgress?.(this.clampPercent(p.percent))),
       tmpOut,
-      outputPath
+      outputPath,
     )
   }
 
@@ -387,11 +399,11 @@ export class FFmpegService {
           '-b:a 192k',
           '-ar 48000',
           '-ac 2',
-          '-movflags +faststart'
+          '-movflags +faststart',
         ])
         .on('progress', (p) => onProgress?.(this.clampPercent(p.percent))),
       tmpOut,
-      outputPath
+      outputPath,
     )
   }
 
@@ -407,12 +419,9 @@ export class FFmpegService {
       ffmpeg()
         .input(srcPath)
         .audioFilter(`adelay=${Math.round(leadSec * 1000)}:all=1`)
-        .outputOptions([
-          '-c:a', 'libmp3lame',
-          '-q:a', '2'
-        ]),
+        .outputOptions(['-c:a', 'libmp3lame', '-q:a', '2']),
       tmpOut,
-      destPath
+      destPath,
     )
   }
 
@@ -428,16 +437,9 @@ export class FFmpegService {
       ffmpeg()
         .input(videoPath)
         .complexFilter(['[0:v]fps=25,format=yuv420p[v]'])
-        .outputOptions([
-          '-map [v]',
-          '-an',
-          '-c:v libx264',
-          '-crf 20',
-          '-preset medium',
-          '-movflags +faststart'
-        ]),
+        .outputOptions(['-map [v]', '-an', '-c:v libx264', '-crf 20', '-preset medium', '-movflags +faststart']),
       tmpOut,
-      outputPath
+      outputPath,
     )
   }
 
@@ -451,10 +453,14 @@ export class FFmpegService {
     await fs.mkdir(path.dirname(dest), { recursive: true })
     const tmpOut = dest + '.part.png'
     await this.runFfmpeg([
-      '-y', '-i', src,
-      '-vf', `scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height}`,
-      '-frames:v', '1',
-      tmpOut
+      '-y',
+      '-i',
+      src,
+      '-vf',
+      `scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height}`,
+      '-frames:v',
+      '1',
+      tmpOut,
     ])
     await fs.rename(tmpOut, dest)
     return dest
@@ -464,8 +470,11 @@ export class FFmpegService {
     if (!this.ffprobePath) return null
     return new Promise((resolve) => {
       ffmpeg.ffprobe(filePath, (err, metadata: FfprobeData) => {
-        if (err) { resolve(null); return }
-        const v = (metadata.streams || []).find(s => s.codec_type === 'video')
+        if (err) {
+          resolve(null)
+          return
+        }
+        const v = (metadata.streams || []).find((s) => s.codec_type === 'video')
         const width = Number(v?.width) || 0
         const height = Number(v?.height) || 0
         resolve(width > 0 && height > 0 ? { width, height } : null)
@@ -475,7 +484,7 @@ export class FFmpegService {
 
   /** 成片拼接前把各镜收成同一画幅。比例不同时居中裁切，不按第一镜拉伸。 */
   private async unifySegmentSizes(segmentPaths: string[], tmpDir: string): Promise<string[]> {
-    const sizes = await Promise.all(segmentPaths.map(p => this.videoSize(p)))
+    const sizes = await Promise.all(segmentPaths.map((p) => this.videoSize(p)))
     const known = sizes.filter((s): s is { width: number; height: number } => Boolean(s))
     if (known.length < 2) return segmentPaths
     const counts = new Map<string, { width: number; height: number; n: number }>()
@@ -489,18 +498,35 @@ export class FFmpegService {
     if (!target || counts.size < 2) return segmentPaths
     const out: string[] = []
     for (let i = 0; i < segmentPaths.length; i++) {
+      const seg = segmentPaths[i]
       const s = sizes[i]
+      if (!seg) continue
       if (s && s.width === target.width && s.height === target.height) {
-        out.push(segmentPaths[i])
+        out.push(seg)
         continue
       }
       const fitted = path.join(tmpDir, `unify_${i}.mp4`)
       await this.runFfmpeg([
-        '-y', '-i', segmentPaths[i],
-        '-vf', `scale=${target.width}:${target.height}:force_original_aspect_ratio=increase,crop=${target.width}:${target.height},setsar=1`,
-        '-c:v', 'libx264', '-crf', '20', '-preset', 'veryfast', '-pix_fmt', 'yuv420p',
-        '-c:a', 'aac', '-b:a', '192k', '-ar', '48000',
-        fitted
+        '-y',
+        '-i',
+        seg,
+        '-vf',
+        `scale=${target.width}:${target.height}:force_original_aspect_ratio=increase,crop=${target.width}:${target.height},setsar=1`,
+        '-c:v',
+        'libx264',
+        '-crf',
+        '20',
+        '-preset',
+        'veryfast',
+        '-pix_fmt',
+        'yuv420p',
+        '-c:a',
+        'aac',
+        '-b:a',
+        '192k',
+        '-ar',
+        '48000',
+        fitted,
       ])
       out.push(fitted)
     }
@@ -513,9 +539,7 @@ export class FFmpegService {
     const fittedPaths = await this.unifySegmentSizes(segmentPaths, unifyDir)
     const tmpOut = outputPath + '.part.mp4'
     const listPath = path.join(os.tmpdir(), `concat_${Date.now()}.txt`)
-    const listContent = fittedPaths
-      .map((p) => `file '${p.replace(/\\/g, '/').replace(/'/g, "'\\''")}'`)
-      .join('\n')
+    const listContent = fittedPaths.map((p) => `file '${p.replace(/\\/g, '/').replace(/'/g, "'\\''")}'`).join('\n')
     await fs.writeFile(listPath, listContent, 'utf-8')
 
     try {
@@ -525,7 +549,7 @@ export class FFmpegService {
           .inputOptions(['-f concat', '-safe 0'])
           .outputOptions(['-c copy', '-movflags +faststart', '-fflags +genpts']),
         tmpOut,
-        outputPath
+        outputPath,
       )
     } catch {
       // 回退：concat filter 重编码。
@@ -547,10 +571,10 @@ export class FFmpegService {
             '-c:a aac',
             '-b:a 192k',
             '-ar 48000',
-            '-movflags +faststart'
+            '-movflags +faststart',
           ]),
         outputPath + '.reencode.part.mp4',
-        outputPath
+        outputPath,
       )
     } finally {
       await fs.unlink(listPath).catch(() => undefined)
@@ -567,37 +591,59 @@ export class FFmpegService {
    *    执行 0.3s 交叉叠化（xfade），hard/smash/未指定均不叠化。
    */
   async smartConcatSegments(
-    segments: Array<{ path: string; scene?: string; hasDialogue?: boolean; transition?: 'hard' | 'dissolve' | 'smash'; trimStart?: number; trimEnd?: number; skipped?: boolean }>,
-    outputPath: string
+    segments: Array<{
+      path: string
+      scene?: string
+      hasDialogue?: boolean
+      transition?: 'hard' | 'dissolve' | 'smash'
+      trimStart?: number
+      trimEnd?: number
+      skipped?: boolean
+    }>,
+    outputPath: string,
   ): Promise<string> {
     await fs.mkdir(path.dirname(outputPath), { recursive: true })
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'smartconcat_'))
 
     try {
       // 1) 逐镜裁剪（剪辑台标记 skipped 的镜直接跳过，不进成片）
-      const trimmed: Array<{ path: string; scene?: string; transition?: 'hard' | 'dissolve' | 'smash' }> = []
+      const trimmed: Array<{
+        path: string
+        scene?: string | undefined
+        transition?: 'hard' | 'dissolve' | 'smash' | undefined
+      }> = []
       for (const seg of segments) {
         if (seg.skipped) continue
-        const cut = await this.trimShotSmart(seg.path, seg.hasDialogue ?? false, tmpDir, { trimStart: seg.trimStart, trimEnd: seg.trimEnd })
+        const cut = await this.trimShotSmart(seg.path, seg.hasDialogue ?? false, tmpDir, {
+          trimStart: seg.trimStart,
+          trimEnd: seg.trimEnd,
+        })
         if (cut) trimmed.push({ path: cut, scene: seg.scene, transition: seg.transition })
       }
       if (trimmed.length === 0) throw new Error('智能拼接：全部镜头裁剪失败，无可拼接素材')
-      const unified = await this.unifySegmentSizes(trimmed.map(t => t.path), tmpDir)
-      trimmed.forEach((t, i) => { t.path = unified[i] })
+      const unified = await this.unifySegmentSizes(
+        trimmed.map((t) => t.path),
+        tmpDir,
+      )
+      trimmed.forEach((t, i) => {
+        const p = unified[i]
+        if (p) t.path = p
+      })
 
       // 2) 叠化边界：仅分镜显式 transition=dissolve 才交叉叠化；hard/smash/未指定一律硬切。
       //    旧规则「未指定且场景不同就自动叠化」在画面/运镜/光色差异大的镜头间会产生
       //    双场景半透明鬼影（实测雨夜街巷→便利店门口 0.3s 叠化=转场漂移），转场决定权
       //    必须归分镜 transition 字段，合成端不自行猜测。
       const fadeAt = (i: number): boolean => {
-        return trimmed[i].transition === 'dissolve'
+        return trimmed[i]?.transition === 'dissolve'
       }
       const blocks: Array<{ path: string }> = []
       let group: string[] = []
       const flush = async (): Promise<void> => {
-        if (!group.length) return
-        if (group.length === 1) {
-          blocks.push({ path: group[0] })
+        const [first, ...rest] = group
+        if (!first) return
+        if (rest.length === 0) {
+          blocks.push({ path: first })
         } else {
           const blockPath = path.join(tmpDir, `block_${blocks.length}.mp4`)
           await this.concatSegments(group, blockPath)
@@ -605,19 +651,20 @@ export class FFmpegService {
         }
         group = []
       }
-      for (let i = 0; i < trimmed.length; i++) {
+      for (const [i, t] of trimmed.entries()) {
         if (i > 0 && fadeAt(i)) await flush()
-        group.push(trimmed[i].path)
+        group.push(t.path)
       }
       await flush()
 
       // 3) 块间叠化（xfade + acrossfade），单块直接拷贝
       if (blocks.length === 1) {
-        await this.concatSegments([blocks[0].path], outputPath)
+        const [only] = blocks
+        if (only) await this.concatSegments([only.path], outputPath)
         return outputPath
       }
 
-      const inputs = blocks.map(b => b.path)
+      const inputs = blocks.map((b) => b.path)
       const durs: number[] = []
       for (const b of blocks) durs.push(await this.getDuration(b.path))
       const xfadeDur = 0.3
@@ -625,7 +672,7 @@ export class FFmpegService {
       const aParts: string[] = []
       let acc = 0
       for (let i = 0; i < blocks.length - 1; i++) {
-        acc += durs[i]
+        acc += durs[i] ?? 0
         const offset = acc - xfadeDur * (i + 1)
         const vi = i === 0 ? '[0:v][1:v]' : `[v${i}][${i + 1}:v]`
         const ai = i === 0 ? '[0:a][1:a]' : `[a${i}][${i + 1}:a]`
@@ -636,14 +683,30 @@ export class FFmpegService {
       const finalA = `[a${blocks.length - 1}]`
       await this.runFfmpeg([
         '-y',
-        ...inputs.flatMap(p => ['-i', p]),
-        '-filter_complex', [...vParts, ...aParts].join(';'),
-        '-map', finalV,
-        '-map', finalA,
-        '-c:v', 'libx264', '-crf', '20', '-preset', 'veryfast', '-pix_fmt', 'yuv420p',
-        '-c:a', 'aac', '-b:a', '192k', '-ar', '48000',
-        '-movflags', '+faststart',
-        outputPath
+        ...inputs.flatMap((p) => ['-i', p]),
+        '-filter_complex',
+        [...vParts, ...aParts].join(';'),
+        '-map',
+        finalV,
+        '-map',
+        finalA,
+        '-c:v',
+        'libx264',
+        '-crf',
+        '20',
+        '-preset',
+        'veryfast',
+        '-pix_fmt',
+        'yuv420p',
+        '-c:a',
+        'aac',
+        '-b:a',
+        '192k',
+        '-ar',
+        '48000',
+        '-movflags',
+        '+faststart',
+        outputPath,
       ])
       return outputPath
     } finally {
@@ -661,7 +724,7 @@ export class FFmpegService {
     inputPath: string,
     hasDialogue: boolean,
     tmpDir: string,
-    opts: { trimStart?: number; trimEnd?: number } = {}
+    opts: { trimStart?: number | undefined; trimEnd?: number | undefined } = {},
   ): Promise<string | null> {
     try {
       const dur = await this.getDuration(inputPath)
@@ -710,20 +773,30 @@ export class FFmpegService {
   private async detectVoiceRange(inputPath: string): Promise<{ start: number; end: number } | null> {
     const bin = this.ffmpegPath || 'ffmpeg'
     try {
-      const { stdout } = await childProcessManager.execFile(bin, [
-        '-i', inputPath,
-        '-af', 'silencedetect=n=-35dB:d=0.3',
-        '-f', 'null', '-'
-      ], { windowsHide: true, label: 'ffmpeg-silencedetect' })
+      const { stdout } = await childProcessManager.execFile(
+        bin,
+        ['-i', inputPath, '-af', 'silencedetect=n=-35dB:d=0.3', '-f', 'null', '-'],
+        { windowsHide: true, label: 'ffmpeg-silencedetect' },
+      )
       const out = stdout + ''
-      const silenceStarts = [...out.matchAll(/silence_start:\s*([\d.]+)/g)].map(m => parseFloat(m[1]))
-      const silenceEnds = [...out.matchAll(/silence_end:\s*([\d.]+)/g)].map(m => parseFloat(m[1]))
+      const parseNums = (re: RegExp): number[] => {
+        const nums: number[] = []
+        for (const m of out.matchAll(re)) {
+          const v = m[1]
+          if (v === undefined) continue
+          nums.push(parseFloat(v))
+        }
+        return nums
+      }
+      const silenceStarts = parseNums(/silence_start:\s*([\d.]+)/g)
+      const silenceEnds = parseNums(/silence_end:\s*([\d.]+)/g)
       if (!silenceEnds.length && !silenceStarts.length) return null
       const dur = await this.getDuration(inputPath)
       // 语音起点 = 第一段静音结束（片头 lead 结束处）；若无开篇静音则从 0 开始
-      const start = silenceEnds.length && silenceEnds[0] < dur / 2 ? silenceEnds[0] : 0
+      const firstEnd = silenceEnds[0]
+      const start = firstEnd !== undefined && firstEnd < dur / 2 ? firstEnd : 0
       // 语音终点 = 最后一段静音起点（尾部 tail 开始处）；若无结尾静音则到片尾
-      const lastSilenceStart = silenceStarts.length ? silenceStarts[silenceStarts.length - 1] : -1
+      const lastSilenceStart = silenceStarts[silenceStarts.length - 1] ?? -1
       const end = lastSilenceStart > dur / 2 ? lastSilenceStart : dur
       if (end <= start + 0.3) return null
       return { start, end }
@@ -750,10 +823,10 @@ export class FFmpegService {
           '-c:a aac',
           '-b:a 192k',
           '-ar 48000',
-          '-movflags +faststart'
+          '-movflags +faststart',
         ]),
       tmpOut,
-      outputPath
+      outputPath,
     )
   }
 
@@ -766,7 +839,7 @@ export class FFmpegService {
     videoPath: string,
     srtPath: string,
     outputPath: string,
-    style?: { fontSize?: number; marginV?: number }
+    style?: { fontSize?: number; marginV?: number },
   ): Promise<string> {
     await fs.mkdir(path.dirname(outputPath), { recursive: true })
     const tmpOut = outputPath + '.part.mp4'
@@ -789,19 +862,16 @@ export class FFmpegService {
     const baseFont = Math.max(10, Math.min(48, Math.round(style?.fontSize ?? 14)))
     const baseMarginV = Math.max(0, Math.min(120, Math.round(style?.marginV ?? 18)))
     const withBom = await fs.readFile(srtPath, 'utf-8')
-    const assPath = path.join(
-      os.tmpdir(),
-      `ds_sub_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.ass`
-    )
+    const assPath = path.join(os.tmpdir(), `ds_sub_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.ass`)
     await fs.writeFile(
       assPath,
       this.srtToAss(withBom.replace(/^\uFEFF/, ''), {
         width: vw,
         height: vh,
-        fontSize: Math.round(baseFont * vh / 288),
-        marginV: Math.round(baseMarginV * vh / 288)
+        fontSize: Math.round((baseFont * vh) / 288),
+        marginV: Math.round((baseMarginV * vh) / 288),
       }),
-      'utf-8'
+      'utf-8',
     )
     const escaped = assPath.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "\\'")
     try {
@@ -815,10 +885,10 @@ export class FFmpegService {
             '-preset medium',
             '-pix_fmt yuv420p',
             '-c:a copy',
-            '-movflags +faststart'
+            '-movflags +faststart',
           ]),
         tmpOut,
-        outputPath
+        outputPath,
       )
     } finally {
       await fs.unlink(assPath).catch(() => undefined)
@@ -826,10 +896,7 @@ export class FFmpegService {
   }
 
   /** SRT → ASS（PlayRes 对齐视频实际尺寸，左右留安全边距，WrapStyle=0 智能换行） */
-  private srtToAss(
-    srt: string,
-    opts: { width: number; height: number; fontSize: number; marginV: number }
-  ): string {
+  private srtToAss(srt: string, opts: { width: number; height: number; fontSize: number; marginV: number }): string {
     const fmt = (sec: number): string => {
       const cs = Math.max(0, Math.round(sec * 100))
       const h = Math.floor(cs / 360000)
@@ -860,11 +927,16 @@ export class FFmpegService {
       const lines: string[] = []
       let cur: string[] = []
       for (let i = 0; i < chars.length; i++) {
-        cur.push(chars[i])
+        const ch = chars[i]
+        if (ch === undefined) break
+        cur.push(ch)
         if (cur.length >= perLine) {
           // 收尾标点跟随上一行，避免下一行以「、」「。」开头
-          while (i + 1 < chars.length && CJK_BREAKABLE.test(chars[i + 1]) && cur.length < perLine + 1) {
-            cur.push(chars[++i])
+          let next = chars[i + 1]
+          while (next !== undefined && CJK_BREAKABLE.test(next) && cur.length < perLine + 1) {
+            cur.push(next)
+            i++
+            next = chars[i + 1]
           }
           lines.push(cur.join(''))
           cur = []
@@ -875,13 +947,20 @@ export class FFmpegService {
     }
     const events: string[] = []
     for (const block of srt.trim().split(/\r?\n\r?\n/)) {
-      const lines = block.split(/\r?\n/).filter(l => l.trim() !== '')
-      if (lines.length < 2) continue
-      const timing = /(\d+):(\d+):(\d+)[,.](\d+)\s*-->\s*(\d+):(\d+):(\d+)[,.](\d+)/.exec(lines[1])
+      const lines = block.split(/\r?\n/).filter((l) => l.trim() !== '')
+      const timingText = lines[1]
+      if (!timingText) continue
+      const timing = /(\d+):(\d+):(\d+)[,.](\d+)\s*-->\s*(\d+):(\d+):(\d+)[,.](\d+)/.exec(timingText)
       if (!timing) continue
-      const start = Number(timing[1]) * 3600 + Number(timing[2]) * 60 + Number(timing[3]) + fracSec(timing[4])
-      const end = Number(timing[5]) * 3600 + Number(timing[6]) * 60 + Number(timing[7]) + fracSec(timing[8])
-      const raw = lines.slice(2).join('').replace(/<[^>]+>/g, '').replace(/[{}]/g, '')
+      const [, sh, sm, ss, sms, eh, em, es, ems] = timing
+      if (!sh || !sm || !ss || !sms || !eh || !em || !es || !ems) continue
+      const start = Number(sh) * 3600 + Number(sm) * 60 + Number(ss) + fracSec(sms)
+      const end = Number(eh) * 3600 + Number(em) * 60 + Number(es) + fracSec(ems)
+      const raw = lines
+        .slice(2)
+        .join('')
+        .replace(/<[^>]+>/g, '')
+        .replace(/[{}]/g, '')
       const trimmed = raw.trim()
       if (!trimmed) continue
       const { text, font } = layout(trimmed)
@@ -904,7 +983,7 @@ export class FFmpegService {
       '[Events]',
       'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text',
       ...events,
-      ''
+      '',
     ].join('\n')
   }
 
@@ -912,12 +991,7 @@ export class FFmpegService {
    * BGM 混音：BGM 循环铺满视频长度并降低音量，与原音轨 amix 混合。
    * @param bgmVolume 0-100（100 = 与原声同响度）
    */
-  async mixBgm(
-    videoPath: string,
-    bgmPath: string,
-    outputPath: string,
-    bgmVolume: number
-  ): Promise<string> {
+  async mixBgm(videoPath: string, bgmPath: string, outputPath: string, bgmVolume: number): Promise<string> {
     await fs.mkdir(path.dirname(outputPath), { recursive: true })
     const tmpOut = outputPath + '.part.mp4'
     const vol = Math.max(0, Math.min(100, bgmVolume)) / 100
@@ -928,7 +1002,7 @@ export class FFmpegService {
         .inputOptions(['-stream_loop -1'])
         .complexFilter([
           `[1:a]volume=${vol.toFixed(2)}[bgm]`,
-          '[0:a][bgm]amix=inputs=2:duration=first:dropout_transition=2[a]'
+          '[0:a][bgm]amix=inputs=2:duration=first:dropout_transition=2[a]',
         ])
         .outputOptions([
           '-map 0:v',
@@ -937,10 +1011,10 @@ export class FFmpegService {
           '-c:a aac',
           '-b:a 192k',
           '-ar 48000',
-          '-movflags +faststart'
+          '-movflags +faststart',
         ]),
       tmpOut,
-      outputPath
+      outputPath,
     )
   }
 
@@ -964,12 +1038,7 @@ export class FFmpegService {
    * 等比缩放 + 居中黑边 letterbox（不拉伸变形）——人脸检测对变形敏感，
    * 且参考图(2:3)与视频帧(9:16)宽高比不同，letterbox 保证两侧人脸几何一致。
    */
-  async dumpRgb24(
-    inputPath: string,
-    outputPath: string,
-    size = 224,
-    timeSec?: number
-  ): Promise<void> {
+  async dumpRgb24(inputPath: string, outputPath: string, size = 224, timeSec?: number): Promise<void> {
     await fs.mkdir(path.dirname(outputPath), { recursive: true })
     const vf = `scale=${size}:${size}:force_original_aspect_ratio=decrease,pad=${size}:${size}:(ow-iw)/2:(oh-ih)/2:color=black`
     await new Promise<void>((resolve, reject) => {
@@ -1018,7 +1087,7 @@ export class FFmpegService {
           durationSec: Number(metadata.format?.duration) || 0,
           width: Number(v?.width) || 0,
           height: Number(v?.height) || 0,
-          hasAudio: Boolean(a)
+          hasAudio: Boolean(a),
         })
       })
     })
@@ -1061,6 +1130,19 @@ export class FFmpegService {
     return new Promise((resolve, reject) => {
       const stderrChunks: string[] = []
       command
+        // CORE-06：fluent-ffmpeg 自行 spawn 进程，进入 start 事件后把它登记到
+        // childProcessManager——否则拼成片/烧字幕这类分钟级任务卡死时无法超时 kill，
+        // 应用退出后还会留下孤儿 ffmpeg。30 分钟上限覆盖整片拼接/字幕烧录。
+        .on('start', () => {
+          const proc = (command as unknown as { ffmpegProc?: ChildProcess }).ffmpegProc
+          if (proc) {
+            childProcessManager.register(proc, {
+              bin: this.ffmpegPath || 'ffmpeg',
+              timeout: 30 * 60 * 1000,
+              label: 'ffmpeg-fluent',
+            })
+          }
+        })
         .on('stderr', (line: string) => {
           stderrChunks.push(line)
           if (stderrChunks.length > 200) stderrChunks.shift()

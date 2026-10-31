@@ -8,6 +8,7 @@ import type { WorkflowLoader } from './workflowLoader'
 import type { FFmpegService } from './ffmpegService'
 import type { ComfyUIClient } from './comfyuiClient'
 import type { SettingsStore } from './settingsStore'
+import { llmApiKey } from './llmRequest'
 import {
   PROMPT_QA_MARKERS,
   REALISM_POSITIVE,
@@ -16,7 +17,7 @@ import {
   bodySheetPrompt,
   scenePlatePrompt,
   shotFramePrompt,
-  videoMotionPrompt
+  videoMotionPrompt,
 } from '../../shared/imagePrompts'
 import { propLockFromAction, validateNarrativeContinuity } from '../../shared/narrativeBeats'
 
@@ -33,7 +34,7 @@ export class SelfCheckService {
     private workflows: WorkflowLoader,
     private ffmpeg: FFmpegService,
     private comfy: ComfyUIClient,
-    private settings: SettingsStore
+    private settings: SettingsStore,
   ) {}
 
   async run(): Promise<SelfCheckItem[]> {
@@ -67,7 +68,9 @@ export class SelfCheckService {
       name: '数据目录',
       ok: true,
       fixed: created.length > 0,
-      detail: created.length ? `已自动创建缺失目录：${created.join('、')}` : '目录结构完整（projects/conversations/uploads/tmp）'
+      detail: created.length
+        ? `已自动创建缺失目录：${created.join('、')}`
+        : '目录结构完整（projects/conversations/uploads/tmp）',
     }
   }
 
@@ -100,7 +103,7 @@ export class SelfCheckService {
       fixed: broken > 0,
       detail: broken
         ? `${broken} 个损坏会话已备份隔离（${names.join('、')}），不影响其他对话`
-        : `${entries.filter(e => e.isFile() && e.name.endsWith('.json')).length} 个会话档案均正常`
+        : `${entries.filter((e) => e.isFile() && e.name.endsWith('.json')).length} 个会话档案均正常`,
     }
   }
 
@@ -130,7 +133,7 @@ export class SelfCheckService {
       try {
         const p = JSON.parse(raw) as { id?: string; title?: string; shots?: Array<{ status?: string }> }
         if (!p.id || !Array.isArray(p.shots)) throw new Error('bad shape')
-        orphanRendering += p.shots.filter(s => s.status === 'rendering').length
+        orphanRendering += p.shots.filter((s) => s.status === 'rendering').length
       } catch {
         broken++
         names.push(`${e.name}/project.json`)
@@ -138,26 +141,30 @@ export class SelfCheckService {
     }
     if (broken > 0) {
       return {
-        name: '项目档案', ok: false,
-        detail: `${broken} 个项目档案损坏无法解析：${names.join('、')}。文件已保留，可在设置的数据目录中手工排查`
+        name: '项目档案',
+        ok: false,
+        detail: `${broken} 个项目档案损坏无法解析：${names.join('、')}。文件已保留，可在设置的数据目录中手工排查`,
       }
     }
     return {
-      name: '项目档案', ok: true,
-      detail: `${total} 个项目档案正常` +
-        (orphanRendering > 0 ? `；${orphanRendering} 个镜头处于渲染中断状态（应用启动时已自动恢复为待渲染）` : '')
+      name: '项目档案',
+      ok: true,
+      detail:
+        `${total} 个项目档案正常` +
+        (orphanRendering > 0 ? `；${orphanRendering} 个镜头处于渲染中断状态（应用启动时已自动恢复为待渲染）` : ''),
     }
   }
 
   /** 技能库：内置技能随版本自动补齐 */
   private async checkSkills(): Promise<SelfCheckItem> {
     const all = await this.skills.list()
-    const builtin = all.filter(s => s.builtin).length
+    const builtin = all.filter((s) => s.builtin).length
     const custom = all.length - builtin
-    const enabledTools = all.filter(s => s.enabled && s.kind === 'tool').length
+    const enabledTools = all.filter((s) => s.enabled && s.kind === 'tool').length
     return {
-      name: '技能库', ok: true,
-      detail: `内置 ${builtin} 项 / 自定义 ${custom} 项；对话可用工具技能 ${enabledTools} 项`
+      name: '技能库',
+      ok: true,
+      detail: `内置 ${builtin} 项 / 自定义 ${custom} 项；对话可用工具技能 ${enabledTools} 项`,
     }
   }
 
@@ -168,9 +175,17 @@ export class SelfCheckService {
       if (!metas.length) {
         return { name: '工作流模板', ok: false, detail: '未找到任何工作流模板，渲染不可用（resources/workflows 目录）' }
       }
-      return { name: '工作流模板', ok: true, detail: `${metas.length} 个模板解析正常：${metas.map(m => m.name).join('、')}` }
+      return {
+        name: '工作流模板',
+        ok: true,
+        detail: `${metas.length} 个模板解析正常：${metas.map((m) => m.name).join('、')}`,
+      }
     } catch (e) {
-      return { name: '工作流模板', ok: false, detail: `模板目录读取失败：${e instanceof Error ? e.message : String(e)}` }
+      return {
+        name: '工作流模板',
+        ok: false,
+        detail: `模板目录读取失败：${e instanceof Error ? e.message : String(e)}`,
+      }
     }
   }
 
@@ -183,7 +198,7 @@ export class SelfCheckService {
         identityLockBlock(look),
         faceCastingPrompt(look),
         scenePlatePrompt('ancient courtyard'),
-        videoMotionPrompt({ action: 'stands still', lookEn: look, scene: 'wooden pavilion' })
+        videoMotionPrompt({ action: 'stands still', lookEn: look, scene: 'wooden pavilion' }),
       ].join('\n')
       const missing = PROMPT_QA_MARKERS.filter((m) => !blob.includes(m))
       const samples = [
@@ -194,17 +209,17 @@ export class SelfCheckService {
           phase: 'start',
           lookEn: look,
           scene: 'wooden pavilion',
-          action: 'holds sword'
+          action: 'holds sword',
         }),
-        videoMotionPrompt({ action: 'turns slightly', lookEn: look })
+        videoMotionPrompt({ action: 'turns slightly', lookEn: look }),
       ]
-      const tooShort = samples.filter(s => s.length < 80).length
+      const tooShort = samples.filter((s) => s.length < 80).length
       const umbrellaLock = propLockFromAction('hands exchanging black umbrella handle')
       const umbrellaFrame = shotFramePrompt({
         phase: 'start',
         lookEn: look,
         scene: 'rainy street',
-        action: 'hands exchanging black umbrella handle, still holding umbrella'
+        action: 'hands exchanging black umbrella handle, still holding umbrella',
       })
       const propOk =
         /KEY PROP ON SCREEN/.test(umbrellaLock) &&
@@ -212,28 +227,43 @@ export class SelfCheckService {
         /umbrella/.test(umbrellaFrame)
       const badShots = [
         { index: 1, action: 'rainy ancient courtyard, warm torch reflections', dialogue: '', type: 't2v' as const },
-        { index: 2, action: 'figure with lantern approaches across wet stone pavement', dialogue: '', type: 't2v' as const },
+        {
+          index: 2,
+          action: 'figure with lantern approaches across wet stone pavement',
+          dialogue: '',
+          type: 't2v' as const,
+        },
         {
           index: 3,
           action: 'dialogue performance, speaking toward off-screen',
           dialogue: '你不是说加班到很晚？',
           type: 'i2v' as const,
-          shotSize: 'medium'
+          shotSize: 'medium',
         },
-        { index: 4, action: 'opens the car door beside black sedan', dialogue: '', type: 'i2v' as const, shotSize: 'medium' },
-        { index: 5, action: 'sits in passenger seat looking ahead', dialogue: '', type: 'i2v' as const, shotSize: 'medium' },
-        { index: 6, action: 'empty rainy street tungsten haze', dialogue: '', type: 't2v' as const }
+        {
+          index: 4,
+          action: 'opens the car door beside black sedan',
+          dialogue: '',
+          type: 'i2v' as const,
+          shotSize: 'medium',
+        },
+        {
+          index: 5,
+          action: 'sits in passenger seat looking ahead',
+          dialogue: '',
+          type: 'i2v' as const,
+          shotSize: 'medium',
+        },
+        { index: 6, action: 'empty rainy street tungsten haze', dialogue: '', type: 't2v' as const },
       ]
       const narr = validateNarrativeContinuity(
         '伞递给了谁',
         '接过沈川递来的伞后驱车离开',
         '沈川递伞，林夏接伞，两人上车驶离',
-        badShots
+        badShots,
       )
       const narrOk =
-        narr.some(w => /伞/.test(w)) &&
-        narr.some(w => /反应/.test(w)) &&
-        narr.some(w => /驶离|车辆/.test(w))
+        narr.some((w) => /伞/.test(w)) && narr.some((w) => /反应/.test(w)) && narr.some((w) => /驶离|车辆/.test(w))
       if (missing.length || tooShort || !propOk || !narrOk) {
         return {
           name: '提示词工业标准',
@@ -242,20 +272,22 @@ export class SelfCheckService {
             missing.length ? `缺失锚点：${missing.join(', ')}` : '',
             tooShort ? `${tooShort} 条提示词过短` : '',
             !propOk ? '关键道具锁定未注入首帧/视频提示' : '',
-            !narrOk ? `叙事连续性校验未命中预期（${narr.join('；') || '空'}）` : ''
-          ].filter(Boolean).join('；')
+            !narrOk ? `叙事连续性校验未命中预期（${narr.join('；') || '空'}）` : '',
+          ]
+            .filter(Boolean)
+            .join('；'),
         }
       }
       return {
         name: '提示词工业标准',
         ok: true,
-        detail: `电影工业级锚点齐全（${PROMPT_QA_MARKERS.length}）；定妆/场景/首帧/视频提示词可用；道具锁与叙事节拍校验 OK`
+        detail: `电影工业级锚点齐全（${PROMPT_QA_MARKERS.length}）；定妆/场景/首帧/视频提示词可用；道具锁与叙事节拍校验 OK`,
       }
     } catch (e) {
       return {
         name: '提示词工业标准',
         ok: false,
-        detail: `提示词模块校验失败：${e instanceof Error ? e.message : String(e)}`
+        detail: `提示词模块校验失败：${e instanceof Error ? e.message : String(e)}`,
       }
     }
   }
@@ -276,7 +308,8 @@ export class SelfCheckService {
       fixedBits.push(`默认帧数 ${rawFrames}→${fixed}（已对齐 16n+1）`)
     }
 
-    if (!s.llm.apiKey) problems.push('LLM API Key 未配置（设置 → LLM，AI 拆镜/导演对话不可用）')
+    // P2-6：环境变量覆盖的 key 同样视为已配置，避免自检误报
+    if (!llmApiKey(s)) problems.push('LLM API Key 未配置（设置 → LLM，AI 拆镜/导演对话不可用）')
     if (!s.comfyui.baseUrl) problems.push('ComfyUI 地址为空')
     const conc = s.render.assetConcurrency ?? 2
     if (conc < 1 || conc > 3) problems.push(`资产并发 ${conc} 超出 1~3`)
@@ -301,7 +334,7 @@ export class SelfCheckService {
       name: '关键配置',
       ok,
       fixed: fixedBits.length > 0,
-      detail: fixedBits.length ? `${base}；已自动修复：${fixedBits.join('、')}` : base
+      detail: fixedBits.length ? `${base}；已自动修复：${fixedBits.join('、')}` : base,
     }
   }
 
@@ -325,7 +358,7 @@ export class SelfCheckService {
       warn: !online,
       detail: online
         ? `在线（${s.comfyui.baseUrl}），渲染引擎就绪`
-        : `离线（${s.comfyui.baseUrl}）。请先启动 ComfyUI，否则无法渲染`
+        : `离线（${s.comfyui.baseUrl}）。请先启动 ComfyUI，否则无法渲染`,
     }
   }
 }

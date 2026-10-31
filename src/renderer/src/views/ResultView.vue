@@ -68,8 +68,17 @@
         </div>
         <div class="enhance-item">
           <span class="enhance-label">BGM 混音</span>
-          <el-button size="small" :loading="selectingBgm" @click="selectBgm">{{ project?.bgmPath ? '更换 BGM' : '选择 BGM' }}</el-button>
-          <el-slider v-if="project?.bgmPath" v-model="bgmVolume" :min="0" :max="100" style="width: 120px" :format-tooltip="(v: number) => v + '%'" />
+          <el-button size="small" :loading="selectingBgm" @click="selectBgm">{{
+            project?.bgmPath ? '更换 BGM' : '选择 BGM'
+          }}</el-button>
+          <el-slider
+            v-if="project?.bgmPath"
+            v-model="bgmVolume"
+            :min="0"
+            :max="100"
+            style="width: 120px"
+            :format-tooltip="(v: number) => v + '%'"
+          />
           <el-button v-if="project?.bgmPath" size="small" type="primary" :loading="mixingBgm" @click="mixBgm">
             混音导出
           </el-button>
@@ -120,7 +129,12 @@
                 controls-position="right"
                 style="width: 80px"
                 placeholder="自动"
-                @change="(v?: number) => { shot.trimStart = v; saveShotEdits(shot) }"
+                @change="
+                  (v?: number) => {
+                    shot.trimStart = v
+                    saveShotEdits(shot)
+                  }
+                "
               />
               <span class="trim-label">出点(秒)</span>
               <el-input-number
@@ -131,14 +145,24 @@
                 controls-position="right"
                 style="width: 80px"
                 placeholder="自动"
-                @change="(v?: number) => { shot.trimEnd = v; saveShotEdits(shot) }"
+                @change="
+                  (v?: number) => {
+                    shot.trimEnd = v
+                    saveShotEdits(shot)
+                  }
+                "
               />
             </div>
             <el-select
               :model-value="shot.transition || 'auto'"
               size="small"
               style="width: 96px"
-              @change="(v: string) => { shot.transition = v === 'auto' ? undefined : (v as any); saveShotEdits(shot) }"
+              @change="
+                (v: string) => {
+                  shot.transition = v === 'auto' ? undefined : (v as any)
+                  saveShotEdits(shot)
+                }
+              "
             >
               <el-option label="自动" value="auto" />
               <el-option label="硬切" value="hard" />
@@ -156,7 +180,9 @@
           </div>
         </div>
       </div>
-      <div class="form-tip" style="margin-top: 8px">入点/出点留空=AI 智能裁剪（按台词起止）；填秒数=手动精确裁剪。修改后点「合成成片」生效。</div>
+      <div class="form-tip" style="margin-top: 8px">
+        入点/出点留空=AI 智能裁剪（按台词起止）；填秒数=手动精确裁剪。修改后点「合成成片」生效。
+      </div>
     </div>
 
     <!-- 预览对话框 -->
@@ -195,11 +221,18 @@ const loadingFinal = ref(false)
 const mainVideoEl = ref<HTMLVideoElement | null>(null)
 const videoError = ref('')
 
-const projectId = useRouteProjectId((id) => { void loadAll(id) })
+const projectId = useRouteProjectId((id) => {
+  void loadAll(id)
+})
 
 // Ctrl+E 导出成片（无成片时 exportVideo 内部直接忽略）
 useHotkeys([
-  { keys: 'ctrl+e', handler: () => { void exportVideo() } }
+  {
+    keys: 'ctrl+e',
+    handler: () => {
+      void exportVideo()
+    },
+  },
 ])
 
 // 剪辑参数保存反馈防抖：连续调整入点/出点/转场只提示一次
@@ -237,7 +270,7 @@ async function playMainVideo(): Promise<void> {
   }
 }
 
-const doneShots = computed(() => project.value?.shots.filter(s => s.status === 'done') || [])
+const doneShots = computed(() => project.value?.shots.filter((s) => s.status === 'done') || [])
 // 有已完成分镜即可合成；成片已存在时允许覆盖重新合成
 const canCombine = computed(() => doneShots.value.length > 0)
 
@@ -256,7 +289,7 @@ const selectingBgm = ref(false)
 const bgmVolume = ref(30)
 const enhancedOutputs = ref<{ path: string; label: string }[]>([])
 const projectUpdatedUnsub = ref<(() => void) | null>(null)
-const hasDialogue = computed(() => project.value?.shots.some(s => s.dialogue.trim() && s.status === 'done'))
+const hasDialogue = computed(() => project.value?.shots.some((s) => s.dialogue.trim() && s.status === 'done'))
 
 async function loadAll(id = projectId.value) {
   if (!id) return
@@ -301,12 +334,12 @@ async function restoreEnhancedOutputs(id = projectId.value) {
   const candidates = [
     { path: `projects/${id}/final_subtitled.mp4`, label: '字幕版' },
     { path: `projects/${id}/final_bgm.mp4`, label: 'BGM 混音版' },
-    { path: `projects/${id}/final_master.mp4`, label: '成片（字幕+BGM）' }
+    { path: `projects/${id}/final_master.mp4`, label: '成片（字幕+BGM）' },
   ]
-  const checks = await Promise.all(candidates.map(c => window.api.file.exists(c.path)))
+  const checks = await Promise.all(candidates.map((c) => window.api.file.exists(c.path)))
   const found = candidates.filter((_, i) => checks[i])
   if (found.length) {
-    await ensureFileUrls(found.map(c => c.path))
+    await ensureFileUrls(found.map((c) => c.path))
     enhancedOutputs.value = found
   } else {
     enhancedOutputs.value = []
@@ -317,7 +350,7 @@ async function restoreEnhancedOutputs(id = projectId.value) {
 watch(doneShots, () => resolveSegmentUrls())
 
 async function resolveSegmentUrls() {
-  const paths = doneShots.value.map(s => s.segmentPath).filter(Boolean) as string[]
+  const paths = doneShots.value.map((s) => s.segmentPath).filter(Boolean) as string[]
   await ensureFileUrls(paths)
 }
 
@@ -329,7 +362,7 @@ async function checkFinalVideo(id = projectId.value) {
   const candidates = [
     `projects/${id}/final_master.mp4`,
     `projects/${id}/final_subtitled.mp4`,
-    `projects/${id}/final.mp4`
+    `projects/${id}/final.mp4`,
   ]
   for (const relative of candidates) {
     if (!(await window.api.file.exists(relative))) continue
@@ -356,7 +389,7 @@ async function combineVideo() {
     const ok = await confirmDanger('已存在成片，将覆盖重新合成。确定继续？', {
       title: '覆盖成片',
       confirmText: '覆盖合成',
-      cancelText: '取消'
+      cancelText: '取消',
     })
     if (!ok) return
   }
@@ -365,14 +398,14 @@ async function combineVideo() {
 
   try {
     const segments = doneShots.value
-      .filter(s => !s.skipped && s.segmentPath)
-      .map(s => ({
+      .filter((s) => !s.skipped && s.segmentPath)
+      .map((s) => ({
         path: s.segmentPath!,
         scene: s.scene,
         hasDialogue: !!s.dialogue.trim(),
-        transition: s.transition,
-        trimStart: s.trimStart,
-        trimEnd: s.trimEnd
+        ...(s.transition !== undefined ? { transition: s.transition } : {}),
+        ...(s.trimStart !== undefined ? { trimStart: s.trimStart } : {}),
+        ...(s.trimEnd !== undefined ? { trimEnd: s.trimEnd } : {}),
       }))
     if (segments.length === 0) throw new Error('没有可合成的分段（跳过或缺失）')
 
@@ -431,7 +464,7 @@ async function previewSegment(shot: Shot) {
   if (!shot.segmentPath) return
   previewShot.value = shot
   await ensureFileUrl(shot.segmentPath)
-  previewUrl.value = urlCache[shot.segmentPath]
+  previewUrl.value = urlCache[shot.segmentPath] ?? ''
   previewVisible.value = true
 }
 
@@ -460,7 +493,7 @@ async function burnSubtitles() {
     const output = `projects/${projectId.value}/final_subtitled.mp4`
     await window.api.ffmpeg.burnSubtitles(finalVideoPath.value, srtRel, output)
     await ensureFileUrl(output)
-    enhancedOutputs.value = enhancedOutputs.value.filter(o => o.path !== output)
+    enhancedOutputs.value = enhancedOutputs.value.filter((o) => o.path !== output)
     enhancedOutputs.value.push({ path: output, label: '字幕版' })
     ElMessage.success('字幕烧录完成')
   } catch (e) {
@@ -497,7 +530,7 @@ async function mixBgm() {
     const output = `projects/${projectId.value}/final_bgm.mp4`
     await window.api.ffmpeg.mixBgm(finalVideoPath.value, project.value.bgmPath, output, bgmVolume.value)
     await ensureFileUrl(output)
-    enhancedOutputs.value = enhancedOutputs.value.filter(o => o.path !== output)
+    enhancedOutputs.value = enhancedOutputs.value.filter((o) => o.path !== output)
     enhancedOutputs.value.push({ path: output, label: 'BGM 混音版' })
     ElMessage.success('混音完成')
   } catch (e) {
@@ -544,25 +577,87 @@ async function showInFolder(relativePath: string) {
   color: var(--text-primary);
   margin-bottom: 12px;
 }
-.enhance-row { display: flex; gap: 24px; margin-bottom: 16px; flex-wrap: wrap; }
-.enhance-item { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.enhance-label { color: var(--text-secondary); font-size: 13px; min-width: 70px; }
-.form-tip { font-size: 12px; color: var(--text-muted); }
-.enhance-outputs { display: flex; gap: 16px; flex-wrap: wrap; }
-.output-item {
-  display: flex; flex-direction: column; gap: 6px; align-items: center;
+.enhance-row {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
 }
-.output-name { color: var(--text-secondary); font-size: 12px; }
-.output-actions { display: flex; gap: 6px; }
+.enhance-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.enhance-label {
+  color: var(--text-secondary);
+  font-size: 13px;
+  min-width: 70px;
+}
+.form-tip {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.enhance-outputs {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.output-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+}
+.output-name {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.output-actions {
+  display: flex;
+  gap: 6px;
+}
 
-.empty-actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
-.video-container { margin-bottom: 24px; padding: 14px; }
-.video-container video { background: #000; border-radius: var(--radius-md); width: 100%; }
-.video-info { display: flex; gap: 16px; margin-top: 10px; color: var(--text-secondary); font-size: 14px; align-items: center; flex-wrap: wrap; }
-.video-error { margin-top: 8px; color: var(--danger); font-size: 13px; }
+.empty-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.video-container {
+  margin-bottom: 24px;
+  padding: 14px;
+}
+.video-container video {
+  background: #000;
+  border-radius: var(--radius-md);
+  width: 100%;
+}
+.video-info {
+  display: flex;
+  gap: 16px;
+  margin-top: 10px;
+  color: var(--text-secondary);
+  font-size: 14px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.video-error {
+  margin-top: 8px;
+  color: var(--danger);
+  font-size: 13px;
+}
 
-.segments h3 { color: var(--text-primary); margin-bottom: 12px; font-family: var(--font-display); }
-.segment-list { display: flex; flex-direction: column; gap: 8px; }
+.segments h3 {
+  color: var(--text-primary);
+  margin-bottom: 12px;
+  font-family: var(--font-display);
+}
+.segment-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
 .segment-item {
   display: flex;
   align-items: center;
@@ -572,7 +667,9 @@ async function showInFolder(relativePath: string) {
   cursor: default;
   border: 1px solid var(--glass-border);
   background: var(--glass-bg);
-  transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
 }
 .segment-item:hover {
   background: var(--glass-bg-strong);
@@ -585,12 +682,45 @@ async function showInFolder(relativePath: string) {
   margin-left: auto;
   flex-wrap: wrap;
 }
-.trim-row { display: flex; align-items: center; gap: 4px; }
-.trim-label { font-size: 12px; color: var(--text-muted); }
-.segment-preview { width: 160px; height: 90px; background: var(--bg-page-elevated); border-radius: 8px; overflow: hidden; }
-.no-video { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: var(--text-muted); }
-.segment-info { display: flex; align-items: center; gap: 12px; color: var(--text-primary); }
-.index { color: var(--brand); font-weight: 650; }
-.scene { flex: 1; }
-.duration { color: var(--text-secondary); font-size: 12px; }
+.trim-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.trim-label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.segment-preview {
+  width: 160px;
+  height: 90px;
+  background: var(--bg-page-elevated);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.no-video {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+}
+.segment-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--text-primary);
+}
+.index {
+  color: var(--brand);
+  font-weight: 650;
+}
+.scene {
+  flex: 1;
+}
+.duration {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
 </style>

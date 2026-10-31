@@ -9,7 +9,13 @@
         <el-select v-model="sortMode" style="width: 124px" title="排序方式">
           <el-option v-for="o in PROJECT_SORT_OPTIONS" :key="o.value" :label="o.label" :value="o.value" />
         </el-select>
-        <el-input v-model="searchKw" placeholder="搜索片名/剧本关键词" clearable style="width: 220px" :prefix-icon="Search" />
+        <el-input
+          v-model="searchKw"
+          placeholder="搜索片名/剧本关键词"
+          clearable
+          style="width: 220px"
+          :prefix-icon="Search"
+        />
         <el-button :loading="importingPackage" @click="importPackage">
           <el-icon><Upload /></el-icon>导入项目包
         </el-button>
@@ -140,11 +146,7 @@
           <el-checkbox :model-value="isSelected(row)" @change="toggleSelect(row)" />
         </div>
         <div class="card-cover">
-          <img
-            v-if="coverRel[row.id]"
-            :src="urlCache[coverRel[row.id]]"
-            alt=""
-          />
+          <img v-if="coverRel[row.id]" :src="urlCache[coverRel[row.id] ?? '']" alt="" />
           <div v-else class="cover-fallback">
             <span>{{ (row.title || '?').slice(0, 1) }}</span>
           </div>
@@ -165,7 +167,16 @@
         </div>
         <div class="card-foot" @click.stop>
           <el-button link type="primary" size="small" @click="openProject(row)">打开</el-button>
-          <el-button link type="primary" size="small" @click="void duplicateProject(row)">复制</el-button>
+          <el-button
+            link
+            type="primary"
+            size="small"
+            :loading="duplicatingId === row.id"
+            :disabled="duplicatingId !== null && duplicatingId !== row.id"
+            @click="void duplicateProject(row)"
+          >
+            复制
+          </el-button>
           <el-button link type="primary" size="small" @click="void exportPackage(row)">导出包</el-button>
           <el-button link type="danger" size="small" @click="deleteProject(row)">删除</el-button>
         </div>
@@ -179,32 +190,13 @@
     <el-dialog v-model="showCreateDialog" title="新建项目" width="400px">
       <el-form :model="newProject" label-width="80px">
         <el-form-item label="标题" required>
-          <el-input
-            v-model="newProject.title"
-            placeholder="如：第一集 重生"
-            @keyup.enter="onCreateEnter"
-          />
+          <el-input v-model="newProject.title" placeholder="如：第一集 重生" @keyup.enter="onCreateEnter" />
         </el-form-item>
         <el-form-item label="题材">
           <div class="genre-row">
-            <el-input
-              v-model="newProject.genre"
-              clearable
-              placeholder="输入或选择题材，如：古装仙侠"
-              style="flex: 1"
-            />
-            <el-select
-              v-model="newProject.genreQuick"
-              placeholder="常用题材"
-              style="width: 180px"
-              @change="pickGenre"
-            >
-              <el-option
-                v-for="t in GENRE_TEMPLATES"
-                :key="t.key"
-                :label="t.label"
-                :value="t.key"
-              >
+            <el-input v-model="newProject.genre" clearable placeholder="输入或选择题材，如：古装仙侠" style="flex: 1" />
+            <el-select v-model="newProject.genreQuick" placeholder="常用题材" style="width: 180px" @change="pickGenre">
+              <el-option v-for="t in GENRE_TEMPLATES" :key="t.key" :label="t.label" :value="t.key">
                 <span>{{ t.label }}</span>
                 <el-tag size="small" style="margin-left: 8px">模板</el-tag>
               </el-option>
@@ -240,7 +232,18 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { confirmDanger, confirmAction } from '../utils/confirm'
 import {
-  Plus, Edit, EditPen, CopyDocument, Download, Upload, FolderOpened, Delete, Connection, VideoCamera, Search, RefreshRight
+  Plus,
+  Edit,
+  EditPen,
+  CopyDocument,
+  Download,
+  Upload,
+  FolderOpened,
+  Delete,
+  Connection,
+  VideoCamera,
+  Search,
+  RefreshRight,
 } from '@element-plus/icons-vue'
 import type { Project, InterruptedTask, DirectorProgressEvent } from '../../../shared/ipcTypes'
 import { GENRE_TEMPLATES } from '../../../shared/ipcTypes'
@@ -251,13 +254,13 @@ import {
   sortProjects,
   projectCoverPath,
   markProjectOpened,
-  directorProjectStatus
+  directorProjectStatus,
 } from '../utils/projectList'
 import { snapshot } from '../utils/snapshot'
 import {
   statusTagType as statusType,
   projectStatusText as statusText,
-  formatLocaleTime as formatTime
+  formatLocaleTime as formatTime,
 } from '../utils/status'
 import { useFileUrl, clearFileUrlCache } from '../composables/useFileUrl'
 import { clearLastProjectIdIf, setLastProjectId } from '../composables/useActiveProject'
@@ -276,9 +279,7 @@ const searchKw = ref('')
 const sortMode = ref<ProjectSortMode>('recent')
 /** REQ-08：卡片封面相对路径（首镜首帧优先，回退缩略图） */
 const coverRel = ref<Record<string, string>>({})
-const filteredProjects = computed(() =>
-  sortProjects(filterProjects(projects.value, searchKw.value), sortMode.value)
-)
+const filteredProjects = computed(() => sortProjects(filterProjects(projects.value, searchKw.value), sortMode.value))
 const projectsLoaded = ref(false)
 const showCreateDialog = ref(false)
 const creating = ref(false)
@@ -286,12 +287,19 @@ const creating = ref(false)
 const checkingComfy = ref(false)
 /** 重命名确认按钮 loading（UXA-P1-12） */
 const renaming = ref(false)
+/** P2-14：复制项目防重入（整包拷贝资产是耗时 IO，连点会产生多个副本） */
+const duplicatingId = ref<string | null>(null)
 /** REQ-20：项目包导入进行中（对话框 + 解压） */
 const importingPackage = ref(false)
 
 // Ctrl+N 新建项目
 useHotkeys([
-  { keys: 'ctrl+n', handler: () => { showCreateDialog.value = true } }
+  {
+    keys: 'ctrl+n',
+    handler: () => {
+      showCreateDialog.value = true
+    },
+  },
 ])
 const newProject = ref({ title: '', genre: '', genreQuick: '' })
 const comfyuiStatus = ref<boolean | null>(null)
@@ -309,20 +317,25 @@ const projectMenuItems = computed<CtxItem[]>(() => {
     { label: '复制项目', icon: CopyDocument, action: () => void duplicateProject(row) },
     { divider: true },
     { label: '导出成片', icon: Download, action: () => void exportProject(row) },
-    { label: '导出项目包', icon: Download, action: () => void exportPackage(row), tip: '含资产与成片，不含导演运行状态' },
+    {
+      label: '导出项目包',
+      icon: Download,
+      action: () => void exportPackage(row),
+      tip: '含资产与成片，不含导演运行状态',
+    },
     { label: '在文件夹中显示', icon: FolderOpened, action: () => void showInFolder(row) },
     { divider: true },
-    { label: '删除项目', icon: Delete, danger: true, action: () => void deleteProject(row) }
+    { label: '删除项目', icon: Delete, danger: true, action: () => void deleteProject(row) },
   ]
 })
 
 function isSelected(p: Project): boolean {
-  return selectedProjects.value.some(x => x.id === p.id)
+  return selectedProjects.value.some((x) => x.id === p.id)
 }
 
 function toggleSelect(p: Project): void {
   if (isSelected(p)) {
-    selectedProjects.value = selectedProjects.value.filter(x => x.id !== p.id)
+    selectedProjects.value = selectedProjects.value.filter((x) => x.id !== p.id)
   } else {
     selectedProjects.value = [...selectedProjects.value, p]
   }
@@ -356,8 +369,11 @@ function scheduleReload(delay = 400): void {
 }
 
 function handleDirectorProgress(e: DirectorProgressEvent): void {
-  const row = projects.value.find(p => p.id === e.projectId)
-  if (!row) { scheduleReload(); return }
+  const row = projects.value.find((p) => p.id === e.projectId)
+  if (!row) {
+    scheduleReload()
+    return
+  }
   // 徽章原地更新：渲染中/完成无需整表重渲染；高频进度事件也不会每帧刷新列表
   const next = directorProjectStatus(e.state)
   if (next && next !== row.status) row.status = next
@@ -386,7 +402,7 @@ async function resumeInterrupted(task: InterruptedTask): Promise<void> {
   resumingId.value = task.projectId
   try {
     await window.api.director.resumeFrom(task.projectId, task.interruptedStage)
-    interruptedTasks.value = interruptedTasks.value.filter(t => t.projectId !== task.projectId)
+    interruptedTasks.value = interruptedTasks.value.filter((t) => t.projectId !== task.projectId)
     ElMessage.success(`已从「${STAGE_LABELS[task.interruptedStage]}」继续，可在项目页查看进度`)
     openProjectById(task.projectId)
     loadProjects()
@@ -429,11 +445,12 @@ async function loadProjects() {
   try {
     projects.value = await window.api.project.list()
     // REQ-08：封面取首镜首帧，缺失回退缩略图；仅解析真实存在的文件，避免破图
-    const candidates = projects.value.map(p => projectCoverPath(p))
-    const checks = await Promise.all(candidates.map(rel => window.api.file.exists(rel)))
+    const candidates = projects.value.map((p) => projectCoverPath(p))
+    const checks = await Promise.all(candidates.map((rel) => window.api.file.exists(rel)))
     const relMap: Record<string, string> = {}
     projects.value.forEach((p, i) => {
-      if (checks[i]) relMap[p.id] = candidates[i]
+      const rel = candidates[i]
+      if (checks[i] && rel) relMap[p.id] = rel
     })
     coverRel.value = relMap
     await ensureFileUrls(Object.values(relMap))
@@ -531,12 +548,16 @@ async function confirmRename() {
 }
 
 async function duplicateProject(project: Project) {
+  if (duplicatingId.value) return
+  duplicatingId.value = project.id
   try {
     await window.api.project.duplicate(project.id)
     loadProjects()
     ElMessage.success('复制成功')
-  } catch {
-    ElMessage.error('复制失败')
+  } catch (e) {
+    ElMessage.error(`复制失败：${e instanceof Error ? e.message : String(e)}`)
+  } finally {
+    duplicatingId.value = null
   }
 }
 
@@ -568,7 +589,7 @@ async function exportProject(project: Project) {
 async function exportPackage(project: Project) {
   const ok = await confirmAction(
     '项目包包含剧本、分镜、资产与成片，可在另一台机器导入继续制作。\n导演运行状态（director-state.json）默认不打包，避免把中断状态带到新环境。',
-    { title: '导出项目包', confirmText: '导出' }
+    { title: '导出项目包', confirmText: '导出' },
   )
   if (!ok) return
   try {
@@ -608,7 +629,7 @@ async function showInFolder(project: Project) {
 async function deleteProject(project: Project) {
   const ok = await confirmDanger(`确定删除「${project.title}」吗？此操作不可恢复。`, {
     title: '删除确认',
-    confirmText: '删除'
+    confirmText: '删除',
   })
   if (!ok) return
   try {
@@ -635,7 +656,7 @@ async function batchDuplicate() {
   if (n === 0 || batchBusy.value) return
   const okCopy = await confirmAction(`确定复制选中的 ${n} 个项目吗？`, {
     title: '批量复制',
-    confirmText: '复制'
+    confirmText: '复制',
   })
   if (!okCopy) return
   batchBusy.value = true
@@ -663,8 +684,8 @@ async function batchDuplicate() {
 
 async function batchExport() {
   if (batchBusy.value) return
-  const targets = selectedProjects.value.filter(p => p.status === 'done')
-  const noFinal = selectedProjects.value.filter(p => p.status !== 'done')
+  const targets = selectedProjects.value.filter((p) => p.status === 'done')
+  const noFinal = selectedProjects.value.filter((p) => p.status !== 'done')
   if (noFinal.length > 0) {
     ElMessage.warning(`${noFinal.length} 个项目无成片，已跳过`)
   }
@@ -700,7 +721,7 @@ async function batchDelete() {
   if (n === 0 || batchBusy.value) return
   const okDel = await confirmDanger(
     `确定删除选中的 ${n} 个项目吗？所有角色、分镜、渲染产物将被永久删除，此操作不可恢复。`,
-    { title: '批量删除确认', confirmText: '全部删除' }
+    { title: '批量删除确认', confirmText: '全部删除' },
   )
   if (!okDel) return
   batchBusy.value = true
@@ -723,15 +744,30 @@ async function batchDelete() {
     batchBusy.value = false
   }
 }
-
 </script>
 
 <style scoped>
-.genre-row { display: flex; align-items: center; gap: 8px; width: 100%; }
-.empty-actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
-.empty-panel { padding: 40px 20px; }
-.skeleton-card { padding: 0; }
-.skeleton-card .el-skeleton { transform: none; }
+.genre-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+.empty-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.empty-panel {
+  padding: 40px 20px;
+}
+.skeleton-card {
+  padding: 0;
+}
+.skeleton-card .el-skeleton {
+  transform: none;
+}
 
 .batch-bar {
   display: flex;
@@ -740,7 +776,11 @@ async function batchDelete() {
   flex-wrap: wrap;
   padding: 12px 16px;
 }
-.batch-info { color: var(--info); font-size: 13px; margin-right: 4px; }
+.batch-info {
+  color: var(--info);
+  font-size: 13px;
+  margin-right: 4px;
+}
 
 .interrupted-item {
   display: flex;
@@ -749,8 +789,13 @@ async function batchDelete() {
   flex-wrap: wrap;
   padding: 4px 0;
 }
-.interrupted-name { font-weight: 600; }
-.interrupted-reason { color: var(--info); font-size: 13px; }
+.interrupted-name {
+  font-weight: 600;
+}
+.interrupted-reason {
+  color: var(--info);
+  font-size: 13px;
+}
 
 .project-grid {
   display: grid;
@@ -765,7 +810,9 @@ async function batchDelete() {
 }
 .project-card.selected {
   border-color: color-mix(in srgb, var(--brand) 55%, transparent);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--brand) 40%, transparent), var(--glass-shadow);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--brand) 40%, transparent),
+    var(--glass-shadow);
 }
 
 .card-select {
@@ -787,16 +834,16 @@ async function batchDelete() {
   object-fit: cover;
   transition: transform var(--dur-slow) var(--ease-out);
 }
-.project-card:hover .card-cover img { transform: scale(1.04); }
+.project-card:hover .card-cover img {
+  transform: scale(1.04);
+}
 
 .cover-fallback {
   width: 100%;
   height: 100%;
   display: grid;
   place-items: center;
-  background:
-    linear-gradient(145deg, rgba(212, 165, 116, 0.25), transparent 55%),
-    var(--bg-page-elevated);
+  background: linear-gradient(145deg, rgba(212, 165, 116, 0.25), transparent 55%), var(--bg-page-elevated);
   font-family: var(--font-display);
   font-size: 42px;
   font-weight: 650;
@@ -809,7 +856,9 @@ async function batchDelete() {
   bottom: 10px;
 }
 
-.card-body { padding: 14px 14px 6px; }
+.card-body {
+  padding: 14px 14px 6px;
+}
 .card-body h3 {
   font-family: var(--font-display);
   font-size: 16px;
@@ -820,14 +869,18 @@ async function batchDelete() {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.meta, .time {
+.meta,
+.time {
   font-size: 12px;
   color: var(--text-secondary);
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
 }
-.time { color: var(--text-muted); margin-top: 4px; }
+.time {
+  color: var(--text-muted);
+  margin-top: 4px;
+}
 
 .card-foot {
   padding: 4px 10px 12px;
@@ -837,6 +890,8 @@ async function batchDelete() {
 }
 
 @media (max-width: 640px) {
-  .project-grid { grid-template-columns: 1fr; }
+  .project-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

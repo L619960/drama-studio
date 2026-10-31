@@ -20,12 +20,21 @@ files:
 # 模块，require 时无法从 asar 内 dlopen（ERR_DLOPEN_FAILED）。faceDetector.ts 已按
 # "打包后在 app.asar.unpacked 内解析" 写死，这里必须同步解包，否则人脸检测/一致性比对
 # 在打包版直接不可用（dev 下走普通 node_modules 不受影响，故此前未暴露）。
-# @xenova/transformers 内部还嵌套了一份 onnxruntime-node（CLIP 用），同样要解包。
+# @huggingface/transformers（CLIP 全图回退）依赖 sharp 解码图像：sharp 的
+# libvips 原生库与 @img/* 平台包同样不能从 asar 内加载，必须一并解包。
+# 顶层 onnxruntime-node 升到 1.31.1 后，transformers 3.8.1 仍精确锁 onnxruntime-node 1.21.0，
+# npm 会在其下装出嵌套副本；CLIP 路径经 transformers 解析到嵌套副本，其原生库同样必须解包
+# （顶层与嵌套两条都列，避免依赖 npm 提升策略变化后漏解包）。
 asarUnpack:
   - node_modules/ffmpeg-static/**
   - node_modules/ffprobe-static/**
   - node_modules/onnxruntime-node/**
-  - node_modules/@xenova/transformers/node_modules/onnxruntime-node/**
+  - node_modules/@huggingface/transformers/node_modules/onnxruntime-node/**
+  # sharp 由 transformers 作为传递依赖安装，npm 未提升到顶层 → 实际路径是嵌套的；
+  # 两条都保留，避免依赖 npm 提升策略变化后漏解包。
+  - node_modules/sharp/**
+  - node_modules/@huggingface/transformers/node_modules/sharp/**
+  - node_modules/@img/**
 
 # 工作流 JSON 随 resources 分发
 # （main/index.ts: app.isPackaged 时读取 process.resourcesPath/workflows）
@@ -65,6 +74,18 @@ mac:
     - target: zip
   artifactName: ${productName}-${version}-${arch}.${ext}
   category: public.app-category.video
+  # ENG-04 macOS 签名与公证骨架：
+  #   - hardenedRuntime 必须开启，否则公证直接失败
+  #   - entitlements 覆盖 JIT / 可执行内存 / 库校验 / DYLD（ffmpeg、onnxruntime、子进程需要）
+  #   - 公证默认关闭：无 Apple 凭证时开启会让打包直接失败。CI 在检测到
+  #     APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID secrets 时
+  #     追加 -c.mac.notarize=true 打开（见 .github/workflows/ci.yml）
+  #   - 签名证书仍走 CSC_LINK / CSC_KEY_PASSWORD（与 Windows 共用机制）
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  notarize: false
 
 # Linux：需在 Linux 主机/CI runner 上打包（同上，原生二进制不可跨平台）
 linux:

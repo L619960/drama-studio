@@ -2,7 +2,15 @@ import { app, safeStorage } from 'electron'
 import * as fs from 'fs/promises'
 import * as path from 'node:path'
 import type { AppSettings, CreationSettings } from '../../shared/ipcTypes'
-import { DEFAULT_CREATION, resolveCreation, DEFAULT_STORYBOARD, DEFAULT_CHARACTER, DEFAULT_SCENE, DEFAULT_EDIT } from '../../shared/creationSettings'
+import {
+  DEFAULT_CREATION,
+  resolveCreation,
+  DEFAULT_STORYBOARD,
+  DEFAULT_CHARACTER,
+  DEFAULT_SCENE,
+  DEFAULT_EDIT,
+} from '../../shared/creationSettings'
+import { DEFAULT_COMFY_BASE_URL } from '../../shared/comfyDefaults'
 import { atomicWriteJson } from './fsUtil'
 
 // ===== apiKey safeStorage 加密（任务 9c）=====
@@ -13,7 +21,9 @@ const APIKEY_ENC_PREFIX = 'enc:v1:'
 
 function apikeyEncryptionAvailable(): boolean {
   try {
-    return Boolean(safeStorage && typeof safeStorage.isEncryptionAvailable === 'function' && safeStorage.isEncryptionAvailable())
+    return Boolean(
+      safeStorage && typeof safeStorage.isEncryptionAvailable === 'function' && safeStorage.isEncryptionAvailable(),
+    )
   } catch {
     return false
   }
@@ -43,7 +53,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   revision: 0,
   general: {
     autoSave: true,
-    autoLearn: false
+    autoLearn: false,
   },
   render: {
     defaultWidth: 720,
@@ -68,40 +78,40 @@ const DEFAULT_SETTINGS: AppSettings = {
     fusionFallback: 'block',
     // i2i 参考图权重默认 1（保持既有出图行为）；首帧相似度阈值默认按需求 0.7
     i2iDenoise: 1,
-    firstFrameFaceThreshold: 0.7
+    firstFrameFaceThreshold: 0.7,
   },
   creation: structuredClone(DEFAULT_CREATION),
   comfyui: {
-    baseUrl: 'http://127.0.0.1:8188',
+    baseUrl: DEFAULT_COMFY_BASE_URL,
     inputDir: '',
     modelsDir: '',
     startCommand: '',
     workflowLibraryDir: '',
-    mcpVenvDir: ''
+    mcpVenvDir: '',
   },
   tts: {
     defaultVoice: 'zh-CN-XiaoxiaoNeural',
     // 短剧对白略慢：100=+0%，88≈-12%，更利情感与口型
     rate: 88,
-    volume: 100
+    volume: 100,
   },
   workflow: {
-    default: 'wan22_i2v'
+    default: 'wan22_i2v',
   },
   negatives: {
     casting: '',
     scene: '',
     shot: '',
-    prop: ''
+    prop: '',
   },
   llm: {
     apiKey: '',
     baseUrl: 'https://api.deepseek.com',
-    model: 'deepseek-chat'
+    model: 'deepseek-chat',
   },
   appearance: {
-    theme: 'dark'
-  }
+    theme: 'dark',
+  },
 }
 
 export class SettingsStore {
@@ -126,8 +136,12 @@ export class SettingsStore {
       }
       // 旧配置迁移（merge 会用默认值填满字段，迁移必须在 merge 前做）：
       // 无 finalReviewGate 字段时继承旧 render.reviewGate 取值
-      if (saved?.render && typeof saved.render === 'object' && !('finalReviewGate' in saved.render)
-        && typeof saved.render.reviewGate === 'string') {
+      if (
+        saved?.render &&
+        typeof saved.render === 'object' &&
+        !('finalReviewGate' in saved.render) &&
+        typeof saved.render.reviewGate === 'string'
+      ) {
         saved.render.finalReviewGate = saved.render.reviewGate
       }
       // 深合并，确保新字段有默认值；revision 由文件透传（无则 0），供保存时乐观并发校验
@@ -142,24 +156,34 @@ export class SettingsStore {
     try {
       const content = await fs.readFile(this.settingsPath, 'utf-8')
       const raw = JSON.parse(content.replace(/^\uFEFF/, ''))
-      if (!raw?.llm || typeof raw.llm.apiKey !== 'string' || !raw.llm.apiKey || raw.llm.apiKey.startsWith(APIKEY_ENC_PREFIX)) return
+      if (
+        !raw?.llm ||
+        typeof raw.llm.apiKey !== 'string' ||
+        !raw.llm.apiKey ||
+        raw.llm.apiKey.startsWith(APIKEY_ENC_PREFIX)
+      )
+        return
       raw.llm.apiKey = encryptApiKey(raw.llm.apiKey)
       await fs.mkdir(path.dirname(this.settingsPath), { recursive: true })
       await atomicWriteJson(this.settingsPath, raw)
-    } catch { /* 迁移失败下次读取再试 */ }
+    } catch {
+      /* 迁移失败下次读取再试 */
+    }
   }
 
   /** 保存设置，返回落盘后的 revision（P2-14：调用方回填，供下次乐观并发校验） */
   async save(settings: AppSettings): Promise<number> {
     // P2-14：先读旧文件——用于 baseUrl 记忆、以及 revision 乐观并发校验
-    let old: { llm?: { baseUrl?: string }; revision?: unknown } = {}
+    let old: { llm?: { baseUrl?: string; apiKey?: string }; revision?: unknown } = {}
     try {
       old = JSON.parse((await fs.readFile(this.settingsPath, 'utf-8')).replace(/^\uFEFF/, ''))
-    } catch { /* 首次保存或文件不存在 */ }
+    } catch {
+      /* 首次保存或文件不存在 */
+    }
     const storedRev = typeof old?.revision === 'number' && Number.isFinite(old.revision) ? old.revision : 0
     if (typeof settings.revision === 'number' && settings.revision !== storedRev) {
       throw new Error(
-        `设置已在别处更新（本地版本 ${settings.revision}，磁盘版本 ${storedRev}），请关闭并重新打开设置页后再保存`
+        `设置已在别处更新（本地版本 ${settings.revision}，磁盘版本 ${storedRev}），请关闭并重新打开设置页后再保存`,
       )
     }
     // LLM 接口地址下拉记忆：去重置顶，最多保留 12 条（UI 保存与对话内 llm_baseUrl 修改均走此入口）
@@ -173,6 +197,12 @@ export class SettingsStore {
       if (prevBase && prevBase !== base && !hist.includes(prevBase)) hist.push(prevBase)
       if (base && !hist.includes(base)) hist.unshift(base)
       settings.llm = { ...settings.llm, baseUrlHistory: hist.slice(0, 12) }
+
+      // SEC-04：渲染层拿不到明文 Key（settings:get 只回掩码）。未显式标记 apiKeyDirty 时，
+      // 空 Key 一律沿用磁盘旧值；显式修改（含清空）才采用本次提交值。
+      const incoming = typeof settings.llm.apiKey === 'string' ? settings.llm.apiKey.trim() : ''
+      const kept = incoming || decryptApiKey(old?.llm?.apiKey)
+      settings.llm = { ...settings.llm, apiKey: settings.llm.apiKeyDirty === true ? incoming : kept }
     }
     await fs.mkdir(path.dirname(this.settingsPath), { recursive: true })
     const normalized = this.normalize(settings)
@@ -197,7 +227,7 @@ export class SettingsStore {
           character: { ...defaults.creation.character, ...sc.character },
           scene: { ...defaults.creation.scene, ...sc.scene },
           edit: { ...defaults.creation.edit, ...sc.edit },
-          presets: Array.isArray(sc.presets) ? sc.presets : defaults.creation.presets
+          presets: Array.isArray(sc.presets) ? sc.presets : defaults.creation.presets,
         }
         continue
       }
@@ -228,10 +258,15 @@ export class SettingsStore {
     creation.storyboard.minShots = this.num(creation.storyboard.minShots, DEFAULT_STORYBOARD.minShots, 4, 30)
     creation.storyboard.maxShots = Math.max(
       creation.storyboard.minShots,
-      this.num(creation.storyboard.maxShots, DEFAULT_STORYBOARD.maxShots, creation.storyboard.minShots, 30)
+      this.num(creation.storyboard.maxShots, DEFAULT_STORYBOARD.maxShots, creation.storyboard.minShots, 30),
     )
     creation.storyboard.temperature = this.num(creation.storyboard.temperature, DEFAULT_STORYBOARD.temperature, 0, 1)
-    creation.storyboard.maxCharacters = this.num(creation.storyboard.maxCharacters, DEFAULT_STORYBOARD.maxCharacters, 2, 12)
+    creation.storyboard.maxCharacters = this.num(
+      creation.storyboard.maxCharacters,
+      DEFAULT_STORYBOARD.maxCharacters,
+      2,
+      12,
+    )
     creation.edit.comfyTimeoutSec = this.num(creation.edit.comfyTimeoutSec, DEFAULT_EDIT.comfyTimeoutSec, 60, 3600)
     creation.edit.defaultBgmVolume = this.num(creation.edit.defaultBgmVolume, DEFAULT_EDIT.defaultBgmVolume, 0, 100)
     creation.edit.subtitleFontSize = this.num(creation.edit.subtitleFontSize, DEFAULT_EDIT.subtitleFontSize, 10, 48)
@@ -242,7 +277,11 @@ export class SettingsStore {
     creation.scene.candidates = this.num(creation.scene.candidates, DEFAULT_SCENE.candidates, 1, 4)
     creation.edit.renderCandidates = this.num(creation.edit.renderCandidates, DEFAULT_EDIT.renderCandidates, 1, 3)
     // S-03：枚举白名单
-    creation.edit.lipSyncMode = this.enumOf(creation.edit.lipSyncMode, ['auto', 'latentsync', 'h3-native'], DEFAULT_EDIT.lipSyncMode)
+    creation.edit.lipSyncMode = this.enumOf(
+      creation.edit.lipSyncMode,
+      ['auto', 'latentsync', 'h3-native'],
+      DEFAULT_EDIT.lipSyncMode,
+    )
     creation.edit.reviewGate = this.enumOf(creation.edit.reviewGate, ['off', 'warn', 'block'], DEFAULT_EDIT.reviewGate)
 
     const conc = this.num(s.render?.assetConcurrency, 2, 1, 3)
@@ -265,20 +304,24 @@ export class SettingsStore {
         reviewGate: this.enumOf(s.render?.reviewGate, ['off', 'warn', 'block'], 'block'),
         finalReviewGate: this.enumOf(s.render?.finalReviewGate, ['off', 'warn', 'block'], 'block'),
         consistencyMode: this.enumOf(s.render?.consistencyMode, ['off', 'warn', 'rerender'], 'warn'),
-        resolutionTier: this.enumOf(s.render?.resolutionTier, ['auto', 'low', 'mid', 'standard', 'high', 'ultra'], 'auto'),
+        resolutionTier: this.enumOf(
+          s.render?.resolutionTier,
+          ['auto', 'low', 'mid', 'standard', 'high', 'ultra'],
+          'auto',
+        ),
         oomRetry: s.render?.oomRetry !== false,
         turboH3: s.render?.turboH3 === true,
         assetConcurrency: conc,
         perShotAudit: s.render?.perShotAudit ?? true,
         fusionFallback: this.enumOf<'block' | 'allow'>(s.render?.fusionFallback, ['block', 'allow'], 'block'),
         i2iDenoise: this.dec(s.render?.i2iDenoise, 1, 0.1, 1),
-        firstFrameFaceThreshold: this.dec(s.render?.firstFrameFaceThreshold, 0.7, 0.1, 1)
+        firstFrameFaceThreshold: this.dec(s.render?.firstFrameFaceThreshold, 0.7, 0.1, 1),
       },
       tts: {
         ...s.tts,
         defaultVoice: this.str(s.tts?.defaultVoice, DEFAULT_SETTINGS.tts.defaultVoice),
         rate: creation.edit.ttsRate,
-        volume: creation.edit.ttsVolume
+        volume: creation.edit.ttsVolume,
       },
       comfyui: {
         ...s.comfyui,
@@ -287,13 +330,20 @@ export class SettingsStore {
         modelsDir: this.str(s.comfyui?.modelsDir, DEFAULT_SETTINGS.comfyui.modelsDir),
         startCommand: this.str(s.comfyui?.startCommand, DEFAULT_SETTINGS.comfyui.startCommand),
         workflowLibraryDir: this.str(s.comfyui?.workflowLibraryDir, DEFAULT_SETTINGS.comfyui.workflowLibraryDir),
-        mcpVenvDir: this.str(s.comfyui?.mcpVenvDir, DEFAULT_SETTINGS.comfyui.mcpVenvDir)
+        mcpVenvDir: this.str(s.comfyui?.mcpVenvDir, DEFAULT_SETTINGS.comfyui.mcpVenvDir),
       },
       llm: {
-        ...s.llm,
+        // SEC-04：显式白名单——hasApiKey/apiKeyMasked/apiKeyDirty 是渲染层通信字段，不落盘
         apiKey: this.str(s.llm?.apiKey, DEFAULT_SETTINGS.llm.apiKey),
         baseUrl: this.str(s.llm?.baseUrl, DEFAULT_SETTINGS.llm.baseUrl),
-        model: this.str(s.llm?.model, DEFAULT_SETTINGS.llm.model)
+        model: this.str(s.llm?.model, DEFAULT_SETTINGS.llm.model),
+        ...(Array.isArray(s.llm?.baseUrlHistory)
+          ? {
+              baseUrlHistory: s.llm.baseUrlHistory
+                .filter((u): u is string => typeof u === 'string' && u.trim().length > 0)
+                .slice(0, 12),
+            }
+          : {}),
       },
       workflow: {
         default: this.str(s.workflow?.default, DEFAULT_SETTINGS.workflow.default),
@@ -301,21 +351,21 @@ export class SettingsStore {
         casting: this.str(s.workflow?.casting, DEFAULT_SETTINGS.workflow.casting),
         scene: this.str(s.workflow?.scene, DEFAULT_SETTINGS.workflow.scene),
         shot: this.str(s.workflow?.shot, DEFAULT_SETTINGS.workflow.shot),
-        prop: this.str(s.workflow?.prop, DEFAULT_SETTINGS.workflow.prop)
+        prop: this.str(s.workflow?.prop, DEFAULT_SETTINGS.workflow.prop),
       },
       negatives: {
         // P1-4：按阶段追加负向词（追加而非替换，内置画质底线始终生效）
         casting: this.str(s.negatives?.casting, DEFAULT_SETTINGS.negatives.casting),
         scene: this.str(s.negatives?.scene, DEFAULT_SETTINGS.negatives.scene),
         shot: this.str(s.negatives?.shot, DEFAULT_SETTINGS.negatives.shot),
-        prop: this.str(s.negatives?.prop, DEFAULT_SETTINGS.negatives.prop)
+        prop: this.str(s.negatives?.prop, DEFAULT_SETTINGS.negatives.prop),
       },
       general: {
         ...s.general,
         autoSave: s.general?.autoSave !== false,
         // S-05：自动学习默认关闭（每轮学习 15~30 万 tokens 纯自动开销），用户在设置页显式开启
-        autoLearn: s.general?.autoLearn === true
-      }
+        autoLearn: s.general?.autoLearn === true,
+      },
     }
   }
 
@@ -342,7 +392,7 @@ export class SettingsStore {
   }
 
   private clampFrames(frames: number): number {
-    if (typeof frames !== 'number' || (frames < 17 || (frames - 1) % 16 !== 0)) {
+    if (typeof frames !== 'number' || frames < 17 || (frames - 1) % 16 !== 0) {
       const n = Math.max(1, Math.round((frames - 1) / 16))
       return n * 16 + 1
     }

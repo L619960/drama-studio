@@ -1,8 +1,5 @@
-import pinyinMod from 'pinyin'
 import type { Character } from '../../shared/ipcTypes'
-
-const pinyinFn = ((pinyinMod as unknown as { pinyin?: (n: string, o?: unknown) => string[][] }).pinyin ||
-  (pinyinMod as unknown as (n: string, o?: unknown) => string[][])) as (n: string, o?: unknown) => string[][]
+import { pinyinFn } from './pinyinName'
 
 /** 中文名 → 拼音空格名 / 首字母大写名，供单人镜提示词屏蔽英文戏名。 */
 export function castNameVariants(name: string): string[] {
@@ -11,7 +8,8 @@ export function castNameVariants(name: string): string[] {
   const out = new Set<string>([n])
   try {
     const segs = pinyinFn(n, { heteronym: false })
-    const spaced = segs.map(s => (s[0] || ''))
+    const spaced = segs
+      .map((s) => s[0] || '')
       .join(' ')
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '')
@@ -20,10 +18,12 @@ export function castNameVariants(name: string): string[] {
     if (spaced) {
       out.add(spaced)
       out.add(spaced.toLowerCase())
-      out.add(spaced.replace(/\b\w/g, c => c.toUpperCase()))
+      out.add(spaced.replace(/\b\w/g, (c) => c.toUpperCase()))
       out.add(spaced.replace(/\s+/g, ''))
     }
-  } catch { /* pinyin 不可用时只保留原文 */ }
+  } catch {
+    /* pinyin 不可用时只保留原文 */
+  }
   return [...out]
 }
 
@@ -39,34 +39,61 @@ export function castNameVariants(name: string): string[] {
 
 /** 服装主色系词典（appearanceLock 差异化检测用；含现代服化词——2026-10-23 现代剧适配） */
 const COLOR_TERMS: Record<string, string[]> = {
-  '浅色/素色': ['white', 'off-white', 'pale', 'light gray', 'light grey', 'beige', 'linen', 'cream', 'ivory', '麻', '浅', '米白', '米色'],
+  '浅色/素色': [
+    'white',
+    'off-white',
+    'pale',
+    'light gray',
+    'light grey',
+    'beige',
+    'linen',
+    'cream',
+    'ivory',
+    '麻',
+    '浅',
+    '米白',
+    '米色',
+  ],
   '青色/蓝色': ['blue', 'cyan', 'teal', 'navy', 'indigo', 'slate', '青', '蓝', '靛', '藏青', '宝蓝'],
-  '玄黑/深色': ['black', 'dark gray', 'dark grey', 'charcoal', 'graphite', 'grey', 'gray', '玄', '黑', '墨', '炭灰', '深灰'],
-  '紫色': ['purple', 'violet', '紫'],
+  '玄黑/深色': [
+    'black',
+    'dark gray',
+    'dark grey',
+    'charcoal',
+    'graphite',
+    'grey',
+    'gray',
+    '玄',
+    '黑',
+    '墨',
+    '炭灰',
+    '深灰',
+  ],
+  紫色: ['purple', 'violet', '紫'],
   '红色/绛色': ['red', 'crimson', 'vermillion', 'maroon', 'burgundy', 'wine', '绛', '红', '酒红', '暗红'],
   '赭褐/土黄': ['brown', 'ochre', 'tan', 'khaki', 'earthy', 'camel', 'caramel', '赭', '褐', '土', '棕'],
-  '绿色': ['green', 'jade', 'olive', '绿', '墨绿', '军绿'],
-  '金色/明黄': ['gold', 'yellow', '黄', '金']
+  绿色: ['green', 'jade', 'olive', '绿', '墨绿', '军绿'],
+  '金色/明黄': ['gold', 'yellow', '黄', '金'],
 }
 
 /** 发型/年龄锚点词典（含现代发型——2026-10-23 现代剧适配） */
 const HAIR_TERMS: Record<string, string[]> = {
-  '高马尾': ['high ponytail', 'ponytail', '马尾'],
-  '束发冠': ['topknot', 'bun', 'hair bun', '束发', '发冠', '冠'],
+  高马尾: ['high ponytail', 'ponytail', '马尾'],
+  束发冠: ['topknot', 'bun', 'hair bun', '束发', '发冠', '冠'],
   '披发/长发': ['loose hair', 'long flowing hair', 'long straight hair', 'long hair', '披发', '散发', '长发'],
-  '短发': ['short hair', 'short', 'bob', 'cropped hair', 'crew cut', 'undercut', 'pixie', '寸头', '短发', '齐肩'],
-  '卷发': ['curly hair', 'wavy hair', 'curly', 'wavy', 'curls', '卷发', '波浪'],
+  短发: ['short hair', 'short', 'bob', 'cropped hair', 'crew cut', 'undercut', 'pixie', '寸头', '短发', '齐肩'],
+  卷发: ['curly hair', 'wavy hair', 'curly', 'wavy', 'curls', '卷发', '波浪'],
   '垂髻/少年髻': ['braid', 'child bun', '垂髻', '髻'],
   '髯/胡须': ['beard', 'moustache', 'goatee', 'stubble', '髯', '胡须', '须'],
-  '白发': ['white hair', 'gray hair', 'grey hair', '白发', '灰发'],
-  '光头': ['bald', 'shaved head', '光头']
+  白发: ['white hair', 'gray hair', 'grey hair', '白发', '灰发'],
+  光头: ['bald', 'shaved head', '光头'],
 }
 
 function anchorOf(text: string, dict: Record<string, string[]>): string[] {
   const t = (text || '').toLowerCase()
   const found: string[] = []
   for (const [label, terms] of Object.entries(dict)) {
-    if (terms.some(term => t.includes(term))) found.push(label)
+    if (terms.some((term) => t.includes(term))) found.push(label)
   }
   return found
 }
@@ -88,20 +115,26 @@ export function validateCharacterAssets(characters: Character[]): { conflicts: s
   const n = characters.length
   for (let i = 0; i < n; i++) {
     const a = characters[i]
+    if (!a) continue
     for (let j = i + 1; j < n; j++) {
       const b = characters[j]
+      if (!b) continue
       const imgA = [a.faceImagePath, a.refImagePath, a.bodySheetPath].filter(Boolean) as string[]
       const imgB = [b.faceImagePath, b.refImagePath, b.bodySheetPath].filter(Boolean) as string[]
-      const shared = imgA.find(x => imgB.includes(x))
+      const shared = imgA.find((x) => imgB.includes(x))
       if (shared) {
-        conflicts.push(`角色「${a.name}」与「${b.name}」共享同一张人物参考图 ${shared}（角色资产冲突：每个角色必须绑定唯一人物参考图）`)
+        conflicts.push(
+          `角色「${a.name}」与「${b.name}」共享同一张人物参考图 ${shared}（角色资产冲突：每个角色必须绑定唯一人物参考图）`,
+        )
       }
       const anchorsA = extractLookAnchors(a)
       const anchorsB = extractLookAnchors(b)
-      const sameColor = anchorsA.colors.some(c => anchorsB.colors.includes(c))
-      const sameHair = anchorsA.hairs.some(h => anchorsB.hairs.includes(h))
+      const sameColor = anchorsA.colors.some((c) => anchorsB.colors.includes(c))
+      const sameHair = anchorsA.hairs.some((h) => anchorsB.hairs.includes(h))
       if (sameColor && sameHair) {
-        similarLooks.push(`角色「${a.name}」与「${b.name}」外观趋同（主色系 ${anchorsA.colors.join('/')}、发型 ${anchorsA.hairs.join('/')} 均重叠），多角色剧易被模型并成同一张脸，请拉开服装色系/发型/年龄气质差异`)
+        similarLooks.push(
+          `角色「${a.name}」与「${b.name}」外观趋同（主色系 ${anchorsA.colors.join('/')}、发型 ${anchorsA.hairs.join('/')} 均重叠），多角色剧易被模型并成同一张脸，请拉开服装色系/发型/年龄气质差异`,
+        )
       }
     }
   }
@@ -137,7 +170,7 @@ export function detectRoleConfusion(opts: {
       withCharacter: best.characterId,
       withName: best.name,
       selfScore: self,
-      bestOther: best.score
+      bestOther: best.score,
     }
   }
   return { confused: false, selfScore: self, bestOther: best.score }

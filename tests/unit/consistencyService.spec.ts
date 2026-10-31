@@ -6,7 +6,7 @@
 import { describe, it, expect, vi } from 'vitest'
 
 vi.mock('../../src/main/core/logger', () => ({
-  createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() })
+  createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }))
 // FaceDetector 只在 compare 内部使用，这里整体打桩，避免 import onnxruntime
 vi.mock('../../src/main/core/faceDetector', () => ({
@@ -15,27 +15,33 @@ vi.mock('../../src/main/core/faceDetector', () => ({
     recognitionAvailable = vi.fn(async () => false)
     detectPair = vi.fn(async () => null)
     embedPair = vi.fn(async () => null)
-  }
+  },
 }))
-// 可选依赖：本机是否安装 @xenova/transformers 不确定，统一打桩为「模型下载失败」，
-// 让 available() 稳定走 initFailed 分支，测试结果不依赖外部环境
-vi.mock('@xenova/transformers', () => ({
+// 可选依赖：@huggingface/transformers（ENG-06 迁移后的 CLIP 实现）统一打桩为「模型下载失败」，
+// 让 available() 稳定走 initFailed 分支，测试结果不依赖外部环境与真实模型下载
+vi.mock('@huggingface/transformers', () => ({
   env: {},
   RawImage: class {},
   pipeline: async () => {
     throw new Error('模型下载失败')
-  }
+  },
 }))
 
 import {
-  ConsistencyService, FACE_CONSISTENCY_THRESHOLD, CONSISTENCY_THRESHOLD, H3_WAN_FALLBACK_THRESHOLD
+  ConsistencyService,
+  FACE_CONSISTENCY_THRESHOLD,
+  CONSISTENCY_THRESHOLD,
+  H3_WAN_FALLBACK_THRESHOLD,
 } from '../../src/main/core/consistencyService'
 import type { ConsistencyResult } from '../../src/main/core/consistencyService'
 
 function mkService() {
   // loadRawImage 在 compareFrames 路径下不会被触达（compare 已被替换）
   const svc = new ConsistencyService('/tmp/models', vi.fn() as never)
-  const compare = vi.fn(async (_ref: string, _target: string, _t?: number): Promise<ConsistencyResult> => ({ score: 0.8, method: 'full' }))
+  const compare = vi.fn(async (_ref: string, _target: string, _t?: number): Promise<ConsistencyResult> => ({
+    score: 0.8,
+    method: 'full',
+  }))
   ;(svc as unknown as { compare: typeof compare }).compare = compare
   return { svc, compare }
 }
@@ -60,9 +66,12 @@ describe('compareFrames · 多帧聚合', () => {
   it('人脸帧存在时只用人脸帧均分（不被 CLIP 高分稀释），保留 3 位小数', async () => {
     const { svc, compare } = mkService()
     compare.mockImplementation(async (_r, _t, t?: number) =>
-      t === 0 ? { score: 0.91, method: 'face' }
-        : t === 1 ? { score: 0.55, method: 'face' }
-          : { score: 0.99, method: 'full' })
+      t === 0
+        ? { score: 0.91, method: 'face' }
+        : t === 1
+          ? { score: 0.55, method: 'face' }
+          : { score: 0.99, method: 'full' },
+    )
     const r = await svc.compareFrames('ref.png', 'video.mp4', [0, 1, 2])
     // (0.91 + 0.55) / 2 = 0.73
     expect(r).toEqual({ score: 0.73, method: 'face' })
@@ -106,7 +115,7 @@ describe('compareFrames · 多帧聚合', () => {
 describe('available / needsDownload 状态机', () => {
   it('模型加载失败后 available=false 且 needsDownload=false（本会话永久禁用）', async () => {
     const svc = new ConsistencyService('/tmp/models', vi.fn() as never)
-    // 依赖未安装：@xenova/transformers 动态 import 失败 → initFailed
+    // 依赖或模型不可用：@huggingface/transformers 动态 import/pipeline 失败 → initFailed
     await expect(svc.available()).resolves.toBe(false)
     expect(svc.needsDownload).toBe(false)
   })

@@ -21,9 +21,9 @@ describe('tStart 复用当前项目 pid（回归：导演开拍死循环修复�
           calls.push(input)
           // 模拟 director.start 行为：有 existingProjectId 就用它，否则生成新 id
           return (input.existingProjectId as string) || 'p_new_auto_created'
-        }
+        },
       },
-      lastProjectId: undefined as string | undefined
+      lastProjectId: undefined as string | undefined,
     }
     return { host, calls }
   }
@@ -31,11 +31,13 @@ describe('tStart 复用当前项目 pid（回归：导演开拍死循环修复�
   it('在项目对话里开拍（pid 存在）应把 pid 作为 existingProjectId 传入，不另建项目', async () => {
     const { host, calls } = makeHost({ existingProjectId: 'p_current' })
     const r = await tStart(host, 'p_current', {
-      title: '雨夜对峙', genre: '都市情感', script: '雨夜天台。'
+      title: '雨夜对峙',
+      genre: '都市情感',
+      script: '雨夜天台。',
     })
     expect(r.ok).toBe(true)
     // 关键：传给 director.start 的 input 必须带 existingProjectId=p_current
-    expect(calls[0].existingProjectId).toBe('p_current')
+    expect(calls[0]?.existingProjectId).toBe('p_current')
     // 返回的 projectId 必须等于当前 pid，不能是自动新建的
     expect(r.text).toContain('"projectId":"p_current"')
     // host.lastProjectId 必须落到当前 pid
@@ -45,17 +47,21 @@ describe('tStart 复用当前项目 pid（回归：导演开拍死循环修复�
   it('全局对话里开拍（pid 为空）不传 existingProjectId，仍走自动新建', async () => {
     const { host, calls } = makeHost({})
     const r = await tStart(host, undefined, {
-      title: '新剧', genre: '悬疑', script: '...'
+      title: '新剧',
+      genre: '悬疑',
+      script: '...',
     })
     expect(r.ok).toBe(true)
-    expect(calls[0].existingProjectId).toBeUndefined()
+    expect(calls[0]?.existingProjectId).toBeUndefined()
     expect(r.text).toContain('"projectId":"p_new_auto_created"')
   })
 
   it('当前项目已有任务在跑时拒绝二次开拍', async () => {
     const { host } = makeHost({ existingProjectId: 'p_busy', alreadyRunning: true })
     const r = await tStart(host, 'p_busy', {
-      title: '新剧', genre: '悬疑', script: '...'
+      title: '新剧',
+      genre: '悬疑',
+      script: '...',
     })
     expect(r.ok).toBe(false)
     expect(r.text).toContain('已有任务在执行')

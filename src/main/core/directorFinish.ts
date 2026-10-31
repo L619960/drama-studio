@@ -6,7 +6,9 @@ import { FACE_CONSISTENCY_THRESHOLD } from './consistencyService'
 import type { DirectorAgent } from './directorAgent'
 import { logImpl, setStageImpl, emitStateImpl, isCancelledImpl } from './directorStateMachine'
 import {
-  subscribeRenderProgressImpl, unsubscribeRenderProgressImpl, notifyProjectUpdatedImpl
+  subscribeRenderProgressImpl,
+  unsubscribeRenderProgressImpl,
+  notifyProjectUpdatedImpl,
 } from './directorProgressBridge'
 
 /**
@@ -21,12 +23,11 @@ export function finishImpl(agent: DirectorAgent, projectId: string, doneMessage?
   state.paused = false
   state.cancelled = wasCancelled
   state.stages.done = {
-    status: state.cancelled ? 'skipped' : 'done',
-    message: doneMessage
-      || (state.finalPath
-        ? `成片: ${state.finalPath}`
-        : state.cancelled ? '已取消' : '未产出成片'),
-    percent: 100
+    // 带 doneMessage 表示非正常收尾（失败/未产出成片），done 阶段同样要标 error，
+    // 否则 UI 会把「分析失败」渲染成绿色完成态（真实链路验收暴露的假成功）
+    status: state.cancelled ? 'skipped' : doneMessage || !state.finalPath ? 'error' : 'done',
+    message: doneMessage || (state.finalPath ? `成片: ${state.finalPath}` : state.cancelled ? '已取消' : '未产出成片'),
+    percent: 100,
   }
   state.finishedAt = Date.now()
   agent.pauseRequested.delete(projectId)
@@ -34,21 +35,28 @@ export function finishImpl(agent: DirectorAgent, projectId: string, doneMessage?
   agent.gates.delete(projectId)
   agent.healBudget.delete(projectId)
   unsubscribeRenderProgressImpl(agent, projectId)
-  logImpl(agent, projectId, 'done',
-    state.cancelled ? 'warn' : (doneMessage ? 'error' : 'success'),
-    state.cancelled ? '任务已取消' : (doneMessage || '全部完成，成片已产出'))
+  logImpl(
+    agent,
+    projectId,
+    'done',
+    state.cancelled ? 'warn' : doneMessage || !state.finalPath ? 'error' : 'success',
+    state.cancelled
+      ? '任务已取消'
+      : doneMessage || (state.finalPath ? '全部完成，成片已产出' : '任务结束（未产出成片）'),
+  )
   // REQ-05：终态事件（完成/失败/取消），全局运行条据此变绿/变红并给出下一步入口
   const finishedEvent: DirectorFinishedEvent = {
     type: 'director:finished',
     projectId,
     title: state.title,
-    success: !wasCancelled && !doneMessage,
+    // 没有成片路径不算成功：避免「分析失败/全镜失败」被前端渲染成绿色完成态
+    success: !wasCancelled && !doneMessage && !!state.finalPath,
     cancelled: wasCancelled,
     failedShotIds: [...state.failedShotIds],
     totalShots: state.totalShots,
     doneShots: state.doneShots,
     message: state.stages.done.message,
-    finalPath: state.finalPath
+    ...(state.finalPath !== undefined ? { finalPath: state.finalPath } : {}),
   }
   agent.emit('finished', finishedEvent)
   // emitState 内部会按 cancelled 集合重算 state.cancelled：
@@ -79,13 +87,13 @@ export function evictFinishedStatesImpl(agent: DirectorAgent): void {
 export async function renderShotsWithAuditImpl(
   agent: DirectorAgent,
   projectId: string,
-  shotDurations: Map<string, number>
+  shotDurations: Map<string, number>,
 ): Promise<void> {
   const checklist = await agent.skills.auditChecklist()
   subscribeRenderProgressImpl(agent, projectId)
   try {
     const project = await agent.store.get(projectId)
-    const targets = project.shots.filter(s => s.status === 'pending' || s.status === 'failed')
+    const targets = project.shots.filter((s) => s.status === 'pending' || s.status === 'failed')
     const total = targets.length
     let doneCount = 0
     let notPassed = 0
@@ -95,29 +103,44 @@ export async function renderShotsWithAuditImpl(
       await agent.queue.waitForFinish(projectId)
 
       const fresh = await agent.store.get(projectId)
-      const cur = fresh.shots.find(s => s.id === shot.id)
+      const cur = fresh.shots.find((s) => s.id === shot.id)
       if (!cur || cur.status !== 'done') continue // 渲染失败，交给 C 自愈
 
       try {
         const audit = await auditSingleShotImpl(agent, projectId, cur, fresh, checklist, true)
         if (audit.durationSec >= 0) shotDurations.set(cur.id, audit.durationSec)
-        cur.auditHint = audit.passed
-          ? undefined
-          : `${audit.reason}${audit.fixHint ? '；建议：' + audit.fixHint : ''}`
+        if (audit.passed) delete cur.auditHint
+        else cur.auditHint = `${audit.reason}${audit.fixHint ? '；建议：' + audit.fixHint : ''}`
         if (!audit.passed) notPassed++
         await agent.store.save(fresh)
         notifyProjectUpdatedImpl(agent, projectId)
-        logImpl(agent, projectId, 'render', audit.passed ? 'info' : 'warn',
+        logImpl(
+          agent,
+          projectId,
+          'render',
+          audit.passed ? 'info' : 'warn',
           audit.passed
             ? `第${cur.index}镜「${cur.scene}」渲染完成`
-            : `第${cur.index}镜「${cur.scene}」渲染完成但有提示：${audit.reason}（可在分镜页编辑重渲）`)
+            : `第${cur.index}镜「${cur.scene}」渲染完成但有提示：${audit.reason}（可在分镜页编辑重渲）`,
+        )
       } catch (e) {
-        logImpl(agent, projectId, 'render', 'warn',
-          `第${cur.index}镜审核留痕失败：${e instanceof Error ? e.message : String(e)}`)
+        logImpl(
+          agent,
+          projectId,
+          'render',
+          'warn',
+          `第${cur.index}镜审核留痕失败：${e instanceof Error ? e.message : String(e)}`,
+        )
       }
       doneCount++
-      setStageImpl(agent, projectId, 'render', 'running',
-        `渲染 ${doneCount}/${total}...`, Math.round((doneCount / Math.max(1, total)) * 100))
+      setStageImpl(
+        agent,
+        projectId,
+        'render',
+        'running',
+        `渲染 ${doneCount}/${total}...`,
+        Math.round((doneCount / Math.max(1, total)) * 100),
+      )
     }
     if (notPassed > 0) {
       logImpl(agent, projectId, 'render', 'warn', `本轮共 ${notPassed} 镜次未过审（含整改后放行），已在分镜页留痕`)
@@ -136,11 +159,11 @@ export async function auditSingleShotImpl(
   shot: Shot,
   project: Project,
   checklist: AuditCheckItem[],
-  skipVision = false
+  skipVision = false,
 ): Promise<{
   passed: boolean
   reason: string
-  fixHint?: string
+  fixHint?: string | undefined
   durationSec: number
   vision: boolean
 }> {
@@ -165,7 +188,13 @@ export async function auditSingleShotImpl(
     return { passed: false, reason: '视频信息读取失败', fixHint: undefined, durationSec: -1, vision: false }
   }
   if (dur < 0.8) {
-    return { passed: false, reason: `时长过短（${dur.toFixed(1)}s）`, fixHint: undefined, durationSec: dur, vision: false }
+    return {
+      passed: false,
+      reason: `时长过短（${dur.toFixed(1)}s）`,
+      fixHint: undefined,
+      durationSec: dur,
+      vision: false,
+    }
   }
   if (await agent.ffmpeg.looksLikeBlankVideo(abs)) {
     return { passed: false, reason: '画面疑似纯色/黑帧', fixHint: undefined, durationSec: dur, vision: false }
@@ -183,7 +212,7 @@ export async function auditSingleShotImpl(
       reason: `人物一致性偏低（${shot.consistencyScore.toFixed(2)} < ${FACE_CONSISTENCY_THRESHOLD}）`,
       fixHint: 'keep exact face identity, hairstyle and outfit from the reference image, no facial change',
       durationSec: dur,
-      vision: false
+      vision: false,
     }
   }
 
@@ -193,27 +222,34 @@ export async function auditSingleShotImpl(
   if (!checklist.length) {
     return { passed: true, reason: '', fixHint: undefined, durationSec: dur, vision: false }
   }
-  const char = project.characters.find(c => c.id === shot.characterIds[0])
-  const board = (project.sceneBoards || []).find(b => b.id === shot.sceneBoardId)
-  const audit = await agent.llm.auditImage({
-    imagePath: abs,
-    kind: 'video',
-    checklist,
-    context: {
-      index: shot.index,
-      scene: board?.name || shot.scene,
-      character: char?.name || '空镜',
-      action: shot.action || '',
-      shotSize: shot.shotSize || 'medium',
-      camera: shot.camera || 'static',
-      lookEn: char?.appearanceLock || char?.description
-    }
-  }).catch(() => ({ visionUnavailable: true, passed: true, blockedProblems: [], fixHint: '' }))
+  const char = project.characters.find((c) => c.id === shot.characterIds[0])
+  const board = (project.sceneBoards || []).find((b) => b.id === shot.sceneBoardId)
+  const audit = await agent.llm
+    .auditImage({
+      imagePath: abs,
+      kind: 'video',
+      checklist,
+      context: {
+        index: shot.index,
+        scene: board?.name || shot.scene,
+        character: char?.name || '空镜',
+        action: shot.action || '',
+        shotSize: shot.shotSize || 'medium',
+        camera: shot.camera || 'static',
+        lookEn: char?.appearanceLock || char?.description,
+      },
+    })
+    .catch(() => ({ visionUnavailable: true, passed: true, blockedProblems: [], fixHint: '' }))
   if (audit.visionUnavailable) {
     if (!agent.visionWarned.has(projectId)) {
       agent.visionWarned.add(projectId)
-      logImpl(agent, projectId, 'render', 'warn',
-        `当前 LLM 模型不支持视觉输入，本镜仅做技术审核（在设置→LLM 配置支持看图的多模态模型后可启用 AI 审图）`)
+      logImpl(
+        agent,
+        projectId,
+        'render',
+        'warn',
+        `当前 LLM 模型不支持视觉输入，本镜仅做技术审核（在设置→LLM 配置支持看图的多模态模型后可启用 AI 审图）`,
+      )
     }
     return { passed: true, reason: '', fixHint: undefined, durationSec: dur, vision: false }
   }
@@ -223,7 +259,7 @@ export async function auditSingleShotImpl(
       reason: audit.blockedProblems.join('；') || 'AI 视觉审核未通过',
       fixHint: audit.fixHint,
       durationSec: dur,
-      vision: true
+      vision: true,
     }
   }
   return { passed: true, reason: '', fixHint: audit.fixHint || undefined, durationSec: dur, vision: true }
@@ -233,7 +269,10 @@ export async function auditSingleShotImpl(
  * 逐镜审批（严格质检关卡）：分段文件/音轨/时长/黑帧/角色混淆检查；
  * 未过审镜头换 seed 重渲一轮。
  */
-export async function approveShotsImpl(agent: DirectorAgent, projectId: string): Promise<{
+export async function approveShotsImpl(
+  agent: DirectorAgent,
+  projectId: string,
+): Promise<{
   approved: boolean
   problems: string[]
   retryIds: string[]
@@ -269,8 +308,11 @@ export async function approveShotsImpl(agent: DirectorAgent, projectId: string):
         }
         if (Math.abs(dur - expectSec) > 3) {
           logImpl(
-            agent, projectId, 'render', 'warn',
-            `第${shot.index}镜「${shot.scene}」时长 ${dur.toFixed(1)}s（设定 ${expectSec}s），已放行`
+            agent,
+            projectId,
+            'render',
+            'warn',
+            `第${shot.index}镜「${shot.scene}」时长 ${dur.toFixed(1)}s（设定 ${expectSec}s），已放行`,
           )
         }
       } catch {
@@ -303,7 +345,7 @@ export async function approveShotsImpl(agent: DirectorAgent, projectId: string):
         shot.consistencyScore < FACE_CONSISTENCY_THRESHOLD
       ) {
         warnings.add(
-          `第${shot.index}镜「${shot.scene}」人物一致性偏低（${shot.consistencyScore.toFixed(2)} < ${FACE_CONSISTENCY_THRESHOLD}），已放行，可在分镜页手动重渲该镜`
+          `第${shot.index}镜「${shot.scene}」人物一致性偏低（${shot.consistencyScore.toFixed(2)} < ${FACE_CONSISTENCY_THRESHOLD}），已放行，可在分镜页手动重渲该镜`,
         )
       }
     }
@@ -316,8 +358,14 @@ export async function approveShotsImpl(agent: DirectorAgent, projectId: string):
   }
 
   const retryIds = [...problems.keys()]
-  setStageImpl(agent, projectId, 'render', 'running',
-    `${retryIds.length} 镜未过审（${[...problems.values()][0]}...），换种子重渲中...`, 92)
+  setStageImpl(
+    agent,
+    projectId,
+    'render',
+    'running',
+    `${retryIds.length} 镜未过审（${[...problems.values()][0]}...），换种子重渲中...`,
+    92,
+  )
   const project = await agent.store.get(projectId)
   for (const shot of project.shots) {
     if (retryIds.includes(shot.id)) {
@@ -343,6 +391,6 @@ export async function approveShotsImpl(agent: DirectorAgent, projectId: string):
     problems: [...problems.values()],
     retryIds,
     durations,
-    warnings: [...warnings]
+    warnings: [...warnings],
   }
 }

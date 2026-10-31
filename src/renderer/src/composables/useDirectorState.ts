@@ -2,14 +2,19 @@ import { computed, ref, watch, type Ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { confirmDanger, confirmAction } from '../utils/confirm'
 import { showUndoToast } from '../utils/undoToast'
-import type {
-  DirectorState, DirectorStage, DirectorLogEntry
-} from '../../../shared/ipcTypes'
+import type { DirectorState, DirectorStage, DirectorLogEntry } from '../../../shared/ipcTypes'
 
 /** 工作流九阶段顺序（与 [directorAgent.ts](../../../../../main/core/directorAgent.ts) STAGE_ORDER 同构，UI 本地副本） */
 export const STAGE_ORDER: DirectorStage[] = [
-  'analyze', 'casting', 'scenes', 'render',
-  'combine', 'subtitle', 'review', 'bgm', 'done'
+  'analyze',
+  'casting',
+  'scenes',
+  'render',
+  'combine',
+  'subtitle',
+  'review',
+  'bgm',
+  'done',
 ]
 
 /** 阶段中文标签（与主进程 STAGE_LABELS 对齐） */
@@ -22,7 +27,7 @@ export const STAGE_LABELS: Record<DirectorStage, string> = {
   subtitle: '烧录字幕',
   review: '成片复审',
   bgm: 'BGM 混音',
-  done: '完成'
+  done: '完成',
 }
 
 export const LEVEL_TEXT = { info: '信息', success: '成功', warn: '警告', error: '错误' } as const
@@ -35,14 +40,14 @@ export const GATE_OPTIONS = [
   { value: 'render', label: '逐镜渲染与审批' },
   { value: 'combine', label: '拼接成片' },
   { value: 'subtitle', label: '烧录字幕' },
-  { value: 'review', label: '成片复审（配乐前最后一关）' }
+  { value: 'review', label: '成片复审（配乐前最后一关）' },
 ] as const
 
 // ===== 纯工具函数（R-13：唯一实现，WorkflowPanel/DirectorChat 直接 import，不再各自复制）=====
 
 /** 按九阶段顺序分组日志（只保留有日志的阶段） */
 export function groupLogsByStage(
-  entries: DirectorLogEntry[]
+  entries: DirectorLogEntry[],
 ): Array<{ stage: DirectorStage; entries: DirectorLogEntry[] }> {
   const map = new Map<DirectorStage, DirectorLogEntry[]>()
   for (const e of entries) {
@@ -50,9 +55,7 @@ export function groupLogsByStage(
     arr.push(e)
     map.set(e.stage, arr)
   }
-  return STAGE_ORDER
-    .filter(s => map.has(s))
-    .map(stage => ({ stage, entries: map.get(stage)! }))
+  return STAGE_ORDER.filter((s) => map.has(s)).map((stage) => ({ stage, entries: map.get(stage)! }))
 }
 
 /** 该阶段是否为确认点（暂停门） */
@@ -62,7 +65,7 @@ export function isGateStage(state: DirectorState | null, stage: DirectorStage): 
 
 /** 日志组内是否有 error 级条目 */
 export function groupHasError(g: { entries: DirectorLogEntry[] }): boolean {
-  return g.entries.some(e => e.level === 'error')
+  return g.entries.some((e) => e.level === 'error')
 }
 
 /** 日志时间戳 → HH:mm */
@@ -75,7 +78,10 @@ export function formatTime(ts: number): string {
 /** 阶段日志组耗时（首末条时间差，秒）。不足 1s 或单条返回 0（不展示） */
 export function groupDurationSec(entries: DirectorLogEntry[]): number {
   if (entries.length < 2) return 0
-  return Math.max(0, Math.round((entries[entries.length - 1].timestamp - entries[0].timestamp) / 1000))
+  const first = entries[0]
+  const last = entries[entries.length - 1]
+  if (!first || !last) return 0
+  return Math.max(0, Math.round((last.timestamp - first.timestamp) / 1000))
 }
 
 /** 秒 → 中文时长（<60s 显示「Ns」，否则「N分M秒」） */
@@ -110,7 +116,7 @@ export function useDirectorState(projectId: Ref<string | undefined>) {
   // 合并日志（按 id 去重，保持顺序，上限 300 条）
   function mergeLogs(entries: DirectorLogEntry[]): void {
     if (!entries.length) return
-    const known = new Set(localLogs.value.map(e => e.id))
+    const known = new Set(localLogs.value.map((e) => e.id))
     let changed = false
     for (const e of entries) {
       if (!known.has(e.id)) {
@@ -126,26 +132,29 @@ export function useDirectorState(projectId: Ref<string | undefined>) {
 
   // 阶段切换时：自动展开运行中/出错阶段，收起已完成阶段
   let lastRunning = ''
-  watch(() => {
-    const s = state.value
-    if (!s) return ''
-    const cur = STAGE_ORDER.find(st => s.stages[st].status === 'running') || ''
-    return `${cur}|${s.paused}`
-  }, (sig) => {
-    const [cur, pausedFlag] = sig.split('|')
-    const next = new Set(expandedStages.value)
-    if (lastRunning && lastRunning !== cur) {
-      const prev = state.value?.stages[lastRunning as DirectorStage]
-      if (prev && prev.status !== 'error') next.delete(lastRunning as DirectorStage)
-    }
-    if (cur) next.add(cur as DirectorStage)
-    if (pausedFlag === 'true' && cur === '') {
-      const last = logsByStage.value[logsByStage.value.length - 1]
-      if (last) next.add(last.stage)
-    }
-    expandedStages.value = [...next]
-    lastRunning = cur
-  })
+  watch(
+    () => {
+      const s = state.value
+      if (!s) return ''
+      const cur = STAGE_ORDER.find((st) => s.stages[st].status === 'running') || ''
+      return `${cur}|${s.paused}`
+    },
+    (sig) => {
+      const [cur = '', pausedFlag] = sig.split('|')
+      const next = new Set(expandedStages.value)
+      if (lastRunning && lastRunning !== cur) {
+        const prev = state.value?.stages[lastRunning as DirectorStage]
+        if (prev && prev.status !== 'error') next.delete(lastRunning as DirectorStage)
+      }
+      if (cur) next.add(cur as DirectorStage)
+      if (pausedFlag === 'true' && cur === '') {
+        const last = logsByStage.value[logsByStage.value.length - 1]
+        if (last) next.add(last.stage)
+      }
+      expandedStages.value = [...next]
+      lastRunning = cur
+    },
+  )
 
   // 装载序号：每次发起 hydrate/hydrateLatest 递增，响应回来时序号已变
   // 说明期间发生了路由切换/新装载，过期结果直接丢弃，防止旧项目状态覆盖新项目
@@ -165,7 +174,7 @@ export function useDirectorState(projectId: Ref<string | undefined>) {
     if (!s) return
     state.value = s
     mergeLogs(s.logs || [])
-    const cur = STAGE_ORDER.find(st => s.stages[st].status === 'running')
+    const cur = STAGE_ORDER.find((st) => s.stages[st].status === 'running')
     if (cur) expandedStages.value = [cur]
   }
 
@@ -183,7 +192,7 @@ export function useDirectorState(projectId: Ref<string | undefined>) {
     if (!s) return
     state.value = s
     mergeLogs(s.logs || [])
-    const cur = STAGE_ORDER.find(st => s.stages[st].status === 'running')
+    const cur = STAGE_ORDER.find((st) => s.stages[st].status === 'running')
     if (cur) expandedStages.value = [cur]
   }
 
@@ -273,10 +282,11 @@ export function useDirectorState(projectId: Ref<string | undefined>) {
       ElMessage.info('当前没有正在执行的任务')
       return
     }
-    const okStop = await confirmDanger(
-      '确定停止当前任务吗？进行中的渲染会被终止，已产出的素材会保留。',
-      { title: '停止任务', confirmText: '停止任务', cancelText: '再想想' }
-    )
+    const okStop = await confirmDanger('确定停止当前任务吗？进行中的渲染会被终止，已产出的素材会保留。', {
+      title: '停止任务',
+      confirmText: '停止任务',
+      cancelText: '再想想',
+    })
     if (!okStop) return
     try {
       await window.api.director.cancel(currentProjectId.value)
@@ -297,10 +307,10 @@ export function useDirectorState(projectId: Ref<string | undefined>) {
       ElMessage.info('当前没有可清空的任务')
       return
     }
-    const okClear = await confirmAction(
-      '清空当前任务的执行状态与日志？已产出的素材文件不会删除，仅清空工作台展示。',
-      { title: '清空任务', confirmText: '清空' }
-    )
+    const okClear = await confirmAction('清空当前任务的执行状态与日志？已产出的素材文件不会删除，仅清空工作台展示。', {
+      title: '清空任务',
+      confirmText: '清空',
+    })
     if (!okClear) return
     // REQ-16：暂存清空前的状态与日志，撤销时恢复本地展示（主进程侧任务态不回头）
     const prevState = state.value
@@ -309,12 +319,16 @@ export function useDirectorState(projectId: Ref<string | undefined>) {
     localLogs.value = []
     // 同步清空主进程侧任务态（directorClearState 通道）；失败不阻断本地 UI 清空
     await window.api.director.clearState(currentProjectId.value).catch(() => {})
-    showUndoToast('任务状态已清空', () => {
-      if (state.value) return
-      state.value = prevState
-      localLogs.value = prevLogs
-      ElMessage.success('已撤销清空')
-    }, () => {})
+    showUndoToast(
+      '任务状态已清空',
+      () => {
+        if (state.value) return
+        state.value = prevState
+        localLogs.value = prevLogs
+        ElMessage.success('已撤销清空')
+      },
+      () => {},
+    )
   }
 
   async function openFinalFolder(): Promise<void> {
@@ -333,15 +347,32 @@ export function useDirectorState(projectId: Ref<string | undefined>) {
   }
 
   return {
-    state, localLogs, expandedStages,
-    stageOrder: STAGE_ORDER, stageLabels: STAGE_LABELS, levelText: LEVEL_TEXT,
+    state,
+    localLogs,
+    expandedStages,
+    stageOrder: STAGE_ORDER,
+    stageLabels: STAGE_LABELS,
+    levelText: LEVEL_TEXT,
     gateOptions: GATE_OPTIONS,
-    running, paused, currentProjectId,
+    running,
+    paused,
+    currentProjectId,
     logsByStage,
-    isGate, groupHasError, formatTime,
-    mergeLogs, hydrate, hydrateLatest,
-    subscribe, unsubscribeAll,
-    onPause, onResume, onResumeFrom, retryFailedShots, onCancel, onClearTask, openFinalFolder,
-    resetForRouteSwitch
+    isGate,
+    groupHasError,
+    formatTime,
+    mergeLogs,
+    hydrate,
+    hydrateLatest,
+    subscribe,
+    unsubscribeAll,
+    onPause,
+    onResume,
+    onResumeFrom,
+    retryFailedShots,
+    onCancel,
+    onClearTask,
+    openFinalFolder,
+    resetForRouteSwitch,
   }
 }

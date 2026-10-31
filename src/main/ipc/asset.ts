@@ -9,7 +9,8 @@ import {
   shotSizeCueFor,
   sceneNegativeFor,
   castingNegativeFor,
-  mergeNegative, REALISM_NEGATIVE
+  mergeNegative,
+  REALISM_NEGATIVE,
 } from '../../shared/imagePrompts'
 import { resolveCreation } from '../../shared/creationSettings'
 import { handleIpc, resolveInsideRoot, DATA_ROOT } from './shared'
@@ -31,37 +32,40 @@ export interface AssetIpcCtx {
 /** 工作台产物 → 正式输出相对路径（不存在时按约定生成默认路径） */
 function resolveAssetRelPath(project: Project, input: AssetRegenerateInput): string {
   if (input.kind === 'charFace' || input.kind === 'charBody') {
-    const char = project.characters.find(c => c.id === input.characterId)
+    const char = project.characters.find((c) => c.id === input.characterId)
     if (!char) throw new Error('角色不存在')
     return input.kind === 'charFace'
-      ? (char.faceImagePath || `projects/${input.projectId}/characters/${char.id}_face.png`)
-      : (char.bodySheetPath || `projects/${input.projectId}/characters/${char.id}_body.png`)
+      ? char.faceImagePath || `projects/${input.projectId}/characters/${char.id}_face.png`
+      : char.bodySheetPath || `projects/${input.projectId}/characters/${char.id}_body.png`
   }
   if (input.kind === 'scenePlate') {
-    const board = (project.sceneBoards || []).find(b => b.id === input.boardId)
+    const board = (project.sceneBoards || []).find((b) => b.id === input.boardId)
     if (!board) throw new Error('场景板不存在')
     return board.emptyPlatePath || `projects/${input.projectId}/scenes/${board.id}_empty.png`
   }
-  const shot = project.shots.find(s => s.id === input.shotId)
+  const shot = project.shots.find((s) => s.id === input.shotId)
   if (!shot) throw new Error('分镜不存在')
   return input.kind === 'firstFrame'
-    ? (shot.firstFramePath || `projects/${input.projectId}/frames/${shot.id}_first.png`)
-    : (shot.lastFramePath || `projects/${input.projectId}/frames/${shot.id}_last.png`)
+    ? shot.firstFramePath || `projects/${input.projectId}/frames/${shot.id}_first.png`
+    : shot.lastFramePath || `projects/${input.projectId}/frames/${shot.id}_last.png`
 }
 
 /** 把产物相对路径写回对应字段 */
 function applyAssetPath(project: Project, input: AssetRegenerateInput, rel: string): void {
   if (input.kind === 'charFace') {
-    const char = project.characters.find(c => c.id === input.characterId)
-    if (char) { char.faceImagePath = rel; char.refImagePath = rel }
+    const char = project.characters.find((c) => c.id === input.characterId)
+    if (char) {
+      char.faceImagePath = rel
+      char.refImagePath = rel
+    }
   } else if (input.kind === 'charBody') {
-    const char = project.characters.find(c => c.id === input.characterId)
+    const char = project.characters.find((c) => c.id === input.characterId)
     if (char) char.bodySheetPath = rel
   } else if (input.kind === 'scenePlate') {
-    const board = (project.sceneBoards || []).find(b => b.id === input.boardId)
+    const board = (project.sceneBoards || []).find((b) => b.id === input.boardId)
     if (board) board.emptyPlatePath = rel
   } else {
-    const shot = project.shots.find(s => s.id === input.shotId)
+    const shot = project.shots.find((s) => s.id === input.shotId)
     if (shot) {
       if (input.kind === 'firstFrame') shot.firstFramePath = rel
       else shot.lastFramePath = rel
@@ -71,40 +75,60 @@ function applyAssetPath(project: Project, input: AssetRegenerateInput, rel: stri
 
 export function registerAssetIpc(ctx: AssetIpcCtx): void {
   // Image Generation（T2I：定妆/三视图/场景板/首尾帧；尺寸可选，默认竖版半身）
-  handleIpc(IpcChannels.imageGenerate, async (_, { prompt, relativeOutput, workflowName, width, height, referenceImagePath, referenceImagePaths, strictWorkflow }: {
-    prompt: string
-    relativeOutput: string
-    workflowName?: string
-    width?: number
-    height?: number
-    referenceImagePath?: string
-    referenceImagePaths?: string[]
-    strictWorkflow?: boolean
-  }) => {
-    const w = typeof width === 'number' && width >= 256 && width <= 2048 ? Math.round(width) : 768
-    const h = typeof height === 'number' && height >= 256 && height <= 2048 ? Math.round(height) : 512
-    // S-02/9i：参考图路径逐张校验——必须位于数据根内，或来自文件对话框会话（用户显式选择）。
-    // 否则渲染层失陷后可把磁盘任意图片上传 ComfyUI（图床外发）。
-    const refList = [referenceImagePath, ...(referenceImagePaths || [])].filter((p): p is string => Boolean(p && typeof p === 'string'))
-    for (const ref of refList) {
-      let inside: boolean
-      try {
-        resolveInsideRoot(ref)
-        inside = true
-      } catch {
-        inside = false
+  handleIpc(
+    IpcChannels.imageGenerate,
+    async (
+      _,
+      {
+        prompt,
+        relativeOutput,
+        workflowName,
+        width,
+        height,
+        referenceImagePath,
+        referenceImagePaths,
+        strictWorkflow,
+      }: {
+        prompt: string
+        relativeOutput: string
+        workflowName?: string
+        width?: number
+        height?: number
+        referenceImagePath?: string
+        referenceImagePaths?: string[]
+        strictWorkflow?: boolean
+      },
+    ) => {
+      const w = typeof width === 'number' && width >= 256 && width <= 2048 ? Math.round(width) : 768
+      const h = typeof height === 'number' && height >= 256 && height <= 2048 ? Math.round(height) : 512
+      // S-02/9i：参考图路径逐张校验——必须位于数据根内，或来自文件对话框会话（用户显式选择）。
+      // 否则渲染层失陷后可把磁盘任意图片上传 ComfyUI（图床外发）。
+      const refList = [referenceImagePath, ...(referenceImagePaths || [])].filter((p): p is string =>
+        Boolean(p && typeof p === 'string'),
+      )
+      for (const ref of refList) {
+        let inside: boolean
+        try {
+          resolveInsideRoot(ref)
+          inside = true
+        } catch {
+          inside = false
+        }
+        if (!inside && !hasDialogSession(dialogSavedFiles, ref)) {
+          throw new Error('参考图片路径未通过安全校验：必须位于项目数据目录内，或来自文件选择对话框')
+        }
       }
-      if (!inside && !hasDialogSession(dialogSavedFiles, ref)) {
-        throw new Error('参考图片路径未通过安全校验：必须位于项目数据目录内，或来自文件选择对话框')
-      }
-    }
-    await ctx.imageService.generate(
-      prompt,
-      resolveInsideRoot(relativeOutput),
-      { workflowName, width: w, height: h, referenceImagePath, referenceImagePaths, strictWorkflow }
-    )
-    return relativeOutput
-  })
+      await ctx.imageService.generate(prompt, resolveInsideRoot(relativeOutput), {
+        workflowName,
+        width: w,
+        height: h,
+        referenceImagePath,
+        referenceImagePaths,
+        strictWorkflow,
+      })
+      return relativeOutput
+    },
+  )
 
   handleIpc(IpcChannels.imageCheckpoints, () => ctx.comfyuiClient.getCheckpoints())
 
@@ -116,7 +140,17 @@ export function registerAssetIpc(ctx: AssetIpcCtx): void {
     const settings = await ctx.settingsStore.get()
     const wf = input.workflow?.trim() || undefined
     const userNeg = input.negative?.trim() || ''
-    const gen = async (prompt: string, relOut: string, opts: { width?: number; height?: number; referenceImagePath?: string; referenceImagePaths?: string[]; baseNegative?: string } = {}) => {
+    const gen = async (
+      prompt: string,
+      relOut: string,
+      opts: {
+        width?: number | undefined
+        height?: number | undefined
+        referenceImagePath?: string | undefined
+        referenceImagePaths?: string[] | undefined
+        baseNegative?: string | undefined
+      } = {},
+    ) => {
       // 负向 = 该产物正常管线的基础负向 + 用户在工作台追加的负向（追加合并去重，绝不整体替换）
       const { baseNegative, ...rest } = opts
       const negative = mergeNegative(baseNegative ?? REALISM_NEGATIVE, userNeg)
@@ -128,7 +162,9 @@ export function registerAssetIpc(ctx: AssetIpcCtx): void {
         const prevAbs = `${absOut}.prev`
         await fs.cp(absOut, prevAbs)
         previousRel = `${relOut}.prev`
-      } catch { /* 不存在或备份失败不阻断生成 */ }
+      } catch {
+        /* 不存在或备份失败不阻断生成 */
+      }
       await ctx.imageService.generate(prompt, absOut, { workflowName: wf, negative, ...rest })
       return { relOut, previousRel }
     }
@@ -136,50 +172,67 @@ export function registerAssetIpc(ctx: AssetIpcCtx): void {
     let outRel: string
     let previousRel: string | undefined
     if (input.kind === 'charFace' || input.kind === 'charBody') {
-      const char = project.characters.find(c => c.id === input.characterId)
+      const char = project.characters.find((c) => c.id === input.characterId)
       if (!char) throw new Error('角色不存在')
       const ch = settings.creation.character
-      const look = input.prompt.trim() || char.appearanceLock || `chinese person, ${char.description || char.name}, natural everyday appearance`
+      const look =
+        input.prompt.trim() ||
+        char.appearanceLock ||
+        `chinese person, ${char.description || char.name}, natural everyday appearance`
       outRel = resolveAssetRelPath(project, input)
       const g = await gen(
-        input.kind === 'charFace' ? faceCastingPrompt(look, { realismLock: ch.realismLock, genre: project.genre }) : bodySheetPrompt(look, { realismLock: ch.realismLock, genre: project.genre }),
+        input.kind === 'charFace'
+          ? faceCastingPrompt(look, { realismLock: ch.realismLock, genre: project.genre })
+          : bodySheetPrompt(look, { realismLock: ch.realismLock, genre: project.genre }),
         outRel,
-        { width: input.kind === 'charFace' ? ch.faceWidth : ch.bodyWidth, height: input.kind === 'charFace' ? ch.faceHeight : ch.bodyHeight, baseNegative: sceneNegativeFor(ch.realismLock, project.genre) }
+        {
+          width: input.kind === 'charFace' ? ch.faceWidth : ch.bodyWidth,
+          height: input.kind === 'charFace' ? ch.faceHeight : ch.bodyHeight,
+          baseNegative: sceneNegativeFor(ch.realismLock, project.genre),
+        },
       )
       previousRel = g.previousRel
     } else if (input.kind === 'scenePlate') {
-      const board = (project.sceneBoards || []).find(b => b.id === input.boardId)
+      const board = (project.sceneBoards || []).find((b) => b.id === input.boardId)
       if (!board) throw new Error('场景板不存在')
       const sc = resolveCreation(settings).scene
       // 用户编辑的是场景核心描述；与正常管线一致地包装 scenePlatePrompt（空场景/天气/时代/材质锁）
       const desc = input.prompt.trim() || board.description || board.name
-      const fullPrompt = scenePlatePrompt([desc, board.description && input.prompt.trim() ? board.description : ''].filter(Boolean).join(', '), undefined, {
-        weatherHint: sc.weatherHint,
-        emptyStrict: sc.emptyStrict,
-        genre: project.genre
-      })
+      const fullPrompt = scenePlatePrompt(
+        [desc, board.description && input.prompt.trim() ? board.description : ''].filter(Boolean).join(', '),
+        undefined,
+        {
+          weatherHint: sc.weatherHint,
+          emptyStrict: sc.emptyStrict,
+          genre: project.genre,
+        },
+      )
       outRel = resolveAssetRelPath(project, input)
       const refs = board.panoPath ? [resolveInsideRoot(board.panoPath)] : undefined
-      const g = await gen(fullPrompt, outRel, { width: sc.plateWidth, height: sc.plateHeight, referenceImagePaths: refs, baseNegative: sceneNegativeFor('standard') })
+      const g = await gen(fullPrompt, outRel, {
+        width: sc.plateWidth,
+        height: sc.plateHeight,
+        referenceImagePaths: refs,
+        baseNegative: sceneNegativeFor('standard'),
+      })
       previousRel = g.previousRel
     } else {
-      const shot = project.shots.find(s => s.id === input.shotId)
+      const shot = project.shots.find((s) => s.id === input.shotId)
       if (!shot) throw new Error('分镜不存在')
       const sc = resolveCreation(settings).scene
       // 用户编辑的是首/尾帧动作构图 cue；与正常管线一致地包装 shotFramePrompt（身份锚/场景/灯光/景别/人数/道具锁）
-      const cue = input.prompt.trim()
-        || (input.kind === 'firstFrame' ? shot.firstFrameEn : shot.lastFrameEn)
-        || shot.action
-        || 'standing'
+      const cue =
+        input.prompt.trim() ||
+        (input.kind === 'firstFrame' ? shot.firstFrameEn : shot.lastFrameEn) ||
+        shot.action ||
+        'standing'
       const mainChar = (shot.characterIds || [])
-        .map(cid => project.characters.find(x => x.id === cid))
+        .map((cid) => project.characters.find((x) => x.id === cid))
         .find(Boolean)
       const lookEn = mainChar?.appearanceLock || mainChar?.description || 'chinese person, natural everyday appearance'
-      const board = (project.sceneBoards || []).find(b => b.id === shot.sceneBoardId)
+      const board = (project.sceneBoards || []).find((b) => b.id === shot.sceneBoardId)
       const env = shot.sceneEn || shot.scene || board?.name || ''
-      const sceneCue = board?.emptyPlatePath && env
-        ? `matching the empty location plate mood of ${env}`
-        : env
+      const sceneCue = board?.emptyPlatePath && env ? `matching the empty location plate mood of ${env}` : env
       const fullPrompt = shotFramePrompt({
         phase: input.kind === 'firstFrame' ? 'start' : 'end',
         lookEn,
@@ -192,17 +245,22 @@ export function registerAssetIpc(ctx: AssetIpcCtx): void {
         lighting: shot.lighting,
         facing: shot.facing,
         characterCount: shot.characterIds?.length || 1,
-        props: shot.props
+        props: shot.props,
       })
       outRel = resolveAssetRelPath(project, input)
       const refs: string[] = []
       if (shot.sceneImagePath) refs.push(resolveInsideRoot(shot.sceneImagePath))
       for (const cid of shot.characterIds || []) {
-        const c = project.characters.find(x => x.id === cid)
+        const c = project.characters.find((x) => x.id === cid)
         const ref = c?.faceImagePath || c?.refImagePath
         if (ref) refs.push(resolveInsideRoot(ref))
       }
-      const g = await gen(fullPrompt, outRel, { width: sc.frameWidth, height: sc.frameHeight, referenceImagePaths: refs.length ? refs : undefined, baseNegative: sceneNegativeFor('standard', project.genre) })
+      const g = await gen(fullPrompt, outRel, {
+        width: sc.frameWidth,
+        height: sc.frameHeight,
+        referenceImagePaths: refs.length ? refs : undefined,
+        baseNegative: sceneNegativeFor('standard', project.genre),
+      })
       previousRel = g.previousRel
     }
     applyAssetPath(project, input, outRel)
@@ -217,7 +275,11 @@ export function registerAssetIpc(ctx: AssetIpcCtx): void {
     const relOut = resolveAssetRelPath(project, input)
     const absOut = resolveInsideRoot(relOut)
     const prevAbs = `${absOut}.prev`
-    try { await fs.stat(prevAbs) } catch { throw new Error('没有可回滚的旧产物') }
+    try {
+      await fs.stat(prevAbs)
+    } catch {
+      throw new Error('没有可回滚的旧产物')
+    }
     await fs.cp(prevAbs, absOut)
     applyAssetPath(project, input, relOut)
     await ctx.projectStore.save(project)
@@ -238,16 +300,19 @@ export function registerAssetIpc(ctx: AssetIpcCtx): void {
     const stepLog = async (msg: string): Promise<void> => {
       try {
         await fs.appendFile(logPath, `${new Date().toISOString()} ${msg}\n`, 'utf8')
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
     await stepLog(`start project=${input.projectId} char=${input.characterId}`)
     try {
       const project = await ctx.projectStore.get(input.projectId)
       if (!project) throw new Error('项目不存在')
-      const char = project.characters.find(c => c.id === input.characterId)
+      const char = project.characters.find((c) => c.id === input.characterId)
       if (!char) throw new Error('角色不存在')
       const ch = (await ctx.settingsStore.get()).creation.character
-      const look = char.appearanceLock || `chinese person, ${char.description || char.name}, natural everyday appearance`
+      const look =
+        char.appearanceLock || `chinese person, ${char.description || char.name}, natural everyday appearance`
       const faceCount = Math.max(1, Math.min(3, ch.candidates || 1))
       // 定妆照强制用 Flux2-Klein（cfg=4，负向词生效），Qwen-Rapid 是 cfg=1 蒸馏模型
       // 负向词被完全忽略，会把 grey wall 画成雨夜街道。
@@ -260,51 +325,64 @@ export function registerAssetIpc(ctx: AssetIpcCtx): void {
         // 手动重抽：即使全局 seedMode=fixed，每次手动点"AI 生成"也换一个 seed，
         // 否则改了 prompt 但 seed 不变，模型会倾向复现旧构图（灯/白布全部照旧）。
         const seedBase = (Date.now() + ci * 9973) >>> 0
-        const seed = ch.seedMode === 'fixed'
-          ? seedBase
-          : Math.floor(Math.random() * 0xffffffff)
-        const rel = faceCount === 1
-          ? `projects/${input.projectId}/characters/${char.id}_face.png`
-          : `projects/${input.projectId}/characters/${char.id}_face_c${ci}.png`
+        const seed = ch.seedMode === 'fixed' ? seedBase : Math.floor(Math.random() * 0xffffffff)
+        const rel =
+          faceCount === 1
+            ? `projects/${input.projectId}/characters/${char.id}_face.png`
+            : `projects/${input.projectId}/characters/${char.id}_face_c${ci}.png`
         await stepLog(`face c${ci} seed=${seed} start`)
         const fullPrompt = faceCastingPrompt(look, { realismLock: ch.realismLock })
-        try { await fs.appendFile(join(DATA_ROOT, 'tmp', 'last-casting-prompt.txt'), `=== ${new Date().toISOString()} char=${char.id} seed=${seed} ===\nPOS: ${fullPrompt}\nNEG: ${neg.negative}\n\n`, 'utf8') } catch { /* 失败不阻塞 */ }
-        await ctx.imageService.generate(
-          fullPrompt,
-          resolveInsideRoot(rel),
-          { width: ch.faceWidth, height: ch.faceHeight, seed, workflowName: wfName, ...neg }
-        )
+        try {
+          await fs.appendFile(
+            join(DATA_ROOT, 'tmp', 'last-casting-prompt.txt'),
+            `=== ${new Date().toISOString()} char=${char.id} seed=${seed} ===\nPOS: ${fullPrompt}\nNEG: ${neg.negative}\n\n`,
+            'utf8',
+          )
+        } catch {
+          /* 失败不阻塞 */
+        }
+        await ctx.imageService.generate(fullPrompt, resolveInsideRoot(rel), {
+          width: ch.faceWidth,
+          height: ch.faceHeight,
+          seed,
+          workflowName: wfName,
+          ...neg,
+        })
         await stepLog(`face c${ci} done`)
         faceCandRels.push({ rel, seed })
       }
       const faceRel = `projects/${input.projectId}/characters/${char.id}_face.png`
       let pickNote = '单候选'
       if (faceCount > 1) {
-        const items = await Promise.all(faceCandRels.map(async (c, i) => {
-          const abs = resolveInsideRoot(c.rel)
-          let score = 0.5
-          let note: string
-          try {
-            const st = await fs.stat(abs)
-            score = Math.min(0.95, 0.4 + Math.log10(Math.max(1000, st.size)) / 10)
-            note = `file=${Math.round(st.size / 1024)}KB`
-          } catch { note = 'stat 失败' }
-          return { id: `c${i}`, relativePath: c.rel, seed: c.seed, score, note }
-        }))
+        const items = await Promise.all(
+          faceCandRels.map(async (c, i) => {
+            const abs = resolveInsideRoot(c.rel)
+            let score = 0.5
+            let note: string
+            try {
+              const st = await fs.stat(abs)
+              score = Math.min(0.95, 0.4 + Math.log10(Math.max(1000, st.size)) / 10)
+              note = `file=${Math.round(st.size / 1024)}KB`
+            } catch {
+              note = 'stat 失败'
+            }
+            return { id: `c${i}`, relativePath: c.rel, seed: c.seed, score, note }
+          }),
+        )
         await stepLog(`pick candidates=${items.length} llmPick=${ch.llmPick}`)
         const picked = await ctx.candidatePicker.pick({
           kind: 'character',
           brief: `角色「${char.name}」定妆，外观锁定：${look}`,
           candidates: items,
-          llmPick: ch.llmPick
+          llmPick: ch.llmPick,
         })
         await stepLog(`pick winner=${picked.winner.relativePath} reason=${picked.reason}`)
         await ctx.candidatePicker.promoteWinner({
           baseDir: DATA_ROOT,
           winnerRel: picked.winner.relativePath,
           finalRel: faceRel,
-          rejectedRels: picked.rejected.map(r => r.relativePath),
-          keepRejected: false
+          rejectedRels: picked.rejected.map((r) => r.relativePath),
+          keepRejected: false,
         })
         pickNote = picked.reason
       }
@@ -320,8 +398,8 @@ export function registerAssetIpc(ctx: AssetIpcCtx): void {
             workflowName: 'qwen2511_i2i_edit',
             referenceImagePath: resolveInsideRoot(faceRel),
             strictWorkflow: true,
-            seed: 2026
-          }
+            seed: 2026,
+          },
         )
         await stepLog(`cleanup face done`)
       } catch (e) {
@@ -329,13 +407,15 @@ export function registerAssetIpc(ctx: AssetIpcCtx): void {
         await stepLog(`cleanup face skipped: ${e instanceof Error ? e.message : String(e)}`)
       }
       // 三视图：用胜出 seed 单张生成（抽卡成本已用于面部）
-      const bodySeed = faceCandRels[0].seed
+      const firstFaceCand = faceCandRels[0]
+      if (!firstFaceCand) throw new Error('定妆图生成失败')
+      const bodySeed = firstFaceCand.seed
       const bodyRel = `projects/${input.projectId}/characters/${char.id}_body.png`
       await stepLog(`body seed=${bodySeed} start`)
       await ctx.imageService.generate(
         bodySheetPrompt(look, { realismLock: ch.realismLock, genre: project.genre }),
         resolveInsideRoot(bodyRel),
-        { width: ch.bodyWidth, height: ch.bodyHeight, seed: bodySeed, workflowName: wfName, ...neg }
+        { width: ch.bodyWidth, height: ch.bodyHeight, seed: bodySeed, workflowName: wfName, ...neg },
       )
       await stepLog(`body done`)
       char.bodySheetPath = bodyRel

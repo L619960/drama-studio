@@ -10,7 +10,10 @@ import type { SettingsStore } from '../core/settingsStore'
  * 工作流环境自检（I-16 去重）：控制面板手动触发与启动 15s 静默自检共用同一份逻辑。
  * 缺自定义节点 / 缺模型文件逐模板汇报。
  */
-export async function validateWorkflowTemplates(comfyuiClient: ComfyUIClient, workflowLoader: WorkflowLoader): Promise<{ workflow: string; ok: boolean; issues: { message: string }[] }[]> {
+export async function validateWorkflowTemplates(
+  comfyuiClient: ComfyUIClient,
+  workflowLoader: WorkflowLoader,
+): Promise<{ workflow: string; ok: boolean; issues: { message: string }[] }[]> {
   const objectInfo = await comfyuiClient.getObjectInfo()
   const metas = await workflowLoader.list()
   const reports: { workflow: string; ok: boolean; issues: { message: string }[] }[] = []
@@ -25,11 +28,21 @@ export async function validateWorkflowTemplates(comfyuiClient: ComfyUIClient, wo
 export async function resolveComfyModelsDir(settingsStore: SettingsStore): Promise<string | null> {
   const s = await settingsStore.get()
   if (s.comfyui.modelsDir) {
-    try { await fs.access(s.comfyui.modelsDir); return s.comfyui.modelsDir } catch { /* 配置失效按未配置处理 */ }
+    try {
+      await fs.access(s.comfyui.modelsDir)
+      return s.comfyui.modelsDir
+    } catch {
+      /* 配置失效按未配置处理 */
+    }
   }
   if (s.comfyui.inputDir) {
     const guess = join(dirname(s.comfyui.inputDir), 'models')
-    try { await fs.access(guess); return guess } catch { /* 推断路径不存在 */ }
+    try {
+      await fs.access(guess)
+      return guess
+    } catch {
+      /* 推断路径不存在 */
+    }
   }
   return null
 }
@@ -53,7 +66,8 @@ export function registerComfyIpc(ctx: ComfyIpcCtx): void {
   // 一键启动/停止本机 ComfyUI（后台无窗口；启动命令取 settings.comfyui.startCommand，空=内置默认路径）
   handleIpc(IpcChannels.comfyStart, async () => {
     const s = await ctx.settingsStore.get()
-    return ctx.comfyuiClient.start(s.comfyui?.startCommand)
+    // SEC-03：整份 comfyui 设置交给启动器做白名单/目录归属校验
+    return ctx.comfyuiClient.start(s.comfyui)
   })
   handleIpc(IpcChannels.comfyStop, () => ctx.comfyuiClient.stop())
 }

@@ -50,15 +50,11 @@
         <span class="editor-title">{{ project.title }} · {{ sceneCount }} 场 · {{ shotCount }} 镜</span>
         <span class="editor-tip">支持格式：第N场标题行 + 括号动作行 + 「角色：台词」对白行</span>
       </div>
-      <el-input
-        v-model="scriptText"
-        type="textarea"
-        :rows="18"
-        placeholder="【第1场 · 场景名】..."
-        resize="vertical"
-      />
+      <el-input v-model="scriptText" type="textarea" :rows="18" placeholder="【第1场 · 场景名】..." resize="vertical" />
       <div class="editor-foot">
-        <span class="form-tip">保存后分镜不会自动变化；点「重新拆分镜」会用新剧本重建分镜（角色/场景/道具资产保留，新角色自动建档）</span>
+        <span class="form-tip"
+          >保存后分镜不会自动变化；点「重新拆分镜」会用新剧本重建分镜（角色/场景/道具资产保留，新角色自动建档）</span
+        >
       </div>
     </div>
 
@@ -72,12 +68,7 @@
     />
 
     <!-- 剧本医生审查结果 -->
-    <el-dialog
-      v-model="reviewVisible"
-      title="AI 剧本医生 · 审查报告"
-      width="680px"
-      append-to-body
-    >
+    <el-dialog v-model="reviewVisible" title="AI 剧本医生 · 审查报告" width="680px" append-to-body>
       <div v-if="reviewIssues.length === 0" class="doctor-ok">
         <el-icon :size="40" color="#67c23a"><CircleCheckFilled /></el-icon>
         <div>剧本逻辑没有发现问题，可直接进入制作</div>
@@ -86,13 +77,7 @@
         <div class="doctor-summary">
           共发现 <b>{{ blockCount }}</b> 个必改问题、<b>{{ warnCount }}</b> 个优化建议
         </div>
-        <el-card
-          v-for="(it, i) in reviewIssues"
-          :key="i"
-          class="doctor-issue"
-          :class="it.severity"
-          shadow="never"
-        >
+        <el-card v-for="(it, i) in reviewIssues" :key="i" class="doctor-issue" :class="it.severity" shadow="never">
           <div class="issue-head">
             <el-tag :type="it.severity === 'block' ? 'danger' : 'warning'" size="small">
               {{ it.severity === 'block' ? '必改' : '建议' }}
@@ -105,20 +90,14 @@
       </template>
       <template #footer>
         <el-button @click="reviewVisible = false">关闭</el-button>
-        <el-button
-          type="primary"
-          :disabled="!revisedScript"
-          @click="applyRevision"
-        >
-应用修改后剧本
-</el-button>
+        <el-button type="primary" :disabled="!revisedScript" @click="applyRevision"> 应用修改后剧本 </el-button>
       </template>
     </el-dialog>
 
     <!-- 重新拆分镜确认 -->
     <el-dialog v-model="reanalyzeVisible" title="重新拆分镜" width="480px" append-to-body>
       <p style="line-height: 1.8">
-        将用当前剧本重新分析并<strong>替换全部分镜</strong>（含渲染产物记录）。<br>
+        将用当前剧本重新分析并<strong>替换全部分镜</strong>（含渲染产物记录）。<br />
         已生成的角色/场景/道具资产保留，新角色会自动建档。确定继续吗？
       </p>
       <template #footer>
@@ -128,40 +107,16 @@
     </el-dialog>
 
     <!-- AI 生成剧本：想法 + 题材模板/输入 -->
-    <el-dialog
-      v-model="genVisible"
-      title="AI 生成剧本"
-      width="560px"
-      append-to-body
-    >
+    <el-dialog v-model="genVisible" title="AI 生成剧本" width="560px" append-to-body>
       <el-form label-width="80px">
         <el-form-item label="标题">
-          <el-input
-            v-model="genTitle"
-            clearable
-            placeholder="如：雨夜退婚（留空则用项目标题）"
-          />
+          <el-input v-model="genTitle" clearable placeholder="如：雨夜退婚（留空则用项目标题）" />
         </el-form-item>
         <el-form-item label="题材">
           <div class="genre-row">
-            <el-input
-              v-model="genGenre"
-              clearable
-              placeholder="输入或选择题材，如：古装仙侠"
-              style="flex: 1"
-            />
-            <el-select
-              v-model="genGenreQuick"
-              placeholder="常用题材"
-              style="width: 200px"
-              @change="pickGenGenre"
-            >
-              <el-option
-                v-for="t in GENRE_TEMPLATES"
-                :key="t.key"
-                :label="t.label"
-                :value="t.key"
-              />
+            <el-input v-model="genGenre" clearable placeholder="输入或选择题材，如：古装仙侠" style="flex: 1" />
+            <el-select v-model="genGenreQuick" placeholder="常用题材" style="width: 200px" @change="pickGenGenre">
+              <el-option v-for="t in GENRE_TEMPLATES" :key="t.key" :label="t.label" :value="t.key" />
             </el-select>
           </div>
           <div class="form-tip">下拉选模板题材（自动注入风格提示词），或直接输入任意自定义题材</div>
@@ -201,7 +156,9 @@ import PageSkeleton from '../components/common/PageSkeleton.vue'
 import ErrorStateCard from '../components/common/ErrorStateCard.vue'
 
 const router = useRouter()
-const projectId = useRouteProjectId((id) => { void loadProject(id) })
+const projectId = useRouteProjectId((id) => {
+  void loadProject(id)
+})
 
 const project = ref<Project | null>(null)
 /** REQ-17：三态区分——加载中 / 加载失败 / 已加载 */
@@ -265,29 +222,43 @@ onBeforeRouteLeave(async () => {
   const ok = await confirmAction('剧本有未保存的修改，离开将丢失。是否保存后再离开？', {
     title: '未保存的修改',
     confirmText: '保存并离开',
-    cancelText: '留在本页'
+    cancelText: '留在本页',
   })
   if (!ok) return false
-  project.value.script = scriptText.value
-  project.value.updatedAt = Date.now()
-  try {
-    await window.api.project.save(snapshot(project.value))
-  } catch {
-    // 离开时保存失败不阻塞导航
+  // UI-05：先落盘成功再写回内存态。此前先改 project.script 再 save，
+  // 保存失败也不会拦住离开——内存已"干净"、磁盘仍旧内容，改动静默丢失。
+  const payload = {
+    ...snapshot(project.value),
+    script: scriptText.value,
+    updatedAt: Date.now(),
   }
+  try {
+    await window.api.project.save(payload)
+  } catch (e) {
+    ElMessage.error(`保存失败，已留在本页（改动未丢失）：${e instanceof Error ? e.message : String(e)}`)
+    return false
+  }
+  project.value.script = payload.script
+  project.value.updatedAt = payload.updatedAt
   return true
 })
 
 // Ctrl+S 保存（输入框内也生效，handler 内由 saveScript 的 throttleTap 防抖）
 useHotkeys([
-  { keys: 'ctrl+s', allowInInput: true, handler: () => { void saveScript() } }
+  {
+    keys: 'ctrl+s',
+    allowInInput: true,
+    handler: () => {
+      void saveScript()
+    },
+  },
 ])
 
-const blockCount = computed(() => reviewIssues.value.filter(i => i.severity === 'block').length)
-const warnCount = computed(() => reviewIssues.value.filter(i => i.severity === 'warn').length)
+const blockCount = computed(() => reviewIssues.value.filter((i) => i.severity === 'block').length)
+const warnCount = computed(() => reviewIssues.value.filter((i) => i.severity === 'warn').length)
 
 const hasScript = computed(() => (project.value?.script || '').trim().length > 0)
-const sceneCount = computed(() => (scriptText.value.match(/^【.*场/mg) || []).length)
+const sceneCount = computed(() => (scriptText.value.match(/^【.*场/gm) || []).length)
 const shotCount = computed(() => project.value?.shots.length || 0)
 
 async function loadProject(id?: string) {
@@ -313,7 +284,10 @@ async function loadProject(id?: string) {
 /** AI 剧本医生：审查当前剧本逻辑 bug */
 async function reviewScript(): Promise<void> {
   const s = scriptText.value.trim()
-  if (!s) { ElMessage.warning('还没有剧本内容，请先点「AI 生成剧本」或直接撰写'); return }
+  if (!s) {
+    ElMessage.warning('还没有剧本内容，请先点「AI 生成剧本」或直接撰写')
+    return
+  }
   if (!project.value) return
   if (!throttleTap('script-review', 2000)) return
   reviewing.value = true
@@ -369,9 +343,15 @@ function pickGenGenre(key: string): void {
 /** 确认生成：想法 + 题材 → 完整分场剧本，生成后自动保存 */
 async function doGenerateScript(): Promise<void> {
   const idea = genIdea.value.trim()
-  if (!idea) { ElMessage.warning('请输入创作想法'); return }
+  if (!idea) {
+    ElMessage.warning('请输入创作想法')
+    return
+  }
   const genre = genGenre.value.trim()
-  if (!genre) { ElMessage.warning('请输入或选择题材'); return }
+  if (!genre) {
+    ElMessage.warning('请输入或选择题材')
+    return
+  }
   if (!throttleTap('script-generate', 3000)) return
   writingScript.value = true
   notice.value = null
@@ -388,7 +368,10 @@ async function doGenerateScript(): Promise<void> {
       project.value.updatedAt = Date.now()
       await window.api.project.save(snapshot(project.value))
     }
-    notice.value = { type: 'success', message: `剧本已按「${genre}」题材${title ? `《${title}》` : ''}生成并保存，可继续编辑或直接「重新拆分镜」` }
+    notice.value = {
+      type: 'success',
+      message: `剧本已按「${genre}」题材${title ? `《${title}》` : ''}生成并保存，可继续编辑或直接「重新拆分镜」`,
+    }
     ElMessage.success('剧本已生成并保存')
   } catch (e) {
     ElMessage.error(`生成失败：${e instanceof Error ? e.message : String(e)}`)
@@ -416,7 +399,10 @@ async function saveScript(): Promise<void> {
 
 async function reanalyze(): Promise<void> {
   if (!project.value) return
-  if (!scriptText.value.trim()) { ElMessage.warning('还没有剧本内容，请先点「AI 生成剧本」或直接撰写'); return }
+  if (!scriptText.value.trim()) {
+    ElMessage.warning('还没有剧本内容，请先点「AI 生成剧本」或直接撰写')
+    return
+  }
   reanalyzeVisible.value = true
 }
 
@@ -437,7 +423,7 @@ async function confirmReanalyze(): Promise<void> {
     await loadProject(projectId.value)
     notice.value = {
       type: 'success',
-      message: `重拆完成：${r.shots} 镜（角色 ${r.characters} 人 · 道具 ${r.props} 个）。去分镜编辑页调整后即可渲染`
+      message: `重拆完成：${r.shots} 镜（角色 ${r.characters} 人 · 道具 ${r.props} 个）。去分镜编辑页调整后即可渲染`,
     }
     ElMessage.success(`重拆完成：${r.shots} 镜`)
   } catch (e) {
@@ -449,17 +435,58 @@ async function confirmReanalyze(): Promise<void> {
 </script>
 
 <style scoped>
-.empty-panel { padding: 36px 16px; }
-.genre-row { display: flex; align-items: center; gap: 8px; width: 100%; }
-.script-editor { padding: 16px 18px; }
-.doctor-ok { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 28px 0; color: var(--text-secondary); }
-.doctor-summary { margin-bottom: 12px; font-size: 13px; color: var(--text-primary); }
-.doctor-issue { margin-bottom: 10px; border-left: 3px solid var(--el-color-warning); }
-.doctor-issue.block { border-left-color: var(--el-color-danger); }
-.issue-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
-.issue-scene { font-size: 13px; font-weight: 600; color: var(--text-primary); }
-.issue-problem { font-size: 13px; color: var(--text-primary); margin-bottom: 4px; }
-.issue-suggestion { font-size: 12px; color: var(--text-secondary); }
+.empty-panel {
+  padding: 36px 16px;
+}
+.genre-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+.script-editor {
+  padding: 16px 18px;
+}
+.doctor-ok {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 28px 0;
+  color: var(--text-secondary);
+}
+.doctor-summary {
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+.doctor-issue {
+  margin-bottom: 10px;
+  border-left: 3px solid var(--el-color-warning);
+}
+.doctor-issue.block {
+  border-left-color: var(--el-color-danger);
+}
+.issue-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.issue-scene {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.issue-problem {
+  font-size: 13px;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+.issue-suggestion {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
 .editor-head {
   display: flex;
   justify-content: space-between;
@@ -474,6 +501,11 @@ async function confirmReanalyze(): Promise<void> {
   color: var(--text-primary);
   font-weight: 600;
 }
-.editor-tip { font-size: 12px; color: var(--text-muted); }
-.editor-foot { margin-top: 10px; }
+.editor-tip {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.editor-foot {
+  margin-top: 10px;
+}
 </style>

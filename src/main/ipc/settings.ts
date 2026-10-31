@@ -20,14 +20,38 @@ async function cleanupPreviewFiles(kind: 'character' | 'scene', keepRel: string)
   const prefix = kind === 'character' ? 'character_' : 'scene_'
   await Promise.all(
     entries
-      .filter(f => f.startsWith(prefix) && f.endsWith('.png') && `preview/${f}` !== keepRel)
-      .map(f => fs.rm(join(dir, f), { force: true }).catch(() => undefined))
+      .filter((f) => f.startsWith(prefix) && f.endsWith('.png') && `preview/${f}` !== keepRel)
+      .map((f) => fs.rm(join(dir, f), { force: true }).catch(() => undefined)),
   )
+}
+
+/** SEC-04：密钥掩码——只回末 4 位，渲染层不接触明文 */
+export function maskApiKey(key: string): string {
+  const k = (key || '').trim()
+  return k ? `****${k.slice(-4)}` : ''
+}
+
+/**
+ * SEC-04：settings:get 的渲染层视图——明文 apiKey 置空，只回 hasApiKey/掩码。
+ * 主进程各服务仍从 settingsStore.get() 拿明文，不受影响。
+ */
+export function maskSettingsForRenderer(s: AppSettings): AppSettings {
+  const key = s.llm?.apiKey ?? ''
+  return {
+    ...s,
+    llm: {
+      ...s.llm,
+      apiKey: '',
+      apiKeyDirty: false,
+      hasApiKey: Boolean(key),
+      apiKeyMasked: maskApiKey(key),
+    },
+  }
 }
 
 export function registerSettingsIpc(ctx: SettingsIpcCtx): void {
   // Settings
-  handleIpc(IpcChannels.settingsGet, () => ctx.settingsStore.get())
+  handleIpc(IpcChannels.settingsGet, async () => maskSettingsForRenderer(await ctx.settingsStore.get()))
   handleIpc(IpcChannels.settingsSave, async (_, settings: AppSettings) => {
     const revision = await ctx.settingsStore.save(settings)
     // ComfyUI 地址变更时运行时重连
@@ -41,39 +65,35 @@ export function registerSettingsIpc(ctx: SettingsIpcCtx): void {
     const s = await ctx.settingsStore.get()
     const c = s.creation
     const stamp = Date.now()
-    const rel = input.kind === 'character'
-      ? `preview/character_${stamp}.png`
-      : `preview/scene_${stamp}.png`
+    const rel = input.kind === 'character' ? `preview/character_${stamp}.png` : `preview/scene_${stamp}.png`
     const abs = resolveInsideRoot(rel)
     if (input.kind === 'character') {
       const ch = c.character
-      const look = input.promptHint?.trim() || 'chinese woman in her mid 20s, natural matte skin, long black hair, white hanfu robe with jade hairpin'
-      await ctx.imageService.generate(
-        faceCastingPrompt(look, { realismLock: ch.realismLock }),
-        abs,
-        {
-          width: ch.faceWidth,
-          height: ch.faceHeight,
-          workflowName: ch.t2iWorkflow || undefined,
-          seed: ch.seedMode === 'fixed' ? ch.seed : undefined,
-          negative: sceneNegativeFor(ch.realismLock),
-          timeoutMs: Math.max(60, c.edit.comfyTimeoutSec) * 1000
-        }
-      )
+      const look =
+        input.promptHint?.trim() ||
+        'chinese woman in her mid 20s, natural matte skin, long black hair, white hanfu robe with jade hairpin'
+      await ctx.imageService.generate(faceCastingPrompt(look, { realismLock: ch.realismLock }), abs, {
+        width: ch.faceWidth,
+        height: ch.faceHeight,
+        workflowName: ch.t2iWorkflow || undefined,
+        seed: ch.seedMode === 'fixed' ? ch.seed : undefined,
+        negative: sceneNegativeFor(ch.realismLock),
+        timeoutMs: Math.max(60, c.edit.comfyTimeoutSec) * 1000,
+      })
     } else {
       const sc = c.scene
       const scene = input.promptHint?.trim() || 'moody cinematic night atmosphere, era-consistent backdrop'
       await ctx.imageService.generate(
         scenePlatePrompt(scene, undefined, {
           weatherHint: sc.weatherHint,
-          emptyStrict: sc.emptyStrict
+          emptyStrict: sc.emptyStrict,
         }),
         abs,
         {
           width: sc.plateWidth,
           height: sc.plateHeight,
-          timeoutMs: Math.max(60, c.edit.comfyTimeoutSec) * 1000
-        }
+          timeoutMs: Math.max(60, c.edit.comfyTimeoutSec) * 1000,
+        },
       )
     }
     // R-02：预览产物只留最新一张

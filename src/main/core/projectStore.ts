@@ -9,6 +9,19 @@ import { createLogger } from './logger'
 
 const log = createLogger('ProjectStore')
 
+/**
+ * 项目 id 白名单（SEC-01）：id 会直接参与目录拼接，渲染层传入的任何字符串
+ * 都必须先过此校验，杜绝 `../`、绝对路径、盘符、URL 编码等路径穿越。
+ * 合法格式即 create() 生成的 `p_<时间戳>_<随机串>`。
+ */
+const PROJECT_ID_RE = /^p_[0-9a-z_-]{4,40}$/
+
+export function assertProjectId(id: unknown, label = '项目标识'): asserts id is string {
+  if (typeof id !== 'string' || !PROJECT_ID_RE.test(id)) {
+    throw new Error(`非法${label}`)
+  }
+}
+
 // 延迟获取 electron：在 Electron 主进程内为真实对象；在纯 Node（测试）下
 // require('electron') 返回可执行路径字符串，解构得到 undefined 而不抛错。
 // 避免在模块顶层硬依赖 electron，使核心逻辑可脱离 Electron 独立测试。
@@ -32,7 +45,14 @@ export class ProjectStore {
   }
 
   private getProjectDir(id: string): string {
-    return path.join(this.userDataPath, id)
+    assertProjectId(id)
+    const root = path.resolve(this.userDataPath)
+    const dir = path.resolve(root, id)
+    // 白名单已排除分隔符，此处再按解析结果做一次兜底（防未来正则放宽）
+    if (dir !== root && !dir.startsWith(root + path.sep)) {
+      throw new Error('非法项目标识')
+    }
+    return dir
   }
 
   private getProjectJsonPath(id: string): string {
@@ -81,7 +101,7 @@ export class ProjectStore {
       shots: [],
       fps: 24,
       createdAt: Date.now(),
-      updatedAt: Date.now()
+      updatedAt: Date.now(),
     }
 
     await atomicWriteJson(this.getProjectJsonPath(id), project)
@@ -116,7 +136,11 @@ export class ProjectStore {
         let v = c.appearanceLock
         if (!v) continue
         for (const clause of WEAPON_CLAUSES) v = v.replace(clause, '')
-        v = v.replace(/,\s*,/g, ',').replace(/\s{2,}/g, ' ').trim().replace(/,\s*$/, '')
+        v = v
+          .replace(/,\s*,/g, ',')
+          .replace(/\s{2,}/g, ' ')
+          .trim()
+          .replace(/,\s*$/, '')
         c.appearanceLock = v
       }
     }
@@ -127,6 +151,11 @@ export class ProjectStore {
   }
 
   async save(project: Project): Promise<void> {
+    if (!project || typeof project !== 'object') throw new Error('非法项目数据')
+    assertProjectId(project.id)
+    if (!Array.isArray(project.shots) || !Array.isArray(project.characters)) {
+      throw new Error('非法项目数据：缺少分镜或角色列表')
+    }
     return this.enqueue(project.id, () => this.doSave(project))
   }
 
@@ -146,7 +175,9 @@ export class ProjectStore {
   private enqueue<T>(id: string, job: () => Promise<T>): Promise<T> {
     const prev = this.saveChains.get(id) ?? Promise.resolve()
     const next = prev.then(job)
-    const tail = next.catch(() => { /* 吃掉错误，保证链不断 */ })
+    const tail = next.catch(() => {
+      /* 吃掉错误，保证链不断 */
+    })
     this.saveChains.set(id, tail)
     // 链排空后回收条目，防止项目数量增长时 Map 永久膨胀（M-16）；
     // 仅当尾部仍是本次的 tail 时才删——已有后续入队时不回收
@@ -171,10 +202,9 @@ export class ProjectStore {
       /* 首次落盘或文件缺失：无磁盘副本可对比 */
     }
     if (prev) {
-      const prevById = new Map(prev.shots.map(s => [s.id, s]))
+      const prevById = new Map(prev.shots.map((s) => [s.id, s]))
       let restored = 0
-      for (let i = 0; i < project.shots.length; i++) {
-        const cur = project.shots[i]
+      for (const [i, cur] of project.shots.entries()) {
         const old = prevById.get(cur.id)
         if (cur.intentReset) {
           delete cur.intentReset
@@ -182,14 +212,15 @@ export class ProjectStore {
         }
         if (!old || old.status !== 'done' || !old.segmentPath) continue
         const degraded =
-          (cur.status === 'pending' || cur.status === 'failed' || cur.status === 'rendering') &&
-          !cur.segmentPath
+          (cur.status === 'pending' || cur.status === 'failed' || cur.status === 'rendering') && !cur.segmentPath
         if (!degraded) continue
         const abs = path.resolve(this.userDataPath, '..', old.segmentPath)
         let exists = false
         try {
           exists = (await fs.stat(abs)).isFile()
-        } catch { /* 文件不在盘 */ }
+        } catch {
+          /* 文件不在盘 */
+        }
         if (exists) {
           project.shots[i] = mergeProtectedDoneShot(old, cur)
           restored++
@@ -209,10 +240,11 @@ export class ProjectStore {
   }
 
   async importCharacterImage(projectId: string): Promise<string> {
+    assertProjectId(projectId)
     const { dialog } = loadElectron()
     const result = await dialog!.showOpenDialog({
       properties: ['openFile'],
-      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }]
+      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
     })
 
     if (result.canceled || result.filePaths.length === 0) {
@@ -220,6 +252,7 @@ export class ProjectStore {
     }
 
     const sourcePath = result.filePaths[0]
+    if (!sourcePath) throw new Error('User cancelled')
     const ext = path.extname(sourcePath)
     const charId = `char_${Date.now()}`
     const fileRelFromProjects = path.join(projectId, 'characters', `${charId}${ext}`)
@@ -247,7 +280,12 @@ export class ProjectStore {
       const newCharId = `char_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
       charIdMap.set(c.id, newCharId)
 
-      const newFace = await this.copyAssetFile(c.faceImagePath || c.refImagePath, target.id, 'characters', `${newCharId}_face`)
+      const newFace = await this.copyAssetFile(
+        c.faceImagePath || c.refImagePath,
+        target.id,
+        'characters',
+        `${newCharId}_face`,
+      )
       const newBody = await this.copyAssetFile(c.bodySheetPath, target.id, 'characters', `${newCharId}_body`)
       const newRef = newFace || (await this.copyAssetFile(c.refImagePath, target.id, 'characters', newCharId))
 
@@ -255,12 +293,12 @@ export class ProjectStore {
         id: newCharId,
         name: c.name,
         refImagePath: newRef,
-        faceImagePath: newFace || undefined,
-        bodySheetPath: newBody || undefined,
+        ...(newFace ? { faceImagePath: newFace } : {}),
+        ...(newBody ? { bodySheetPath: newBody } : {}),
         description: c.description,
         voice: c.voice,
-        voiceRate: c.voiceRate,
-        appearanceLock: c.appearanceLock
+        ...(c.voiceRate !== undefined ? { voiceRate: c.voiceRate } : {}),
+        ...(c.appearanceLock !== undefined ? { appearanceLock: c.appearanceLock } : {}),
       })
     }
 
@@ -274,69 +312,70 @@ export class ProjectStore {
         id: newBoardId,
         key: board.key,
         name: board.name,
-        description: board.description,
-        emptyPlatePath: plate
+        ...(board.description !== undefined ? { description: board.description } : {}),
+        emptyPlatePath: plate,
       })
     }
 
-    const newShots: Shot[] = source.shots.map((s, i) => ({
-      // —— 创作/提示词字段全量复制（D-01 整改 2026-10-20：副本保留拆镜成果，
-      //    不再丢 promptEn/negativeEn/首尾帧/转场/时长/道具等，避免「有分镜、提示词全空」）——
-      id: `shot_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 6)}`,
-      index: i + 1,
-      scene: s.scene,
-      action: s.action,
-      dialogue: s.dialogue,
-      characterIds: s.characterIds
-        .map(cid => charIdMap.get(cid))
-        .filter((v): v is string => Boolean(v)),
-      type: s.type,
-      width: s.width,
-      height: s.height,
-      frames: s.frames,
-      seed: s.seed,
-      workflow: s.workflow,
-      voice: s.voice,
-      sceneBoardId: s.sceneBoardId ? boardIdMap.get(s.sceneBoardId) : undefined,
-      shotSize: s.shotSize,
-      sceneEn: s.sceneEn,
-      camera: s.camera,
-      transition: s.transition,
-      emotion: s.emotion,
-      lighting: s.lighting,
-      facing: s.facing,
-      continuity: s.continuity,
-      props: s.props ? [...s.props] : undefined,
-      promptEn: s.promptEn,
-      negativeEn: s.negativeEn,
-      frameSeconds: s.frameSeconds,
-      firstFrameEn: s.firstFrameEn,
-      midFrameEn: s.midFrameEn,
-      lastFrameEn: s.lastFrameEn,
-      handoffToNext: s.handoffToNext,
-      transitionEn: s.transitionEn,
-      // 剪辑台人工决策保留（不引用文件，语义仍有效）
-      trimStart: s.trimStart,
-      trimEnd: s.trimEnd,
-      skipped: s.skipped,
-      // —— 运行时/产物字段显式重置（防悬空资产路径 + doSave 的 done 保护误把无文件镜头复活成 done）——
-      sceneImagePath: undefined,
-      firstFramePath: undefined,
-      lastFramePath: undefined,
-      reviewed: undefined,
-      consistencyScore: undefined,
-      lowConsistency: undefined,
-      auditFix: undefined,
-      auditHint: undefined,
-      renderProfile: undefined,
-      audioPath: undefined,
-      audioFailed: undefined,
-      audioFailedReason: undefined,
-      rawVideoPath: undefined,
-      segmentPath: undefined,
-      error: undefined,
-      status: 'pending'
-    }))
+    const newShots: Shot[] = source.shots.map((s, i) => {
+      const sceneBoardId = s.sceneBoardId ? boardIdMap.get(s.sceneBoardId) : undefined
+      return {
+        // —— 创作/提示词字段全量复制（D-01 整改 2026-10-20：副本保留拆镜成果，
+        //    不再丢 promptEn/negativeEn/首尾帧/转场/时长/道具等，避免「有分镜、提示词全空」）——
+        id: `shot_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 6)}`,
+        index: i + 1,
+        scene: s.scene,
+        action: s.action,
+        dialogue: s.dialogue,
+        characterIds: s.characterIds.map((cid) => charIdMap.get(cid)).filter((v): v is string => Boolean(v)),
+        type: s.type,
+        width: s.width,
+        height: s.height,
+        frames: s.frames,
+        seed: s.seed,
+        ...(s.workflow !== undefined ? { workflow: s.workflow } : {}),
+        ...(s.voice !== undefined ? { voice: s.voice } : {}),
+        ...(sceneBoardId ? { sceneBoardId } : {}),
+        ...(s.shotSize !== undefined ? { shotSize: s.shotSize } : {}),
+        ...(s.sceneEn !== undefined ? { sceneEn: s.sceneEn } : {}),
+        ...(s.camera !== undefined ? { camera: s.camera } : {}),
+        ...(s.transition !== undefined ? { transition: s.transition } : {}),
+        ...(s.emotion !== undefined ? { emotion: s.emotion } : {}),
+        ...(s.lighting !== undefined ? { lighting: s.lighting } : {}),
+        ...(s.facing !== undefined ? { facing: s.facing } : {}),
+        ...(s.continuity !== undefined ? { continuity: s.continuity } : {}),
+        ...(s.props ? { props: [...s.props] } : {}),
+        ...(s.promptEn !== undefined ? { promptEn: s.promptEn } : {}),
+        ...(s.negativeEn !== undefined ? { negativeEn: s.negativeEn } : {}),
+        ...(s.frameSeconds !== undefined ? { frameSeconds: s.frameSeconds } : {}),
+        ...(s.firstFrameEn !== undefined ? { firstFrameEn: s.firstFrameEn } : {}),
+        ...(s.midFrameEn !== undefined ? { midFrameEn: s.midFrameEn } : {}),
+        lastFrameEn: s.lastFrameEn,
+        ...(s.handoffToNext !== undefined ? { handoffToNext: s.handoffToNext } : {}),
+        transitionEn: s.transitionEn,
+        // 剪辑台人工决策保留（不引用文件，语义仍有效）
+        ...(s.trimStart !== undefined ? { trimStart: s.trimStart } : {}),
+        ...(s.trimEnd !== undefined ? { trimEnd: s.trimEnd } : {}),
+        ...(s.skipped !== undefined ? { skipped: s.skipped } : {}),
+        // —— 运行时/产物字段显式重置（防悬空资产路径 + doSave 的 done 保护误把无文件镜头复活成 done）——
+        sceneImagePath: undefined,
+        firstFramePath: undefined,
+        lastFramePath: undefined,
+        reviewed: undefined,
+        consistencyScore: undefined,
+        lowConsistency: undefined,
+        auditFix: undefined,
+        auditHint: undefined,
+        renderProfile: undefined,
+        audioPath: undefined,
+        audioFailed: undefined,
+        audioFailedReason: undefined,
+        rawVideoPath: undefined,
+        segmentPath: undefined,
+        error: undefined,
+        status: 'pending',
+      }
+    })
 
     target.episode = source.episode
     target.fps = source.fps
@@ -352,7 +391,7 @@ export class ProjectStore {
     relOrAbs: string | undefined,
     targetProjectId: string,
     subdir: string,
-    basename: string
+    basename: string,
   ): Promise<string> {
     if (!relOrAbs) return ''
     const sourceAbs = path.isAbsolute(relOrAbs)
@@ -377,15 +416,17 @@ export class ProjectStore {
 
   /** 导入项目级 BGM，复制到项目目录并返回相对路径 */
   async importBgm(projectId: string): Promise<string> {
+    assertProjectId(projectId)
     const { dialog } = loadElectron()
     const result = await dialog!.showOpenDialog({
       properties: ['openFile'],
-      filters: [{ name: '音频', extensions: ['mp3', 'wav', 'aac', 'ogg', 'm4a'] }]
+      filters: [{ name: '音频', extensions: ['mp3', 'wav', 'aac', 'ogg', 'm4a'] }],
     })
     if (result.canceled || result.filePaths.length === 0) {
       throw new Error('User cancelled')
     }
     const sourcePath = result.filePaths[0]
+    if (!sourcePath) throw new Error('User cancelled')
     const ext = path.extname(sourcePath) || '.mp3'
     const relFromProjects = path.join(projectId, `bgm${ext}`)
     await fs.copyFile(sourcePath, path.join(this.userDataPath, relFromProjects))

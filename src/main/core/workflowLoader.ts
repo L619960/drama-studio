@@ -2,7 +2,10 @@ import * as fs from 'fs/promises'
 import * as path from 'node:path'
 import type { WorkflowMeta, WorkflowParam, WorkflowCheckIssue, WorkflowCapability } from '../../shared/ipcTypes'
 
-type WorkflowGraph = Record<string, { class_type?: string; _meta?: { title?: string }; inputs?: Record<string, unknown> }>
+type WorkflowGraph = Record<
+  string,
+  { class_type?: string; _meta?: { title?: string }; inputs?: Record<string, unknown> }
+>
 
 /** ComfyUI /object_info 中单个节点的最小结构（只取校验需要的部分） */
 export interface ObjectNodeInfo {
@@ -24,9 +27,7 @@ const PLACEHOLDER_GLOBAL_RE = /\$([A-Z_][A-Z0-9_]*)\$/g
 const WORKFLOW_NAME_RE = /^[\w一-龥-]+$/
 
 /** 图像输入节点（有任意一个 → 图生类） */
-const LOAD_IMAGE_NODES = new Set([
-  'LoadImage', 'LoadImageMask', 'VHS_LoadImagePath', 'VHS_LoadImages'
-])
+const LOAD_IMAGE_NODES = new Set(['LoadImage', 'LoadImageMask', 'VHS_LoadImagePath', 'VHS_LoadImages'])
 
 /** 视频输出节点（有任意一个 → 视频类；T2V 需同时无图像输入） */
 const VIDEO_OUT_NODES = new Set(['VHS_VideoCombine'])
@@ -41,8 +42,8 @@ function inferCapability(info: {
   hasImageInput: boolean
   hasEndFrame: boolean
 }): WorkflowCapability {
-  const hasVideo = [...info.classTypes].some(t => VIDEO_OUT_NODES.has(t))
-  const hasAudio = [...info.classTypes].some(t => AUDIO_OUT_NODES.has(t))
+  const hasVideo = [...info.classTypes].some((t) => VIDEO_OUT_NODES.has(t))
+  const hasAudio = [...info.classTypes].some((t) => AUDIO_OUT_NODES.has(t))
   if (hasAudio && !hasVideo && !info.hasImageInput) return 'audio'
   if (hasVideo) {
     if (info.hasEndFrame) return 'flf2v'
@@ -67,7 +68,10 @@ export class WorkflowLoader {
   private enqueueWrite(name: string, fn: () => Promise<void>): Promise<void> {
     const prev = this.writeQueues.get(name) ?? Promise.resolve()
     const next = prev.then(fn, fn)
-    this.writeQueues.set(name, next.catch(() => undefined))
+    this.writeQueues.set(
+      name,
+      next.catch(() => undefined),
+    )
     return next
   }
 
@@ -82,7 +86,7 @@ export class WorkflowLoader {
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
       throw new Error('不是有效的 ComfyUI 工作流格式')
     }
-    const keys = Object.keys(parsed).filter(k => k !== '_comment')
+    const keys = Object.keys(parsed).filter((k) => k !== '_comment')
     if (keys.length === 0 || !keys.every((k) => /^\d+$/.test(k))) {
       throw new Error('工作流节点结构不合法（应为数字键）')
     }
@@ -182,7 +186,10 @@ export class WorkflowLoader {
     const hasDuration = placeholders.includes('DURATION')
     const hasEndFrame = placeholders.includes('END_IMAGE')
     const capability = inferCapability({
-      placeholders, classTypes, hasImageInput, hasEndFrame
+      placeholders,
+      classTypes,
+      hasImageInput,
+      hasEndFrame,
     })
 
     return {
@@ -191,7 +198,7 @@ export class WorkflowLoader {
       hasImageInput,
       hasDuration,
       hasEndFrame,
-      capability
+      capability,
     }
   }
 
@@ -216,7 +223,7 @@ export class WorkflowLoader {
             value: JSON.stringify(rawValue),
             type: 'string',
             isPlaceholder: false,
-            isConnection: true
+            isConnection: true,
           })
           continue
         }
@@ -229,14 +236,12 @@ export class WorkflowLoader {
             value: rawValue,
             type: 'string',
             isPlaceholder: true,
-            isConnection: false
+            isConnection: false,
           })
           continue
         }
         const type: WorkflowParam['type'] =
-          typeof rawValue === 'number' ? 'number'
-          : typeof rawValue === 'boolean' ? 'boolean'
-          : 'string'
+          typeof rawValue === 'number' ? 'number' : typeof rawValue === 'boolean' ? 'boolean' : 'string'
         params.push({
           nodeId,
           nodeTitle,
@@ -245,7 +250,7 @@ export class WorkflowLoader {
           value: rawValue as string | number | boolean,
           type,
           isPlaceholder: false,
-          isConnection: false
+          isConnection: false,
         })
       }
     }
@@ -253,12 +258,7 @@ export class WorkflowLoader {
   }
 
   /** 更新工作流中某个节点的参数值并保存 */
-  async updateParam(
-    name: string,
-    nodeId: string,
-    key: string,
-    value: string | number | boolean
-  ): Promise<void> {
+  async updateParam(name: string, nodeId: string, key: string, value: string | number | boolean): Promise<void> {
     await this.enqueueWrite(name, async () => {
       const workflow = await this.load(name)
       const node = workflow[nodeId]
@@ -273,11 +273,7 @@ export class WorkflowLoader {
         throw new Error('占位符不可直接修改')
       }
       node.inputs[key] = value
-      await fs.writeFile(
-        path.join(this.workflowsDir, `${name}.json`),
-        JSON.stringify(workflow, null, 2),
-        'utf-8'
-      )
+      await fs.writeFile(path.join(this.workflowsDir, `${name}.json`), JSON.stringify(workflow, null, 2), 'utf-8')
     })
   }
 
@@ -301,7 +297,7 @@ export class WorkflowLoader {
     delete graph._comment
     // 兼容第三方导入模板：连接数组 [节点id, 输出索引] 的节点 id 必须为字符串
     // （UI 格式转换时可能残留整型 id，ComfyUI 校验 prompt[节点id] 会 KeyError 整单拒收）
-    const nodeIds = new Set(Object.keys(graph).filter(k => k !== '_comment'))
+    const nodeIds = new Set(Object.keys(graph).filter((k) => k !== '_comment'))
     for (const node of Object.values(graph) as Array<Record<string, unknown>>) {
       if (!node || typeof node !== 'object' || !node.inputs) continue
       for (const [key, value] of Object.entries(node.inputs as Record<string, unknown>)) {
@@ -325,7 +321,8 @@ export class WorkflowLoader {
   private deepReplace(node: unknown, vars: Record<string, string | number | boolean>): unknown {
     if (typeof node === 'string') {
       const m = node.match(PLACEHOLDER_RE)
-      if (m && m[1] in vars) return vars[m[1]]
+      const key = m?.[1]
+      if (key !== undefined && key in vars) return vars[key]
       // 嵌入模式：纯文本替换
       let s = node
       for (const [key, value] of Object.entries(vars)) {
@@ -333,7 +330,7 @@ export class WorkflowLoader {
       }
       return s
     }
-    if (Array.isArray(node)) return node.map(v => this.deepReplace(v, vars))
+    if (Array.isArray(node)) return node.map((v) => this.deepReplace(v, vars))
     if (typeof node === 'object' && node !== null) {
       const out: Record<string, unknown> = {}
       for (const [k, v] of Object.entries(node as Record<string, unknown>)) {
@@ -350,7 +347,7 @@ export class WorkflowLoader {
     return Object.entries(workflow).map(([id, node]) => ({
       id,
       type: node.class_type || 'unknown',
-      title: node._meta?.title || ''
+      title: node._meta?.title || '',
     }))
   }
 
@@ -359,10 +356,7 @@ export class WorkflowLoader {
    * - 节点 class_type 在当前 ComfyUI 不存在 → 缺自定义节点
    * - 非占位符的枚举型输入值不在可选列表 → 缺模型/资源文件
    */
-  async validateTemplate(
-    name: string,
-    objectInfo: Record<string, ObjectNodeInfo>
-  ): Promise<WorkflowCheckIssue[]> {
+  async validateTemplate(name: string, objectInfo: Record<string, ObjectNodeInfo>): Promise<WorkflowCheckIssue[]> {
     const workflow = await this.load(name)
     return this.inspect(workflow, objectInfo)
   }
@@ -371,7 +365,7 @@ export class WorkflowLoader {
   validateBuiltGraph(
     workflowName: string,
     graph: Record<string, unknown>,
-    objectInfo: Record<string, ObjectNodeInfo>
+    objectInfo: Record<string, ObjectNodeInfo>,
   ): WorkflowCheckIssue[] {
     return this.inspect(graph as WorkflowGraph, objectInfo, workflowName)
   }
@@ -379,7 +373,7 @@ export class WorkflowLoader {
   private inspect(
     graph: WorkflowGraph,
     objectInfo: Record<string, ObjectNodeInfo>,
-    _workflowName = ''
+    _workflowName = '',
   ): WorkflowCheckIssue[] {
     const issues: WorkflowCheckIssue[] = []
     for (const [nodeId, node] of Object.entries(graph)) {
@@ -392,15 +386,21 @@ export class WorkflowLoader {
       const info = objectInfo[classType]
       if (!info) {
         issues.push({
-          kind: 'missing-node', nodeId, classType,
-          message: `缺少节点「${classType}」（请在 ComfyUI 安装对应的自定义节点包后重启）`
+          kind: 'missing-node',
+          nodeId,
+          classType,
+          message: `缺少节点「${classType}」（请在 ComfyUI 安装对应的自定义节点包后重启）`,
         })
         continue
       }
       // 枚举型输入校验（ckpt_name / unet_name / vae_name / lora_name 等模型文件）
       // LoadImage/LoadAudio 的文件名枚举随上传变化，运行时已 upload，不做「模型缺失」误报
       const DYNAMIC_MEDIA_NODES = new Set([
-        'LoadImage', 'LoadImageMask', 'LoadAudio', 'VHS_LoadImagePath', 'VHS_LoadImages'
+        'LoadImage',
+        'LoadImageMask',
+        'LoadAudio',
+        'VHS_LoadImagePath',
+        'VHS_LoadImages',
       ])
       if (DYNAMIC_MEDIA_NODES.has(classType)) continue
       const defs = { ...info.input?.required, ...info.input?.optional }
@@ -413,13 +413,19 @@ export class WorkflowLoader {
         const enumValues = def[0]
         // 区分「枚举值数组」与「类型声明数组 ["STRING", {...}]」
         const TYPE_NAMES = new Set(['STRING', 'INT', 'FLOAT', 'BOOLEAN'])
-        if (Array.isArray(enumValues) && enumValues.length > 0
-          && enumValues.every(v => typeof v === 'string')
-          && !TYPE_NAMES.has(String(enumValues[0]))) {
+        if (
+          Array.isArray(enumValues) &&
+          enumValues.length > 0 &&
+          enumValues.every((v) => typeof v === 'string') &&
+          !TYPE_NAMES.has(String(enumValues[0]))
+        ) {
           if (!(enumValues as string[]).includes(value)) {
             issues.push({
-              kind: 'missing-model', nodeId, classType, inputKey: key,
-              message: `节点「${classType}」需要资源 ${key}="${value}"，但 ComfyUI 中不存在（请放入对应 models 目录后刷新）`
+              kind: 'missing-model',
+              nodeId,
+              classType,
+              inputKey: key,
+              message: `节点「${classType}」需要资源 ${key}="${value}"，但 ComfyUI 中不存在（请放入对应 models 目录后刷新）`,
             })
           }
         }

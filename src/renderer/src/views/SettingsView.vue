@@ -41,7 +41,9 @@
             </el-form-item>
             <el-form-item label="自动学习">
               <el-switch v-model="settings.general.autoLearn" />
-              <span class="form-tip" style="margin-left: 8px">启动后导演每周自动联网学习一次（约 15~30 万 tokens/次）；关闭后仅在聊天区手动触发</span>
+              <span class="form-tip" style="margin-left: 8px"
+                >启动后导演每周自动联网学习一次（约 15~30 万 tokens/次）；关闭后仅在聊天区手动触发</span
+              >
             </el-form-item>
           </el-form>
         </div>
@@ -55,7 +57,9 @@
           <el-form label-width="140px">
             <el-form-item label="首跑引导">
               <el-button @click="openOnboarding">重新运行环境检查</el-button>
-              <span class="form-tip" style="margin-left: 8px">检查 LLM / ComfyUI / 工作流库，并重新走一遍三步上手引导</span>
+              <span class="form-tip" style="margin-left: 8px"
+                >检查 LLM / ComfyUI / 工作流库，并重新走一遍三步上手引导</span
+              >
             </el-form-item>
           </el-form>
         </div>
@@ -86,7 +90,9 @@
             </el-form-item>
             <el-form-item label="口型同步">
               <el-switch v-model="settings.render.lipSync" />
-              <span class="form-tip" style="margin-left: 8px">有台词的人物镜用 LatentSync 让嘴型跟随语音（需已安装节点，失败自动回退原片）</span>
+              <span class="form-tip" style="margin-left: 8px"
+                >有台词的人物镜用 LatentSync 让嘴型跟随语音（需已安装节点，失败自动回退原片）</span
+              >
             </el-form-item>
             <el-form-item label="口型技术路线">
               <el-select v-model="settings.render.lipSyncMode" style="width: 320px">
@@ -97,7 +103,10 @@
             </el-form-item>
             <el-form-item label="H3 turbo 加速">
               <el-switch v-model="settings.render.turboH3" />
-              <span class="form-tip" style="margin-left: 8px">MiniMax H3 官方低步数 LoRA：i2v 挂 fl2v_turbo_8step（8步）、r2v 挂 ref2v_turbo_4step（4步），比无 LoRA 的同步数更快更稳，渲染慢的主要缓解</span>
+              <span class="form-tip" style="margin-left: 8px"
+                >MiniMax H3 官方低步数 LoRA：i2v 挂 fl2v_turbo_8step（8步）、r2v 挂 ref2v_turbo_4step（4步），比无 LoRA
+                的同步数更快更稳，渲染慢的主要缓解</span
+              >
             </el-form-item>
             <el-form-item label="OOM 自动降档">
               <el-switch v-model="settings.render.oomRetry" />
@@ -120,7 +129,9 @@
                 <el-option label="仅告警（推荐：相似度低时提示，不重渲）" value="warn" />
                 <el-option label="自动重渲（低相似度换 seed 重渲一次，审批硬门）" value="rerender" />
               </el-select>
-              <span class="form-tip" style="margin-left: 8px">先检测人脸再比对末帧与参考首帧，拦截换脸/造型漂移；无人脸自动回退全图</span>
+              <span class="form-tip" style="margin-left: 8px"
+                >先检测人脸再比对末帧与参考首帧，拦截换脸/造型漂移；无人脸自动回退全图</span
+              >
             </el-form-item>
             <el-form-item label="分镜首帧门">
               <el-select v-model="settings.render.shotReviewGate" style="width: 320px">
@@ -128,7 +139,9 @@
                 <el-option label="告警放行（未核对仍入队）" value="warn" />
                 <el-option label="关闭（不检查首帧审核）" value="off" />
               </el-select>
-              <span class="form-tip" style="margin-left: 8px">开渲前的首帧核对门：只约束「能不能开始渲染」，与下方成片复审门无关</span>
+              <span class="form-tip" style="margin-left: 8px"
+                >开渲前的首帧核对门：只约束「能不能开始渲染」，与下方成片复审门无关</span
+              >
             </el-form-item>
             <el-form-item label="成片复审门">
               <el-select v-model="settings.render.finalReviewGate" style="width: 320px">
@@ -136,7 +149,9 @@
                 <el-option label="告警放行（记录问题后继续）" value="warn" />
                 <el-option label="关闭（仅跑技术探测，不干预）" value="off" />
               </el-select>
-              <span class="form-tip" style="margin-left: 8px">成片拼好后的复审门：只约束「配不配 BGM」，与上方分镜首帧门无关</span>
+              <span class="form-tip" style="margin-left: 8px"
+                >成片拼好后的复审门：只约束「配不配 BGM」，与上方分镜首帧门无关</span
+              >
             </el-form-item>
             <el-form-item label="逐镜即时审核（看守）">
               <el-switch v-model="settings.render.perShotAudit" />
@@ -153,13 +168,7 @@
               <span class="form-tip" style="margin-left: 8px">定妆/场景板/首帧的客户端并发；ComfyUI 侧仍排队执行</span>
             </el-form-item>
             <el-form-item label="i2i 参考图权重">
-              <el-slider
-                v-model="settings.render.i2iDenoise"
-                :min="0.1"
-                :max="1"
-                :step="0.05"
-                style="width: 320px"
-              />
+              <el-slider v-model="settings.render.i2iDenoise" :min="0.1" :max="1" :step="0.05" style="width: 320px" />
               <span class="form-tip" style="margin-left: 8px">
                 首帧图生图的重绘强度：1=最大幅度重绘（默认），越低越贴近参考图、构图更死板；建议 0.55~0.8
               </span>
@@ -233,7 +242,10 @@
           />
           <table class="hotkey-table">
             <thead>
-              <tr><th>操作</th><th>键位</th></tr>
+              <tr>
+                <th>操作</th>
+                <th>键位</th>
+              </tr>
             </thead>
             <tbody>
               <template v-for="group in hotkeyGroups" :key="group.scope">
@@ -260,12 +272,25 @@ import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
-  Setting, VideoCamera, Service, Microphone, Brush, Check, Folder, Key, MagicStick,
-  Film, User, PictureFilled, Scissor, Odometer
+  Setting,
+  VideoCamera,
+  Service,
+  Microphone,
+  Brush,
+  Check,
+  Folder,
+  Key,
+  MagicStick,
+  Film,
+  User,
+  PictureFilled,
+  Scissor,
+  Odometer,
 } from '@element-plus/icons-vue'
 import type { AppSettings } from '../../../shared/ipcTypes'
 import { DEFAULT_CREATION, mirrorEditToRender, mirrorRenderToEdit } from '../../../shared/creationSettings'
 import { TTS_VOICES, DEFAULT_TTS_VOICE } from '../../../shared/ttsVoices'
+import { DEFAULT_COMFY_BASE_URL } from '../../../shared/comfyDefaults'
 import { throttleTap } from '../utils/throttle'
 import { confirmAction, confirmDanger } from '../utils/confirm'
 import { ONBOARDING_OPEN_EVENT } from '../utils/onboarding'
@@ -295,7 +320,7 @@ const navItems = [
   { key: 'tts', label: 'TTS 语音', icon: Microphone },
   { key: 'llm', label: 'LLM', icon: MagicStick },
   { key: 'appearance', label: '外观', icon: Brush },
-  { key: 'hotkeys', label: '快捷键', icon: Key }
+  { key: 'hotkeys', label: '快捷键', icon: Key },
 ]
 
 // 快捷键说明（与各视图 useHotkeys 注册保持一致）
@@ -311,32 +336,32 @@ const hotkeyGroups = [
       { keys: ['Alt', '5'], label: '渲染队列（需有当前项目）' },
       { keys: ['Alt', '6'], label: '成片预览（需有当前项目）' },
       { keys: ['Ctrl', ','], label: '打开设置' },
-      { keys: ['Ctrl', 'Shift', 'Q'], label: '跳转到渲染队列（需有当前项目）' }
-    ]
+      { keys: ['Ctrl', 'Shift', 'Q'], label: '跳转到渲染队列（需有当前项目）' },
+    ],
   },
   {
     scope: '项目列表',
-    items: [{ keys: ['Ctrl', 'N'], label: '新建项目' }]
+    items: [{ keys: ['Ctrl', 'N'], label: '新建项目' }],
   },
   {
     scope: '分镜编辑',
     items: [
       { keys: ['Ctrl', 'N'], label: '新建分镜（渲染中不可用）' },
-      { keys: ['Delete'], label: '删除选中分镜（渲染中或弹窗打开时不可用）' }
-    ]
+      { keys: ['Delete'], label: '删除选中分镜（渲染中或弹窗打开时不可用）' },
+    ],
   },
   {
     scope: '剧本',
-    items: [{ keys: ['Ctrl', 'S'], label: '保存剧本' }]
+    items: [{ keys: ['Ctrl', 'S'], label: '保存剧本' }],
   },
   {
     scope: '渲染队列',
-    items: [{ keys: ['F5'], label: '刷新队列状态' }]
+    items: [{ keys: ['F5'], label: '刷新队列状态' }],
   },
   {
     scope: '成片预览',
-    items: [{ keys: ['Ctrl', 'E'], label: '导出成片' }]
-  }
+    items: [{ keys: ['Ctrl', 'E'], label: '导出成片' }],
+  },
 ]
 
 /** Wan 合法默认帧：17,33,…,113（16n+1） */
@@ -348,7 +373,7 @@ function createDefaultSettings(): AppSettings {
     revision: 0,
     general: {
       autoSave: true,
-      autoLearn: true
+      autoLearn: true,
     },
     render: {
       defaultWidth: 720,
@@ -367,42 +392,42 @@ function createDefaultSettings(): AppSettings {
       perShotAudit: true,
       turboH3: false,
       i2iDenoise: 1,
-      firstFrameFaceThreshold: 0.7
+      firstFrameFaceThreshold: 0.7,
     },
     creation: structuredClone(DEFAULT_CREATION),
     comfyui: {
-      baseUrl: 'http://127.0.0.1:8188',
+      baseUrl: DEFAULT_COMFY_BASE_URL,
       modelsDir: '',
       startCommand: '',
-      workflowLibraryDir: ''
+      workflowLibraryDir: '',
     },
     tts: {
       defaultVoice: DEFAULT_TTS_VOICE,
       rate: 88,
-      volume: 100
+      volume: 100,
     },
     workflow: {
       default: 'wan22_i2v',
       casting: '',
       scene: '',
       shot: '',
-      prop: ''
+      prop: '',
     },
     negatives: {
       casting: '',
       scene: '',
       shot: '',
-      prop: ''
+      prop: '',
     },
     llm: {
       apiKey: '',
       baseUrl: 'https://api.deepseek.com',
       model: 'deepseek-chat',
-      baseUrlHistory: [] as string[]
+      baseUrlHistory: [] as string[],
     },
     appearance: {
-      theme: 'dark'
-    }
+      theme: 'dark',
+    },
   }
 }
 
@@ -417,9 +442,21 @@ function snapshotSettings(): string {
 }
 
 /** 双写收敛（RA-01）：creation.edit 与 render/tts 变更互相同步，任一处改都处处生效 */
-watch(() => settings.creation.edit, () => mirrorEditToRender(settings), { deep: true })
-watch(() => settings.render, () => mirrorRenderToEdit(settings), { deep: true })
-watch(() => settings.tts, () => mirrorRenderToEdit(settings), { deep: true })
+watch(
+  () => settings.creation.edit,
+  () => mirrorEditToRender(settings),
+  { deep: true },
+)
+watch(
+  () => settings.render,
+  () => mirrorRenderToEdit(settings),
+  { deep: true },
+)
+watch(
+  () => settings.tts,
+  () => mirrorRenderToEdit(settings),
+  { deep: true },
+)
 
 onMounted(async () => {
   await loadSettings()
@@ -440,7 +477,7 @@ async function loadSettings() {
         character: { ...DEFAULT_CREATION.character, ...saved.creation.character },
         scene: { ...DEFAULT_CREATION.scene, ...saved.creation.scene },
         edit: { ...DEFAULT_CREATION.edit, ...saved.creation.edit },
-        presets: Array.isArray(saved.creation.presets) ? saved.creation.presets : []
+        presets: Array.isArray(saved.creation.presets) ? saved.creation.presets : [],
       }
     }
     // 设置页每次进入都重读一次配置（对话内改 baseUrl 等设置也能在这里看到最新值，MP-11 本期口径）
@@ -461,7 +498,7 @@ function openOnboarding(): void {
 async function restoreDefaults(): Promise<void> {
   const ok = await confirmDanger(
     '将通用、渲染、创作四模块、TTS、外观恢复为默认值（保留 ComfyUI 地址与 LLM 配置，预设会被清空）。恢复后仍需点「保存」才生效。',
-    { title: '恢复默认设置', confirmText: '恢复默认' }
+    { title: '恢复默认设置', confirmText: '恢复默认' },
   )
   if (!ok) return
   const defaults = createDefaultSettings()
@@ -471,7 +508,7 @@ async function restoreDefaults(): Promise<void> {
     creation: defaults.creation,
     tts: defaults.tts,
     workflow: defaults.workflow,
-    appearance: defaults.appearance
+    appearance: defaults.appearance,
   })
   applyTheme()
   ElMessage.success('已恢复默认值，点「保存」后生效')
@@ -518,7 +555,7 @@ onBeforeRouteLeave(async () => {
   const leave = await confirmAction('设置有未保存的修改，离开将丢失。是否保存后再离开？', {
     title: '未保存的修改',
     confirmText: '保存并离开',
-    cancelText: '留在本页'
+    cancelText: '留在本页',
   })
   if (!leave) return false
   const ok = await persistSettings(false)
@@ -538,21 +575,47 @@ onBeforeRouteLeave(async () => {
   max-width: 1200px;
 }
 
-.settings-body { display: flex; flex: 1; gap: 16px; overflow: hidden; min-height: 0; }
-.settings-nav { width: 180px; padding: 8px; flex-shrink: 0; }
-.nav-item {
-  display: flex; align-items: center; gap: 8px; padding: 10px 12px;
-  border-radius: 10px; cursor: pointer; color: var(--text-secondary); font-size: 14px;
-  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+.settings-body {
+  display: flex;
+  flex: 1;
+  gap: 16px;
+  overflow: hidden;
+  min-height: 0;
 }
-.nav-item:hover { background: var(--bg-hover); color: var(--text-primary); }
+.settings-nav {
+  width: 180px;
+  padding: 8px;
+  flex-shrink: 0;
+}
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 14px;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+.nav-item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
 .nav-item.active {
   background: var(--bg-menu-active);
   color: var(--brand-strong);
   box-shadow: inset 0 0 0 1px rgba(212, 165, 116, 0.25);
 }
 
-.settings-content { flex: 1; padding: 22px 24px; overflow-y: auto; min-width: 0; }
+.settings-content {
+  flex: 1;
+  padding: 22px 24px;
+  overflow-y: auto;
+  min-width: 0;
+}
 .section h2 {
   font-family: var(--font-display);
   color: var(--text-primary);
@@ -563,15 +626,33 @@ onBeforeRouteLeave(async () => {
 }
 
 @media (max-width: 860px) {
-  .settings-body { flex-direction: column; }
-  .settings-nav { width: 100%; display: flex; gap: 4px; overflow-x: auto; }
-  .nav-item { white-space: nowrap; }
+  .settings-body {
+    flex-direction: column;
+  }
+  .settings-nav {
+    width: 100%;
+    display: flex;
+    gap: 4px;
+    overflow-x: auto;
+  }
+  .nav-item {
+    white-space: nowrap;
+  }
 }
 
-.path-input { display: flex; gap: 8px; }
-.path-input .el-input { flex: 1; }
+.path-input {
+  display: flex;
+  gap: 8px;
+}
+.path-input .el-input {
+  flex: 1;
+}
 
-.form-tip { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+.form-tip {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
 
 /* RA-11：脏态提示，提醒「改了但没保存」 */
 .dirty-tip {
@@ -612,5 +693,7 @@ onBeforeRouteLeave(async () => {
   flex-wrap: wrap;
 }
 
-:deep(.el-form-item__label) { color: var(--text-secondary); }
+:deep(.el-form-item__label) {
+  color: var(--text-secondary);
+}
 </style>

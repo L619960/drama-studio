@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import type { AnalyzedShot } from '../../src/shared/ipcTypes'
 import {
-  defaultCameraFor, defaultLightingFor, frameSecondsFor, normalizeShotPrompts,
-  sanitizeEnglishField
+  defaultCameraFor,
+  defaultLightingFor,
+  frameSecondsFor,
+  normalizeShotPrompts,
+  sanitizeEnglishField,
 } from '../../src/shared/promptSchema'
 
 const shot = (over: Partial<AnalyzedShot> = {}): AnalyzedShot => ({
@@ -10,8 +13,8 @@ const shot = (over: Partial<AnalyzedShot> = {}): AnalyzedShot => ({
   action: 'she wipes the counter with a damp rag',
   dialogue: '',
   type: 'i2v',
-  characterIds: [],
-  ...over
+  characters: [],
+  ...over,
 })
 
 describe('sanitizeEnglishField：英文提示词清洗', () => {
@@ -65,6 +68,7 @@ describe('normalizeShotPrompts：字段补齐与同场景统一', () => {
   it('缺失字段全部补成标准英文（camera/lighting/emotion/facing/continuity/时长/切镜/帧提示词）', () => {
     const { shots, notes } = normalizeShotPrompts([shot(), shot({ scene: '便利店' })])
     const s = shots[0]
+    if (!s) throw new Error('测试夹具缺少 shots[0]')
     expect(s.camera).toContain('eye-level')
     expect(s.camera).toContain('lens')
     expect(s.lighting).toBeTruthy()
@@ -82,52 +86,65 @@ describe('normalizeShotPrompts：字段补齐与同场景统一', () => {
     const { shots } = normalizeShotPrompts(
       [
         shot({ sceneEn: 'bright shopping mall atrium with glass railings' }),
-        shot({ sceneEn: 'sunny beach boardwalk with palm trees' })
+        shot({ sceneEn: 'sunny beach boardwalk with palm trees' }),
       ],
-      { scenes: [{ name: '便利店', en: 'convenience store at rainy midnight, wet glass door, cold fluorescent ceiling tubes' }] }
+      {
+        scenes: [
+          { name: '便利店', en: 'convenience store at rainy midnight, wet glass door, cold fluorescent ceiling tubes' },
+        ],
+      },
     )
-    expect(shots[0].sceneEn).toBe(shots[1].sceneEn)
-    expect(shots[0].sceneEn).toContain('convenience store')
-    expect(shots[0].sceneEn).not.toContain('boardwalk')
+    expect(shots[0]?.sceneEn).toBe(shots[1]?.sceneEn)
+    expect(shots[0]?.sceneEn).toContain('convenience store')
+    expect(shots[0]?.sceneEn).not.toContain('boardwalk')
   })
 
   it('同场景 lighting 统一为同一主光方向（杜绝忽昼忽夜/忽左忽右）', () => {
     const { shots } = normalizeShotPrompts([
       shot({ lighting: 'cool moonlight key from camera-left, low-key exposure' }),
-      shot({ lighting: 'warm golden-hour backlight from camera-right, soft rim light' })
+      shot({ lighting: 'warm golden-hour backlight from camera-right, soft rim light' }),
     ])
-    expect(shots[1].lighting).toBe(shots[0].lighting)
+    expect(shots[1]?.lighting).toBe(shots[0]?.lighting)
   })
 
   it('中文残留的英文字段被清洗；纯中文 action 保留原文但绝不进英文提示词', () => {
     const { shots } = normalizeShotPrompts([shot({ action: '她慢慢擦柜台', camera: '静态镜头' })])
-    expect(shots[0].action).toBe('她慢慢擦柜台')
-    expect(shots[0].camera).toContain('eye-level')
-    expect(shots[0].promptEn).not.toMatch(/[一-龥]/)
-    expect(shots[0].firstFrameEn).not.toMatch(/[一-龥]/)
+    expect(shots[0]?.action).toBe('她慢慢擦柜台')
+    expect(shots[0]?.camera).toContain('eye-level')
+    expect(shots[0]?.promptEn).not.toMatch(/[一-龥]/)
+    expect(shots[0]?.firstFrameEn).not.toMatch(/[一-龥]/)
   })
 
   it('negativeEn 去除系统已注入的通用负向；现代剧再去时代隔离词，古装剧保留', () => {
-    const modern = normalizeShotPrompts([shot({ negativeEn: 'no morphing, no lighting flicker, no modern vehicles' })], { genre: '现代都市' })
-    expect(modern.shots[0].negativeEn).toBe('no lighting flicker')
-    const period = normalizeShotPrompts([shot({ negativeEn: 'no morphing, no modern vehicles' })], { genre: '古装武侠剧' })
-    expect(period.shots[0].negativeEn).toBe('no modern vehicles')
+    const modern = normalizeShotPrompts(
+      [shot({ negativeEn: 'no morphing, no lighting flicker, no modern vehicles' })],
+      { genre: '现代都市' },
+    )
+    expect(modern.shots[0]?.negativeEn).toBe('no lighting flicker')
+    const period = normalizeShotPrompts([shot({ negativeEn: 'no morphing, no modern vehicles' })], {
+      genre: '古装武侠剧',
+    })
+    expect(period.shots[0]?.negativeEn).toBe('no modern vehicles')
   })
 
   it('末镜清空 handoffToNext，非末镜补齐承接', () => {
     const { shots } = normalizeShotPrompts([shot(), shot(), shot({ handoffToNext: 'stale handoff from llm' })])
-    expect(shots[0].handoffToNext).toBeTruthy()
-    expect(shots[1].handoffToNext).toBeTruthy()
-    expect(shots[2].handoffToNext).toBeUndefined()
+    expect(shots[0]?.handoffToNext).toBeTruthy()
+    expect(shots[1]?.handoffToNext).toBeTruthy()
+    expect(shots[2]?.handoffToNext).toBeUndefined()
   })
 
   it('道具去空去重', () => {
     const { shots } = normalizeShotPrompts([shot({ props: ['umbrella', 'umbrella', '  ', 'rag'] })])
-    expect(shots[0].props).toEqual(['umbrella', 'rag'])
+    expect(shots[0]?.props).toEqual(['umbrella', 'rag'])
   })
 
   it('幂等：规范化两次结果一致，第二次无新告警', () => {
-    const opts = { scenes: [{ name: '便利店', en: 'convenience store at rainy midnight, wet glass door, cold fluorescent ceiling tubes' }] }
+    const opts = {
+      scenes: [
+        { name: '便利店', en: 'convenience store at rainy midnight, wet glass door, cold fluorescent ceiling tubes' },
+      ],
+    }
     const once = normalizeShotPrompts([shot(), shot()], opts)
     const twice = normalizeShotPrompts(once.shots, opts)
     expect(twice.shots).toEqual(once.shots)

@@ -11,7 +11,7 @@ import { ProjectStore } from '../../src/main/core/projectStore'
 import type { Project } from '../../src/shared/ipcTypes'
 
 vi.mock('../../src/main/core/logger', () => ({
-  createLogger: () => ({ info: () => {}, warn: () => {}, error: () => {}, debug: () => {} })
+  createLogger: () => ({ info: () => {}, warn: () => {}, error: () => {}, debug: () => {} }),
 }))
 
 // ---------- 全局环境 ----------
@@ -36,7 +36,16 @@ describe('normalizeProject · 旧项目字段自动修复', () => {
   it('sceneBoards 缺失 → 自动补 []', async () => {
     const p = await store.create('t', '都市')
     // 手动写入缺少 sceneBoards 的原始 JSON
-    const raw = { id: p.id, title: 't', genre: '都市', status: 'draft', characters: [], shots: [], createdAt: 0, updatedAt: 0 }
+    const raw = {
+      id: p.id,
+      title: 't',
+      genre: '都市',
+      status: 'draft',
+      characters: [],
+      shots: [],
+      createdAt: 0,
+      updatedAt: 0,
+    }
     await fs.writeFile(path.join(dir, 'projects', p.id, 'project.json'), JSON.stringify(raw))
     const got = await store.get(p.id)
     expect(got.sceneBoards).toEqual([])
@@ -45,13 +54,21 @@ describe('normalizeProject · 旧项目字段自动修复', () => {
   it('旧数据 refImagePath 有值但 faceImagePath 空 → 自动回填', async () => {
     const p = await store.create('t', '都市')
     const raw = {
-      id: p.id, title: 't', genre: '都市', status: 'draft',
-      characters: [{ id: 'c1', refImagePath: 'projects/p1/characters/face.png', faceImagePath: '', appearanceLock: '' }],
-      sceneBoards: [], shots: [], createdAt: 0, updatedAt: 0
+      id: p.id,
+      title: 't',
+      genre: '都市',
+      status: 'draft',
+      characters: [
+        { id: 'c1', refImagePath: 'projects/p1/characters/face.png', faceImagePath: '', appearanceLock: '' },
+      ],
+      sceneBoards: [],
+      shots: [],
+      createdAt: 0,
+      updatedAt: 0,
     }
     await fs.writeFile(path.join(dir, 'projects', p.id, 'project.json'), JSON.stringify(raw))
     const got = await store.get(p.id)
-    expect(got.characters[0].faceImagePath).toBe('projects/p1/characters/face.png')
+    expect(got.characters[0]?.faceImagePath).toBe('projects/p1/characters/face.png')
   })
 
   it('非古装剧 → 自动清除 appearanceLock 里硬加持的剑条款（幂等：多次加载都清）', async () => {
@@ -59,16 +76,22 @@ describe('normalizeProject · 旧项目字段自动修复', () => {
     const weaponClauses = [
       'young man, carrying one traditional chinese weapon, exactly one weapon, one hand empty',
       ', holding a single chinese straight jian sword, exactly one weapon, one hand empty, NO katana, NO curved japanese blade',
-      'exactly one weapon, one hand empty, black jacket'
+      'exactly one weapon, one hand empty, black jacket',
     ]
     const raw = {
-      id: p.id, title: 'modern', genre: '都市', status: 'draft',
+      id: p.id,
+      title: 'modern',
+      genre: '都市',
+      status: 'draft',
       characters: [
         { id: 'c1', appearanceLock: weaponClauses[0] },
         { id: 'c2', appearanceLock: weaponClauses[1] },
-        { id: 'c3', appearanceLock: weaponClauses[2] }
+        { id: 'c3', appearanceLock: weaponClauses[2] },
       ],
-      sceneBoards: [], shots: [], createdAt: 0, updatedAt: 0
+      sceneBoards: [],
+      shots: [],
+      createdAt: 0,
+      updatedAt: 0,
     }
     await fs.writeFile(path.join(dir, 'projects', p.id, 'project.json'), JSON.stringify(raw))
     const got = await store.get(p.id)
@@ -90,28 +113,54 @@ describe('normalizeProject · 旧项目字段自动修复', () => {
     const p = await store.create('wuxia', '武侠')
     const lock = 'young sword fighter, carrying one traditional chinese weapon, exactly one weapon, one hand empty'
     const raw = {
-      id: p.id, title: 'wuxia', genre: '武侠', status: 'draft',
+      id: p.id,
+      title: 'wuxia',
+      genre: '武侠',
+      status: 'draft',
       characters: [{ id: 'c1', appearanceLock: lock }],
-      sceneBoards: [], shots: [], createdAt: 0, updatedAt: 0
+      sceneBoards: [],
+      shots: [],
+      createdAt: 0,
+      updatedAt: 0,
     }
     await fs.writeFile(path.join(dir, 'projects', p.id, 'project.json'), JSON.stringify(raw))
     const got = await store.get(p.id)
-    expect(got.characters[0].appearanceLock).toContain('traditional chinese weapon')
-    expect(got.characters[0].appearanceLock).toContain('exactly one weapon')
+    expect(got.characters[0]?.appearanceLock).toContain('traditional chinese weapon')
+    expect(got.characters[0]?.appearanceLock).toContain('exactly one weapon')
   })
 
   it('reviewed=true 但 firstFramePath 缺失（非 i2v）→ 自动重置为 false', async () => {
     const p = await store.create('t', '都市')
     const raw = {
-      id: p.id, title: 't', genre: '都市', status: 'draft',
+      id: p.id,
+      title: 't',
+      genre: '都市',
+      status: 'draft',
       characters: [],
       sceneBoards: [],
-      shots: [{ id: 's1', type: 'i2v', reviewed: true, firstFramePath: '', action: 'x', characterIds: [], index: 1, scene: '', dialogue: '', width: 720, height: 480, frames: 81, seed: 1 }],
-      createdAt: 0, updatedAt: 0
+      shots: [
+        {
+          id: 's1',
+          type: 'i2v',
+          reviewed: true,
+          firstFramePath: '',
+          action: 'x',
+          characterIds: [],
+          index: 1,
+          scene: '',
+          dialogue: '',
+          width: 720,
+          height: 480,
+          frames: 81,
+          seed: 1,
+        },
+      ],
+      createdAt: 0,
+      updatedAt: 0,
     }
     await fs.writeFile(path.join(dir, 'projects', p.id, 'project.json'), JSON.stringify(raw))
     const got = await store.get(p.id)
-    expect(got.shots[0].reviewed).toBe(false)
+    expect(got.shots[0]?.reviewed).toBe(false)
   })
 })
 
@@ -129,49 +178,80 @@ describe('doSave · 保护性恢复已完成镜头', () => {
 
     const diskProject: Project = {
       ...p,
-      shots: [{
-        id: 's1', index: 1, scene: '', action: '', dialogue: '', characterIds: [],
-        type: 'i2v', width: 720, height: 480, frames: 81, seed: 1,
-        status: 'done', segmentPath: `projects/${p.id}/${relSeg.replace(/\\/g, '/')}`, reviewed: true
-      }]
+      shots: [
+        {
+          id: 's1',
+          index: 1,
+          scene: '',
+          action: '',
+          dialogue: '',
+          characterIds: [],
+          type: 'i2v',
+          width: 720,
+          height: 480,
+          frames: 81,
+          seed: 1,
+          status: 'done',
+          segmentPath: `projects/${p.id}/${relSeg.replace(/\\/g, '/')}`,
+          reviewed: true,
+        },
+      ],
     }
     await store.save(diskProject)
 
     // 现在用一个退化的旧快照覆盖同一 shot（pending + 无 segmentPath）
+    const diskShot = diskProject.shots[0]
+    if (!diskShot) throw new Error('测试夹具缺少 diskProject.shots[0]')
     const staleProject: Project = {
       ...diskProject,
-      shots: [{ ...diskProject.shots[0], status: 'pending', segmentPath: undefined, reviewed: false }]
+      shots: [{ ...diskShot, status: 'pending', segmentPath: undefined, reviewed: false }],
     }
-    staleProject.shots[0].intentReset = false // 不触发 intentReset 分支
+    const staleShot = staleProject.shots[0]
+    if (!staleShot) throw new Error('测试夹具缺少 staleProject.shots[0]')
+    staleShot.intentReset = false // 不触发 intentReset 分支
     await store.save(staleProject)
 
     // 验证磁盘上 shot 仍为 done 且带 segmentPath（mergeProtectedDoneShot 只恢复 DONE_MEDIA_KEYS：segmentPath/rawVideoPath/audioPath/firstFramePath/lastFramePath/sceneImagePath，不恢复 reviewed）
     const got = await store.get(p.id)
-    expect(got.shots[0].status).toBe('done')
-    expect(got.shots[0].segmentPath).toBeDefined()
+    expect(got.shots[0]?.status).toBe('done')
+    expect(got.shots[0]?.segmentPath).toBeDefined()
   })
 
   it('磁盘上 done 但产物文件缺失 → 不保护，允许退化', async () => {
     const p = await store.create('t', '都市')
     const diskProject: Project = {
       ...p,
-      shots: [{
-        id: 's1', index: 1, scene: '', action: '', dialogue: '', characterIds: [],
-        type: 'i2v', width: 720, height: 480, frames: 81, seed: 1,
-        status: 'done', segmentPath: 'projects/xxx/nonexistent.mp4' // 指向不存在的文件
-      }]
+      shots: [
+        {
+          id: 's1',
+          index: 1,
+          scene: '',
+          action: '',
+          dialogue: '',
+          characterIds: [],
+          type: 'i2v',
+          width: 720,
+          height: 480,
+          frames: 81,
+          seed: 1,
+          status: 'done',
+          segmentPath: 'projects/xxx/nonexistent.mp4', // 指向不存在的文件
+        },
+      ],
     }
     await store.save(diskProject)
 
+    const diskShot = diskProject.shots[0]
+    if (!diskShot) throw new Error('测试夹具缺少 diskProject.shots[0]')
     const staleProject: Project = {
       ...diskProject,
-      shots: [{ ...diskProject.shots[0], status: 'pending', segmentPath: undefined }]
+      shots: [{ ...diskShot, status: 'pending', segmentPath: undefined }],
     }
     await store.save(staleProject)
 
     const got = await store.get(p.id)
-    expect(got.shots[0].status).toBe('pending')
-    expect(got.shots[0].segmentPath).toBeUndefined()
+    expect(got.shots[0]?.status).toBe('pending')
+    expect(got.shots[0]?.segmentPath).toBeUndefined()
   })
 
   it('intentReset=true → 显式跳过保护（用户强制重置产物）', async () => {
@@ -183,23 +263,37 @@ describe('doSave · 保护性恢复已完成镜头', () => {
 
     const diskProject: Project = {
       ...p,
-      shots: [{
-        id: 's1', index: 1, scene: '', action: '', dialogue: '', characterIds: [],
-        type: 'i2v', width: 720, height: 480, frames: 81, seed: 1,
-        status: 'done', segmentPath: `projects/${p.id}/${relSeg.replace(/\\/g, '/')}`
-      }]
+      shots: [
+        {
+          id: 's1',
+          index: 1,
+          scene: '',
+          action: '',
+          dialogue: '',
+          characterIds: [],
+          type: 'i2v',
+          width: 720,
+          height: 480,
+          frames: 81,
+          seed: 1,
+          status: 'done',
+          segmentPath: `projects/${p.id}/${relSeg.replace(/\\/g, '/')}`,
+        },
+      ],
     }
     await store.save(diskProject)
 
+    const diskShot = diskProject.shots[0]
+    if (!diskShot) throw new Error('测试夹具缺少 diskProject.shots[0]')
     const resetProject: Project = {
       ...diskProject,
-      shots: [{ ...diskProject.shots[0], status: 'pending', segmentPath: undefined, intentReset: true }]
+      shots: [{ ...diskShot, status: 'pending', segmentPath: undefined, intentReset: true }],
     }
     await store.save(resetProject)
 
     const got = await store.get(p.id)
-    expect(got.shots[0].status).toBe('pending')
-    expect(got.shots[0].segmentPath).toBeUndefined()
+    expect(got.shots[0]?.status).toBe('pending')
+    expect(got.shots[0]?.segmentPath).toBeUndefined()
     // intentReset 标志被消费掉（doSave 里 delete cur.intentReset）
     // 注意：Shot interface 里可能没 intentReset 字段，但 doSave 里会 delete 它，TS 允许。
   })
@@ -208,23 +302,37 @@ describe('doSave · 保护性恢复已完成镜头', () => {
     const p = await store.create('t', '都市')
     const diskProject: Project = {
       ...p,
-      shots: [{
-        id: 's1', index: 1, scene: '', action: '', dialogue: '', characterIds: [],
-        type: 'i2v', width: 720, height: 480, frames: 81, seed: 1,
-        status: 'done', segmentPath: 'projects/old.mp4'
-      }]
+      shots: [
+        {
+          id: 's1',
+          index: 1,
+          scene: '',
+          action: '',
+          dialogue: '',
+          characterIds: [],
+          type: 'i2v',
+          width: 720,
+          height: 480,
+          frames: 81,
+          seed: 1,
+          status: 'done',
+          segmentPath: 'projects/old.mp4',
+        },
+      ],
     }
     await store.save(diskProject)
 
     // 新快照也是 done + 有 segmentPath（不同路径）→ 直接覆盖
+    const diskShot = diskProject.shots[0]
+    if (!diskShot) throw new Error('测试夹具缺少 diskProject.shots[0]')
     const newProject: Project = {
       ...diskProject,
-      shots: [{ ...diskProject.shots[0], segmentPath: 'projects/new.mp4' }]
+      shots: [{ ...diskShot, segmentPath: 'projects/new.mp4' }],
     }
     await store.save(newProject)
 
     const got = await store.get(p.id)
-    expect(got.shots[0].segmentPath).toBe('projects/new.mp4')
+    expect(got.shots[0]?.segmentPath).toBe('projects/new.mp4')
   })
 })
 
@@ -270,7 +378,7 @@ describe('list / getShotDir 基础覆盖', () => {
     const list = await store.list()
     // 只包含 valid，不包含 empty-dir
     expect(list.length).toBeGreaterThanOrEqual(1)
-    const titles = list.map(p => p.title)
+    const titles = list.map((p) => p.title)
     expect(titles).toContain('valid')
     // 所有项目都被 normalizeProject 处理过（含 sceneBoards）
     for (const p of list) expect(Array.isArray(p.sceneBoards)).toBe(true)
@@ -278,11 +386,11 @@ describe('list / getShotDir 基础覆盖', () => {
 
   it('list 按 createdAt 降序排列', async () => {
     const a = await store.create('A', '都市')
-    await new Promise(r => setTimeout(r, 10))
+    await new Promise((r) => setTimeout(r, 10))
     const b = await store.create('B', '都市')
     const list = await store.list()
-    const idxA = list.findIndex(p => p.id === a.id)
-    const idxB = list.findIndex(p => p.id === b.id)
+    const idxA = list.findIndex((p) => p.id === a.id)
+    const idxB = list.findIndex((p) => p.id === b.id)
     // b 后创建 → 应该在前
     expect(idxB).toBeLessThan(idxA)
   })

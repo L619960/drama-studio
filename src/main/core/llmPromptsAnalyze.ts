@@ -11,8 +11,8 @@ import { doctrinePromptBlock } from '../../shared/shotDoctrine'
 export function analyzeSystemPrompt(p: {
   sb: StoryboardModuleSettings
   titleHint: string
-  tpl?: GenreTemplate
-  extraRules?: string[]
+  tpl?: GenreTemplate | undefined
+  extraRules?: string[] | undefined
 }): string {
   const { sb, titleHint, tpl, extraRules } = p
   return [
@@ -162,8 +162,11 @@ export function analyzeSystemPrompt(p: {
     '正确：雨街空镜 → 撑伞人影走近(t2v) → 女主抬头看见(无台词反应) → 对白正反打 → closeup 双手递接 umbrella handle → 车旁拉开车门/坐进座位 → 车内对白 → 结局 taillights receding into rainy night',
     '',
     ...(extraRules?.length
-      ? ['# 导演技能库方法论（看守强制，分镜必须逐条落实，违反即返工）',
-         ...extraRules.map((r, i) => `${i + 1}. ${r}`), '']
+      ? [
+          '# 导演技能库方法论（看守强制，分镜必须逐条落实，违反即返工）',
+          ...extraRules.map((r, i) => `${i + 1}. ${r}`),
+          '',
+        ]
       : []),
     '# 输出格式：只输出一个 JSON 对象，禁止 markdown 代码围栏与任何解释',
     '# JSON 硬规则：所有字符串值必须是单行纯文本——禁止任何换行、制表符、未转义双引号；promptEn/negativeEn 内容再长也要写成一行，用逗号分隔短句，不得使用引号包裹短语；输出必须是严格合法的 JSON，任何字符错误都会导致整个分析失败',
@@ -206,8 +209,10 @@ export function analyzeSystemPrompt(p: {
     '      "negativeEn": "本镜增量风险英文负向提示词(0~20词，可选，无增量风险可省略该字段)。通用漂移/画质/字幕/转场压制由渲染层系统负向统一注入，禁止照抄（no morphing / no clothing change / no extra limbs / no sudden movement / no large displacement / no position shift / no extra characters / consistent background 等一律不写）。只写本镜剧情特有的增量风险：夜景/室内镜加 no lighting flicker；古装/年代镜加时代隔离组 no modern vehicles, no cars, no electronics, no asphalt road, no glass buildings, no billboards（现代剧省略——实测事故：古装酒楼镜门外开进一辆现代 SUV，根因即缺时代词）；本镜特有道具变形/场景串台/动作倒放按实际风险选词。禁止照抄通用皮肤瑕疵词（REALISM_NEGATIVE 已注入）"',
     '    }',
     '  ]',
-    '}'
-  ].filter(Boolean).join('\n')
+    '}',
+  ]
+    .filter(Boolean)
+    .join('\n')
 }
 
 /** 提示词字数整改循环（enforcePromptLengths）system + user */
@@ -220,7 +225,8 @@ export function enforceFixPrompts(lines: string[]): { system: string; user: stri
     '所有字段严禁出现其他剧情/其他示例项目的串台词（理发店/剪刀/旧角色名/旧服装道具等），必须按本镜 action 实际剧情写，禁止沿用示例内容。' +
     'i2v 镜头的 promptEn 必须按 motion-first 四段结构补写（60~110 词：the same [角色英文名] from the reference image + 具体保留特征词(服装/湿发/道具，禁止仅写 consistent appearance 空断言) + 可观察事件链动作(起始姿态→程度词单一原子动作→结束定格，含物体/道具状态变化，非剧情摘要) + 单条微运镜(static / slow push-in with small amplitude / slight pan / slight tilt / slight arc shot 择一) + 节奏词；禁止重述场景/外貌/光线，禁止多动作堆叠，禁止 static 与运镜并存）。' +
     '角色 lookEn 必须补写（30~70 英文词：人种年龄性别/脸型五官/写实肤质/发型发色/服装面料款式(完整得体禁裸露)/配饰/体型/剧情痕迹；禁 beautiful/porcelain/flawless 空泛词）。'
-  const user = `# 需整改字段\n${lines.join('\n')}\n\n# 输出格式\n` +
+  const user =
+    `# 需整改字段\n${lines.join('\n')}\n\n# 输出格式\n` +
     `{"fixes":[{"shotIndex":1,"promptEn":"...","transitionEn":"..."}],"sceneFixes":[{"sceneName":"昏暗老宅","en":"..."}],"charFixes":[{"name":"主角名","lookEn":"..."}]}\n` +
     `只包含需整改的字段；补写必须按该镜/该场景/该角色剧情写，禁止逐镜雷同模板，promptEn 不含外貌服装描述，negativeEn 只写本镜增量风险词（0~20 词，系统已覆盖的通用漂移/画质/字幕/转场词禁止重复；无增量风险可留空）。`
   return { system, user }

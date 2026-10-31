@@ -32,7 +32,7 @@ withDefaults(
     /** 占位图形变体：default=圆角卡片，flat=极简线框 */
     art?: 'default' | 'flat'
   }>(),
-  { description: '', icon: undefined, art: 'default' }
+  { description: '', art: 'default' },
 )
 </script>
 

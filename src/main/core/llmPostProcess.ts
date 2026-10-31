@@ -6,13 +6,13 @@
  * 行为与原 LLMService 内联实现一字不差。
  */
 import fs from 'node:fs'
-import os from 'node:os'
 import path from 'node:path'
 import type { AppSettings, AnalyzeResult, AnalyzeScene, AnalyzedCharacter, AnalyzedShot } from '../../shared/ipcTypes'
 import { DISPLACEMENT_ACTION_RE } from '../../shared/imagePrompts'
 import { CROSS_SOURCE } from '../../shared/promptAuditRules'
 import { httpChat } from './llmHttp'
 import { createLogger } from './logger'
+import { userDataDir } from './appPaths'
 
 const log = createLogger('LLM')
 
@@ -37,7 +37,7 @@ export async function enforcePromptLengths(
   getSettings: () => Promise<AppSettings>,
   scenes: AnalyzeScene[],
   shots: AnalyzedShot[],
-  characters: AnalyzedCharacter[]
+  characters: AnalyzedCharacter[],
 ): Promise<{ scenes: AnalyzeScene[]; shots: AnalyzedShot[]; characters: AnalyzedCharacter[] }> {
   const L = (t?: string): number => (t ? (t.trim().match(/[a-zA-Z'-]+/g) || []).length : 0)
   const SLANG = /\bclearly visible\b|\bholding a [\w -]+ visible\b/i
@@ -46,6 +46,12 @@ export async function enforcePromptLengths(
   // 2026-10-25 单源化：词表收敛到 promptAuditRules.CROSS_SOURCE（旧剧专属元素；现代服装词由 render 层
   // FOREIGN_COAT_RE 按"古装镜出现现代服装"语义承担，analyze 层不拦现代剧正常服装，避免误伤现代剧）。
   const CROSS_RE = new RegExp(CROSS_SOURCE, 'gi')
+  /** CORE-03：全局正则 exec 会保留 lastIndex，跨字段复用会从残余位置起搜而漏判，每次匹配前必须归零 */
+  const firstCrossWord = (text: string): string | null => {
+    CROSS_RE.lastIndex = 0
+    const m = CROSS_RE.exec(text)
+    return m ? m[0] : null
+  }
 
   interface Violation {
     kind: 'scene' | 'shot' | 'character'
@@ -55,7 +61,7 @@ export async function enforcePromptLengths(
     field: string
     current: number
     min: number
-    max?: number
+    max?: number | undefined
     slang?: string
     /** 串台词：字段内容疑似沿用了其他剧情/其他镜的示例文本 */
     cross?: string
@@ -81,7 +87,7 @@ export async function enforcePromptLengths(
         ['promptEn', L(s.promptEn), pMin, pMax],
         ['negativeEn', L(s.negativeEn), 0, 20],
         ['firstFrameEn', L(s.firstFrameEn), 20, 50],
-        ['midFrameEn', L(s.midFrameEn), s.midFrameEn ? 20 : 0, 40]
+        ['midFrameEn', L(s.midFrameEn), s.midFrameEn ? 20 : 0, 40],
       ]
       // 尾帧/转场与位移语义同生同灭：仅「跨镜位移镜」必填 lastFrameEn/transitionEn；
       // 站立微动/对话/单动作完成镜禁写（flf2v 自由插值是动作漂移源头，见规则「尾帧镜判定铁律」）
@@ -98,7 +104,16 @@ export async function enforcePromptLengths(
       // 套话检测
       if (s.promptEn) {
         const slang = SLANG.exec(s.promptEn)
-        if (slang) vs.push({ kind: 'shot', idx, field: 'promptEn', current: L(s.promptEn), min: pMin, max: pMax, slang: slang[0] })
+        if (slang)
+          vs.push({
+            kind: 'shot',
+            idx,
+            field: 'promptEn',
+            current: L(s.promptEn),
+            min: pMin,
+            max: pMax,
+            slang: slang[0],
+          })
       }
       // 串戏语义检测（2026-10-17 漂移根因修复·确定性防线）：promptEn 必须与 action 讲同一个故事。
       // 实测事故：LLM 把系统提示词示例当剧本，24 镜古装戏 promptEn 全写成雨夜现代戏，
@@ -107,15 +122,67 @@ export async function enforcePromptLengths(
       // 在 promptEn 中命中率 <15% 即判串戏，交整改循环按 action 重写（宁可重写不可放行）。
       if (s.promptEn && s.action) {
         const STOP = new Set([
-          'the', 'from', 'with', 'then', 'than', 'that', 'this', 'these', 'those', 'into', 'onto',
-          'over', 'under', 'while', 'their', 'there', 'here', 'have', 'has', 'had', 'his', 'her',
-          'him', 'she', 'its', 'and', 'but', 'not', 'for', 'are', 'was', 'were', 'been', 'being',
-          'same', 'reference', 'image', 'slight', 'slow', 'slowly', 'push', 'shot', 'pan', 'tilt',
-          'arc', 'static', 'zoom', 'camera', 'rhythm', 'keeps', 'still', 'starting', 'fixed',
-          'framing', 'level', 'speaking', 'naturally', 'motion'
+          'the',
+          'from',
+          'with',
+          'then',
+          'than',
+          'that',
+          'this',
+          'these',
+          'those',
+          'into',
+          'onto',
+          'over',
+          'under',
+          'while',
+          'their',
+          'there',
+          'here',
+          'have',
+          'has',
+          'had',
+          'his',
+          'her',
+          'him',
+          'she',
+          'its',
+          'and',
+          'but',
+          'not',
+          'for',
+          'are',
+          'was',
+          'were',
+          'been',
+          'being',
+          'same',
+          'reference',
+          'image',
+          'slight',
+          'slow',
+          'slowly',
+          'push',
+          'shot',
+          'pan',
+          'tilt',
+          'arc',
+          'static',
+          'zoom',
+          'camera',
+          'rhythm',
+          'keeps',
+          'still',
+          'starting',
+          'fixed',
+          'framing',
+          'level',
+          'speaking',
+          'naturally',
+          'motion',
         ])
         const words = (t: string): Set<string> =>
-          new Set((t.toLowerCase().match(/[a-z]{4,}/g) || []).filter(w => !STOP.has(w)))
+          new Set((t.toLowerCase().match(/[a-z]{4,}/g) || []).filter((w) => !STOP.has(w)))
         const aw = words(s.action)
         const pw = words(s.promptEn)
         if (aw.size >= 4) {
@@ -124,19 +191,33 @@ export async function enforcePromptLengths(
           const ratio = hit / aw.size
           if (ratio < 0.15) {
             vs.push({
-              kind: 'shot', idx, field: 'promptEn', current: L(s.promptEn), min: pMin, max: pMax,
-              cross: `promptEn 与本镜 action 剧情脱节（动作词命中率仅 ${Math.round(ratio * 100)}%，疑似幻觉串戏）`
+              kind: 'shot',
+              idx,
+              field: 'promptEn',
+              current: L(s.promptEn),
+              min: pMin,
+              max: pMax,
+              cross: `promptEn 与本镜 action 剧情脱节（动作词命中率仅 ${Math.round(ratio * 100)}%，疑似幻觉串戏）`,
             })
           }
         }
       }
       // 串台检测（跨项目污染防线）：任一英文提示词字段出现旧项目专属元素（理发店/剪刀/旧角色名/旧服装道具）→ 重写该字段。
       // 这些词不属于本剧（便利店悬疑），出现即代表 LLM 拆镜时沿用了其他示例内容，必须按本镜 action 重写。
-      for (const field of ['sceneEn', 'promptEn', 'firstFrameEn', 'midFrameEn', 'lastFrameEn', 'transitionEn', 'handoffToNext', 'negativeEn']) {
+      for (const field of [
+        'sceneEn',
+        'promptEn',
+        'firstFrameEn',
+        'midFrameEn',
+        'lastFrameEn',
+        'transitionEn',
+        'handoffToNext',
+        'negativeEn',
+      ]) {
         const v = s[field as keyof AnalyzedShot] as string | undefined
         if (!v) continue
-        const m = CROSS_RE.exec(v)
-        if (m) vs.push({ kind: 'shot', idx, field, current: L(v), min: 1, max: undefined, cross: m[0] })
+        const m = firstCrossWord(v)
+        if (m) vs.push({ kind: 'shot', idx, field, current: L(v), min: 1, max: undefined, cross: m })
       }
     })
     for (const c of ch) {
@@ -154,13 +235,14 @@ export async function enforcePromptLengths(
   let curShots = shots
   let curChars = characters
   for (let round = 1; round <= 2 && vs.length > 0; round++) {
-    const lines = vs.map(v => {
-      const who = v.kind === 'scene' ? `场景[${v.sceneName}]`
-        : v.kind === 'character' ? `角色[${v.name}]`
-          : `镜头${v.idx}`
+    const lines = vs.map((v) => {
+      const who =
+        v.kind === 'scene' ? `场景[${v.sceneName}]` : v.kind === 'character' ? `角色[${v.name}]` : `镜头${v.idx}`
       const range = v.max != null ? `${v.min}~${v.max}` : `${v.min}+`
       const extra = v.slang ? `（含套话词 "${v.slang}"，必须重写去掉）` : ''
-      const cross = v.cross ? `（含其他剧情/其他项目的串台词 "${v.cross}"，必须按本镜 action 实际剧情重写，禁止沿用示例内容）` : ''
+      const cross = v.cross
+        ? `（含其他剧情/其他项目的串台词 "${v.cross}"，必须按本镜 action 实际剧情重写，禁止沿用示例内容）`
+        : ''
       return `- ${who} 的 ${v.field} 现 ${v.current} 词，要求 ${range} 词${extra}${cross}`
     })
 
@@ -172,7 +254,8 @@ export async function enforcePromptLengths(
       '所有字段严禁出现其他剧情/其他示例项目的串台词（理发店/剪刀/旧角色名/旧服装道具等），必须按本镜 action 实际剧情写，禁止沿用示例内容。' +
       'i2v 镜头的 promptEn 必须按 motion-first 四段结构补写（60~110 词：the same [角色英文名] from the reference image + 具体保留特征词(服装/湿发/道具，禁止仅写 consistent appearance 空断言) + 可观察事件链动作(起始姿态→程度词单一原子动作→结束定格，含物体/道具状态变化，非剧情摘要) + 单条微运镜(static / slow push-in with small amplitude / slight pan / slight tilt / slight arc shot 择一) + 节奏词；禁止重述场景/外貌/光线，禁止多动作堆叠，禁止 static 与运镜并存）。' +
       '角色 lookEn 必须补写（30~70 英文词：人种年龄性别/脸型五官/写实肤质/发型发色/服装面料款式(完整得体禁裸露)/配饰/体型/剧情痕迹；禁 beautiful/porcelain/flawless 空泛词）。'
-    const user = `# 需整改字段\n${lines.join('\n')}\n\n# 输出格式\n` +
+    const user =
+      `# 需整改字段\n${lines.join('\n')}\n\n# 输出格式\n` +
       `{"fixes":[{"shotIndex":1,"promptEn":"...","transitionEn":"..."}],"sceneFixes":[{"sceneName":"昏暗老宅","en":"..."}],"charFixes":[{"name":"主角名","lookEn":"..."}]}\n` +
       `只包含需整改的字段；补写必须按该镜/该场景/该角色剧情写，禁止逐镜雷同模板，promptEn 不含外貌服装描述，negativeEn 只写本镜增量风险词（0~20 词，系统已覆盖的通用漂移/画质/字幕/转场词禁止重复；无增量风险可留空）。`
 
@@ -200,7 +283,8 @@ export async function enforcePromptLengths(
       const charMap = new Map<string, string>()
       if (Array.isArray(fix.charFixes)) {
         for (const f of fix.charFixes) {
-          if (f && typeof f.name === 'string' && typeof f.lookEn === 'string') charMap.set(f.name.trim(), f.lookEn.trim())
+          if (f && typeof f.name === 'string' && typeof f.lookEn === 'string')
+            charMap.set(f.name.trim(), f.lookEn.trim())
         }
       }
       if (shotMap.size === 0 && sceneMap.size === 0 && charMap.size === 0) break
@@ -208,18 +292,27 @@ export async function enforcePromptLengths(
         const f = shotMap.get(i + 1)
         if (!f) return s
         const nxt: AnalyzedShot = { ...s }
-        const keys = ['sceneEn', 'promptEn', 'negativeEn', 'firstFrameEn', 'midFrameEn', 'lastFrameEn', 'handoffToNext', 'transitionEn'] as const
+        const keys = [
+          'sceneEn',
+          'promptEn',
+          'negativeEn',
+          'firstFrameEn',
+          'midFrameEn',
+          'lastFrameEn',
+          'handoffToNext',
+          'transitionEn',
+        ] as const
         for (const k of keys) {
           if (typeof f[k] === 'string' && (f[k] as string).trim()) nxt[k] = (f[k] as string).trim()
         }
         return nxt
       })
-      curScenes = curScenes.map(sc => {
+      curScenes = curScenes.map((sc) => {
         const en = sceneMap.get(sc.name)
         return en ? { ...sc, en } : sc
       })
-      curChars = curChars.map(c => {
-        const look = charMap.get(c.name) || charMap.get((c.aliases || []).find(a => charMap.has(a)) || '')
+      curChars = curChars.map((c) => {
+        const look = charMap.get(c.name) || charMap.get((c.aliases || []).find((a) => charMap.has(a)) || '')
         return look ? { ...c, lookEn: look } : c
       })
     } catch (e) {
@@ -251,34 +344,58 @@ export async function enforcePromptLengths(
     const mid = s.midFrameEn ? `passing through ${s.midFrameEn.split(',').slice(0, 2).join(',')}, ` : ''
     return `Transition over ${secs} seconds: ${cam}, the frame begins at ${a}, the subject movement evolves smoothly, ${mid}and finally settles at ${b}. The change happens in place with minimal camera motion, consistent lighting and no morphing.`
   }
-  curScenes = curScenes.map(sc => ({ ...sc, en: clamp(sc.en, 80) }))
-  curShots = curShots.map(s => {
+  curScenes = curScenes.map((sc) => {
+    const en = clamp(sc.en, 80)
+    return en !== undefined ? { ...sc, en } : sc
+  })
+  curShots = curShots.map((s) => {
     const nxt: AnalyzedShot = { ...s }
     if (s.type === 'i2v' && DISPLACEMENT_RE.test(s.action ?? '')) {
       if (!nxt.transitionEn) nxt.transitionEn = buildTransition(nxt)
     } else {
-      nxt.lastFrameEn = undefined
-      nxt.transitionEn = undefined
+      delete nxt.lastFrameEn
+      delete nxt.transitionEn
     }
-    nxt.sceneEn = clamp(nxt.sceneEn, 60)
-    nxt.promptEn = clamp(nxt.promptEn, 150)
-    nxt.negativeEn = clamp(nxt.negativeEn, 35)
-    nxt.firstFrameEn = clamp(nxt.firstFrameEn, 50)
-    nxt.midFrameEn = clamp(nxt.midFrameEn, 40)
-    nxt.lastFrameEn = clamp(nxt.lastFrameEn, 50)
-    nxt.transitionEn = clamp(nxt.transitionEn, 120)
+    const sceneEn = clamp(nxt.sceneEn, 60)
+    if (sceneEn !== undefined) nxt.sceneEn = sceneEn
+    const promptEn = clamp(nxt.promptEn, 150)
+    if (promptEn !== undefined) nxt.promptEn = promptEn
+    const negativeEn = clamp(nxt.negativeEn, 35)
+    if (negativeEn !== undefined) nxt.negativeEn = negativeEn
+    const firstFrameEn = clamp(nxt.firstFrameEn, 50)
+    if (firstFrameEn !== undefined) nxt.firstFrameEn = firstFrameEn
+    const midFrameEn = clamp(nxt.midFrameEn, 40)
+    if (midFrameEn !== undefined) nxt.midFrameEn = midFrameEn
+    const lastFrameEn = clamp(nxt.lastFrameEn, 50)
+    if (lastFrameEn !== undefined) nxt.lastFrameEn = lastFrameEn
+    const transitionEn = clamp(nxt.transitionEn, 120)
+    if (transitionEn !== undefined) nxt.transitionEn = transitionEn
     return nxt
   })
   // 调试留痕：确认收尾是否执行、transitionEn 生成情况（写盘便于排查）
+  // P2-17：每次 analyze 都会追加一行，必须限容，否则长跑后日志文件无限膨胀
+  const DEBUG_LOG_MAX_BYTES = 2 * 1024 * 1024
   try {
-    const fsLog = path.join(process.env.APPDATA || os.homedir(), 'drama-studio', 'enforce-debug.log')
-    fs.appendFileSync(fsLog,
-      `[${new Date().toISOString()}] i2v=${curShots.filter(x => x.type === 'i2v').length} ` +
-      `t2v=${curShots.filter(x => x.type === 't2v').length} ` +
-      `transition生成=${curShots.filter(x => x.transitionEn).length} ` +
-      `sceneEn=[${curShots.map(x => (x.sceneEn || '').trim().split(/\s+/).length).join(',')}] ` +
-      `promptEn=[${curShots.map(x => (x.promptEn || '').trim().split(/\s+/).length).join(',')}]\n`, 'utf-8')
-  } catch { /* 日志失败不阻塞 */ }
+    const fsLog = path.join(userDataDir(), 'enforce-debug.log')
+    try {
+      if (fs.existsSync(fsLog) && fs.statSync(fsLog).size > DEBUG_LOG_MAX_BYTES) {
+        fs.writeFileSync(fsLog, '', 'utf-8')
+      }
+    } catch {
+      /* 限容失败仍继续追加 */
+    }
+    fs.appendFileSync(
+      fsLog,
+      `[${new Date().toISOString()}] i2v=${curShots.filter((x) => x.type === 'i2v').length} ` +
+        `t2v=${curShots.filter((x) => x.type === 't2v').length} ` +
+        `transition生成=${curShots.filter((x) => x.transitionEn).length} ` +
+        `sceneEn=[${curShots.map((x) => (x.sceneEn || '').trim().split(/\s+/).length).join(',')}] ` +
+        `promptEn=[${curShots.map((x) => (x.promptEn || '').trim().split(/\s+/).length).join(',')}]\n`,
+      'utf-8',
+    )
+  } catch {
+    /* 日志失败不阻塞 */
+  }
   return { scenes: curScenes, shots: curShots, characters: curChars }
 }
 
@@ -292,33 +409,49 @@ export function backfillMissingProps(result: AnalyzeResult): void {
   if (!list || list.length === 0) return
   const shots = result.shots
   const warnings: string[] = []
+  /**
+   * 整词/整串匹配：英文按词边界（brown paper bag 不能被 brown 命中），
+   * 中文无词边界概念，按子串匹配。
+   * CORE-10：原实现 `escapeRegExp(key).split(' ')[0]` 只取首词，多词道具会被误判为「已分配」。
+   */
+  const mentions = (text: string, phrase: string): boolean => {
+    const p = (phrase || '').trim().toLowerCase()
+    if (!p) return false
+    const t = (text || '').toLowerCase()
+    // 纯 ASCII 短语按词边界匹配；含中文等非 ASCII 字符时按子串匹配
+    let ascii = true
+    for (const ch of p) {
+      if ((ch.codePointAt(0) ?? 0) > 0x7f) {
+        ascii = false
+        break
+      }
+    }
+    return ascii ? new RegExp(`\\b${escapeRegExp(p)}\\b`, 'i').test(t) : t.includes(p)
+  }
   for (const prop of list) {
-    const en = prop.en || prop.zh
-    // 匹配：props 数组包含 en（整词）或 action 出现 en（词边界）
-    const key = en.toLowerCase()
-    const re = new RegExp(`\\b${escapeRegExp(key).split(' ')[0]}`, 'i')
-    const assigned = shots.some(s => {
-      const inProps = (s.props || []).some(p => p.toLowerCase().includes(key))
-      const inAction = re.test(s.action)
+    // 中英文名都算已分配的证据（LLM 可能只写中文名到 props/action）
+    const names = [prop.en, prop.zh].filter((x): x is string => Boolean(x && x.trim()))
+    const primary = (prop.en || prop.zh).trim()
+    const assigned = shots.some((s) => {
+      const inProps = (s.props || []).some((p) => names.some((n) => mentions(p, n)))
+      const inAction = names.some((n) => mentions(s.action || '', n))
       return inProps || inAction
     })
     if (assigned) continue
 
     // 未分配：注入最相关镜头（第一个 i2v 镜优先；无 i2v 则第一镜）
-    const target =
-      shots.find(s => s.type === 'i2v') ||
-      shots[0]
+    const target = shots.find((s) => s.type === 'i2v') || shots[0]
     if (!target) {
       warnings.push(`道具「${prop.zh}」未写入任何镜头（无可注入镜头）`)
       continue
     }
-    target.props = [...(target.props || []), en]
-    const actionAdd = `holding a ${en}`
-    if (!re.test(target.action)) {
+    target.props = [...(target.props || []), primary]
+    const actionAdd = `holding a ${primary}`
+    if (!names.some((n) => mentions(target.action || '', n))) {
       target.action = `${target.action.trim().replace(/[.,;]?\s*$/, '')}, ${actionAdd}`
     }
     warnings.push(
-      `道具「${prop.zh}（${en}）」未写入任何镜头，已自动补入第 ${shots.indexOf(target) + 1} 镜的 props 与动作提示词`
+      `道具「${prop.zh}（${prop.en || prop.zh}）」未写入任何镜头，已自动补入第 ${shots.indexOf(target) + 1} 镜的 props 与动作提示词`,
     )
   }
   if (warnings.length > 0) {

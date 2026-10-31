@@ -2,7 +2,7 @@
  * 人物一致性校验（可选增强，全程可降级）：
  * - face 模式：YuNet 检测人脸（子进程 onnxruntime-node 1.20，隔离 transformers 内嵌的 1.14）
  *   → 五点关键点 ArcFace 模板对齐 → w600k_mbf 提取 512 维人脸向量比余弦，对换人敏感
- * - full 模式：至少一侧无人脸或人脸模型不可用时，用 @xenova/transformers 的 CLIP-B/32
+ * - full 模式：至少一侧无人脸或人脸模型不可用时，用 @huggingface/transformers 的 CLIP-B/32
  *   跑全图图像向量（模型约 90MB，首次从 hf-mirror 下载）
  * - 图像解码不依赖 sharp（其原生库常装不全）：由调用方用 ffmpeg 喂入 RGB24 裸帧
  * - 模型体积：YuNet 约 0.2MB、w600k_mbf 约 13.6MB，均惰性下载到数据目录便于清理
@@ -24,33 +24,62 @@ const FACE_TEMPLATE_112: ReadonlyArray<readonly [number, number]> = [
   [73.5318, 51.6963],
   [56.0252, 71.7366],
   [41.5493, 92.3655],
-  [70.7299, 92.3655]
+  [70.7299, 92.3655],
 ]
 
+/** 定长 4 元向量 / 4×4 矩阵：把「长度必然为 4」表达进类型，避免索引退化出 undefined */
+type Vec4 = readonly [number, number, number, number]
+type Mat4 = readonly [Vec4, Vec4, Vec4, Vec4]
+
+/**
+ * 定长数值缓冲的受检读取。
+ * 高斯消元、双线性重采样的下标由算法保证落在 [0, len) 内，但编译器无法静态推断；
+ * 越界时显式报错，把「不变量被破坏」暴露出来，而不是用 `!` 或默认值掩盖。
+ */
+function at(v: ArrayLike<number>, i: number): number {
+  const x = v[i]
+  if (x === undefined) throw new RangeError(`数值下标越界: ${i} / ${v.length}`)
+  return x
+}
+
 /** 4×4 线性方程组高斯消元（相似变换法方程，对称正定，无需主元选取也稳定） */
-function solve4(Ain: number[][], bin: number[]): number[] {
-  const A = Ain.map(row => row.slice())
-  const b = bin.slice()
+function solve4(Ain: Mat4, bin: Vec4): Vec4 {
+  // 拷贝成行主序定长缓冲，避免原地改写调用方传入的矩阵
+  const A = new Float64Array(16)
+  const b = new Float64Array(bin)
+  Ain.forEach((row, r) => {
+    row.forEach((v, c) => {
+      A[r * 4 + c] = v
+    })
+  })
   for (let col = 0; col < 4; col++) {
     let piv = col
-    for (let r = col + 1; r < 4; r++) if (Math.abs(A[r][col]) > Math.abs(A[piv][col])) piv = r
+    for (let r = col + 1; r < 4; r++) {
+      if (Math.abs(at(A, r * 4 + col)) > Math.abs(at(A, piv * 4 + col))) piv = r
+    }
     if (piv !== col) {
-      const tr = A[col]; A[col] = A[piv]; A[piv] = tr
-      const tv = b[col]; b[col] = b[piv]; b[piv] = tv
+      for (let c = 0; c < 4; c++) {
+        const t = at(A, col * 4 + c)
+        A[col * 4 + c] = at(A, piv * 4 + c)
+        A[piv * 4 + c] = t
+      }
+      const tv = at(b, col)
+      b[col] = at(b, piv)
+      b[piv] = tv
     }
     for (let r = col + 1; r < 4; r++) {
-      const f = A[r][col] / A[col][col]
-      for (let c = col; c < 4; c++) A[r][c] -= f * A[col][c]
-      b[r] -= f * b[col]
+      const f = at(A, r * 4 + col) / at(A, col * 4 + col)
+      for (let c = col; c < 4; c++) A[r * 4 + c] = at(A, r * 4 + c) - f * at(A, col * 4 + c)
+      b[r] = at(b, r) - f * at(b, col)
     }
   }
-  const x = [0, 0, 0, 0]
+  const x = new Float64Array(4)
   for (let r = 3; r >= 0; r--) {
-    let s = b[r]
-    for (let c = r + 1; c < 4; c++) s -= A[r][c] * x[c]
-    x[r] = s / A[r][r]
+    let s = at(b, r)
+    for (let c = r + 1; c < 4; c++) s -= at(A, r * 4 + c) * at(x, c)
+    x[r] = s / at(A, r * 4 + r)
   }
-  return x
+  return [at(x, 0), at(x, 1), at(x, 2), at(x, 3)]
 }
 
 /**
@@ -129,7 +158,7 @@ export class ConsistencyService {
 
   constructor(
     private modelDir: string,
-    private loadRawImage: RawImageLoader
+    private loadRawImage: RawImageLoader,
   ) {
     this.faceDetector = new FaceDetector(modelDir)
   }
@@ -157,13 +186,17 @@ export class ConsistencyService {
     this.initAttempted = true
     try {
       // 动态依赖：未安装时 import 失败，功能自动关闭
-      const transformers = await import('@xenova/transformers')
+      // ENG-06：从停维护的 @xenova/transformers 迁到官方 @huggingface/transformers。
+      // 注意：transformers 3.8.1 精确锁 onnxruntime-node 1.21.0，与顶层 1.31.1 并存为嵌套副本
+      // （双份原生库，约 501MB）；收敛需等 transformers 4.x，electron-builder.yml 已同步解包嵌套路径。
+      const transformers = await import('@huggingface/transformers')
       transformers.env.remoteHost = 'https://hf-mirror.com'
       transformers.env.allowLocalModels = false
       transformers.env.cacheDir = this.modelDir
       this.RawImageCtor = transformers.RawImage as unknown as RawImageConstructor
       const pipe = await transformers.pipeline('image-feature-extraction', MODEL_ID, {
-        quantized: true
+        // v3 用 dtype 指定量化档位（q8 = 旧的 quantized: true）
+        dtype: 'q8',
       })
       this.extractor = pipe as unknown as ExtractorPipeline
       return this.extractor
@@ -189,14 +222,16 @@ export class ConsistencyService {
         if (detOk) {
           const pair = await this.faceDetector.detectPair(ref.filePath, frame.filePath)
           this.lastMethodTrace = `facesA=${pair?.a?.length ?? -1},facesB=${pair?.b?.length ?? -1}`
-          if (pair && pair.a.length > 0 && pair.b.length > 0 && await this.faceDetector.recognitionAvailable()) {
+          if (pair) {
             pair.a.sort((x, y) => y.score - x.score)
             pair.b.sort((x, y) => y.score - x.score)
+          }
+          const fa = pair?.a[0]
+          const fb = pair?.b[0]
+          if (fa && fb && (await this.faceDetector.recognitionAvailable())) {
             // 小脸门控：640 画布上人脸框 <35px（中远景/过肩镜常见）时五点对齐出的
             // 112 人脸是放大噪点，ArcFace 向量接近随机（实测同人低至 0.08~0.2），
             // 此类帧必须回退全图 CLIP，不能把垃圾低分当作漂移证据
-            const fa = pair.a[0]
-            const fb = pair.b[0]
             const MIN_FACE = 0.055
             this.lastMethodTrace += `,topA=${fa.w.toFixed(3)}x${fa.h.toFixed(3)},topB=${fb.w.toFixed(3)}x${fb.h.toFixed(3)}`
             if (fa.w >= MIN_FACE && fa.h >= MIN_FACE && fb.w >= MIN_FACE && fb.h >= MIN_FACE) {
@@ -225,8 +260,9 @@ export class ConsistencyService {
       const frameImg = new Ctor(frame.data, frame.width, frame.height, 3)
       const out = await extractor([refImg, frameImg], { pooling: 'mean', normalize: true })
       const vectors = this.toVectors(out)
-      if (vectors.length < 2) throw new Error('特征提取结果异常')
-      return { score: this.cosine(vectors[0], vectors[1]), method: 'full' }
+      const [v0, v1] = vectors
+      if (!v0 || !v1) throw new Error('特征提取结果异常')
+      return { score: this.cosine(v0, v1), method: 'full' }
     } finally {
       await Promise.all([ref.dispose(), frame.dispose()])
     }
@@ -237,7 +273,11 @@ export class ConsistencyService {
    * 解决"单帧 90% 处抽样"漏掉中间段漂移的问题；method 取各帧中任一命中人脸即 face。
    * 任一帧失败自动跳过；全部失败回退单帧（首帧时间点）。
    */
-  async compareFrames(referenceImagePath: string, targetPath: string, frameTimes: number[]): Promise<ConsistencyResult> {
+  async compareFrames(
+    referenceImagePath: string,
+    targetPath: string,
+    frameTimes: number[],
+  ): Promise<ConsistencyResult> {
     if (!Array.isArray(frameTimes) || frameTimes.length === 0) {
       return this.compare(referenceImagePath, targetPath)
     }
@@ -256,8 +296,8 @@ export class ConsistencyService {
     // 是两套不同量表，混算平均后对标单一阈值会双向误判——CLIP 高分稀释 face 低分会放行真漂移，
     // face 低分拉低 CLIP 平均会误杀同人。人脸帧存在时只信人脸帧均分（对换人最敏感）；
     // 全部无人脸（小脸/背身被门控回退）时用全图均分。
-    const faceScores = results.filter(r => r.method === 'face').map(r => r.score)
-    const fullScores = results.filter(r => r.method === 'full').map(r => r.score)
+    const faceScores = results.filter((r) => r.method === 'face').map((r) => r.score)
+    const fullScores = results.filter((r) => r.method === 'full').map((r) => r.score)
     const avg = (v: number[]): number => v.reduce((s, x) => s + x, 0) / v.length
     if (faceScores.length > 0) {
       return { score: Math.round(avg(faceScores) * 1000) / 1000, method: 'face' }
@@ -272,34 +312,43 @@ export class ConsistencyService {
    */
   private alignFace(
     src: RawRgbImage,
-    lm: number[],
+    lm: readonly number[],
     size: number,
-    template: ReadonlyArray<readonly [number, number]>
+    template: ReadonlyArray<readonly [number, number]>,
   ): RawRgbImage {
     const n = src.width
-    const t = template
-    // 源点：画布像素坐标
-    const sx = [lm[0] * n, lm[2] * n, lm[4] * n, lm[6] * n, lm[8] * n]
-    const sy = [lm[1] * n, lm[3] * n, lm[5] * n, lm[7] * n, lm[9] * n]
+    // 源点（画布像素）与模板逐点配对，避免对关键点数组做动态下标访问
+    const pairs = template.map(([tx, ty], k) => {
+      const x = lm[2 * k]
+      const y = lm[2 * k + 1]
+      if (x === undefined || y === undefined) throw new Error('人脸关键点数据不完整')
+      return { sx: x * n, sy: y * n, tx, ty }
+    })
+    const count = pairs.length
     // 最小二乘拟合 x' = a*x - b*y + tx，y' = b*x + a*y + ty（旋转+等比缩放+平移）
-    const A = [
-      [this.sq(sx) + this.sq(sy), 0, this.sum(sx), this.sum(sy)],
-      [0, this.sq(sx) + this.sq(sy), -this.sum(sy), this.sum(sx)],
-      [this.sum(sx), -this.sum(sy), 5, 0],
-      [this.sum(sy), this.sum(sx), 0, 5]
-    ]
-    let bvec: number[]
-    {
-      let ba = 0, bb = 0, btx = 0, bty = 0
-      for (let i = 0; i < 5; i++) {
-        ba += t[i][0] * sx[i] + t[i][1] * sy[i]
-        bb += t[i][1] * sx[i] - t[i][0] * sy[i]
-        btx += t[i][0]
-        bty += t[i][1]
-      }
-      bvec = [ba, bb, btx, bty]
+    let sumSx = 0
+    let sumSy = 0
+    let sumSq = 0
+    let ba = 0
+    let bb = 0
+    let btx = 0
+    let bty = 0
+    for (const p of pairs) {
+      sumSx += p.sx
+      sumSy += p.sy
+      sumSq += p.sx * p.sx + p.sy * p.sy
+      ba += p.tx * p.sx + p.ty * p.sy
+      bb += p.ty * p.sx - p.tx * p.sy
+      btx += p.tx
+      bty += p.ty
     }
-    const [a, b, tx, ty] = solve4(A, bvec)
+    const A: Mat4 = [
+      [sumSq, 0, sumSx, sumSy],
+      [0, sumSq, -sumSy, sumSx],
+      [sumSx, -sumSy, count, 0],
+      [sumSy, sumSx, 0, count],
+    ]
+    const [a, b, tx, ty] = solve4(A, [ba, bb, btx, bty])
     const inv = 1 / (a * a + b * b)
 
     const dst = new Uint8Array(size * size * 3)
@@ -319,12 +368,12 @@ export class ConsistencyService {
         const wx = fx - x0
         const wy = fy - y0
         for (let ch = 0; ch < 3; ch++) {
-          const v00 = src.data[(y0 * n + x0) * 3 + ch]
-          const v01 = src.data[(y0 * n + x1) * 3 + ch]
-          const v10 = src.data[(y1 * n + x0) * 3 + ch]
-          const v11 = src.data[(y1 * n + x1) * 3 + ch]
+          const v00 = at(src.data, (y0 * n + x0) * 3 + ch)
+          const v01 = at(src.data, (y0 * n + x1) * 3 + ch)
+          const v10 = at(src.data, (y1 * n + x0) * 3 + ch)
+          const v11 = at(src.data, (y1 * n + x1) * 3 + ch)
           dst[di + ch] = Math.round(
-            v00 * (1 - wx) * (1 - wy) + v01 * wx * (1 - wy) + v10 * (1 - wx) * wy + v11 * wx * wy
+            v00 * (1 - wx) * (1 - wy) + v01 * wx * (1 - wy) + v10 * (1 - wx) * wy + v11 * wx * wy,
           )
         }
       }
@@ -332,14 +381,13 @@ export class ConsistencyService {
     return { data: dst, width: size, height: size, channels: 3 }
   }
 
-  private sum(v: number[]): number { let s = 0; for (const x of v) s += x; return s }
-  private sq(v: number[]): number { let s = 0; for (const x of v) s += x * x; return s }
-
   /** pipeline 可能返回单张量 [batch,dim] 或张量数组，统一拆成向量列表 */
   private toVectors(out: FeatureTensor | FeatureTensor[]): Vector[] {
-    if (Array.isArray(out)) return out.map(t => t.data)
+    if (Array.isArray(out)) return out.map((t) => t.data)
     if (out.dims && out.dims.length === 2) {
-      const [n, dim] = out.dims
+      const n = out.dims[0]
+      const dim = out.dims[1]
+      if (n === undefined || dim === undefined) return [out.data]
       const result: Vector[] = []
       for (let i = 0; i < n; i++) {
         result.push(Array.prototype.slice.call(out.data, i * dim, (i + 1) * dim))
@@ -354,13 +402,14 @@ export class ConsistencyService {
     let dot = 0
     let na = 0
     let nb = 0
-    for (let i = 0;i < len; i++) {
-      dot += a[i] * b[i]
-      na += a[i] * a[i]
-      nb += b[i] * b[i]
+    for (let i = 0; i < len; i++) {
+      const av = at(a, i)
+      const bv = at(b, i)
+      dot += av * bv
+      na += av * av
+      nb += bv * bv
     }
     if (na === 0 || nb === 0) return 0
     return dot / (Math.sqrt(na) * Math.sqrt(nb))
   }
-
 }

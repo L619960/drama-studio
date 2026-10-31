@@ -7,9 +7,17 @@ import { SubtitleService } from './subtitleService'
 import { ProjectStore } from './projectStore'
 import { SettingsStore } from './settingsStore'
 import type {
-  DirectorState, DirectorStage, StageStatus, DirectorStartInput,
-  Shot, AnalyzeResult, SceneBoard, Character, Project, InterruptedTask,
-  DirectorLogEntry
+  DirectorState,
+  DirectorStage,
+  StageStatus,
+  DirectorStartInput,
+  Shot,
+  AnalyzeResult,
+  SceneBoard,
+  Character,
+  Project,
+  InterruptedTask,
+  DirectorLogEntry,
 } from '../../shared/ipcTypes'
 import type { AuditCheckItem } from './skillLibrary'
 import { CandidatePickService } from './candidatePickService'
@@ -17,31 +25,51 @@ import { SkillLibrary } from './skillLibrary'
 import { STAGE_ORDER, STAGE_LABELS, stageIndexOf } from './directorConstants'
 import { DEFAULT_DIRECTOR_GATES } from '../../shared/pipelineGuards'
 import {
-  freshStateImpl, isCancelledImpl, currentStageImpl, setStageImpl, logImpl,
-  emitStateImpl, persistImpl, maybeGateImpl, pauseUntilShotsReviewedImpl,
-  getStateImpl, getLatestStateImpl, listActiveStatesImpl, clearStateImpl, hydrateImpl, recoverAllImpl, listInterruptedImpl,
-  enableGatesImpl
+  freshStateImpl,
+  isCancelledImpl,
+  currentStageImpl,
+  setStageImpl,
+  logImpl,
+  emitStateImpl,
+  persistImpl,
+  maybeGateImpl,
+  pauseUntilShotsReviewedImpl,
+  getStateImpl,
+  getLatestStateImpl,
+  listActiveStatesImpl,
+  clearStateImpl,
+  hydrateImpl,
+  recoverAllImpl,
+  listInterruptedImpl,
+  enableGatesImpl,
 } from './directorStateMachine'
 import {
-  ensureShadowStateImpl, emitProgressEventImpl, notifyProjectUpdatedImpl,
-  onExternalProgressImpl, onExternalQueueFinishedImpl,
-  subscribeRenderProgressImpl, unsubscribeRenderProgressImpl
+  ensureShadowStateImpl,
+  emitProgressEventImpl,
+  notifyProjectUpdatedImpl,
+  onExternalProgressImpl,
+  onExternalQueueFinishedImpl,
+  subscribeRenderProgressImpl,
+  unsubscribeRenderProgressImpl,
 } from './directorProgressBridge'
 import {
-  buildCharactersImpl, buildPropAssetsImpl, generateShotFirstFrameImpl,
-  buildShotsImpl, sanitizeCameraForFrameImpl, buildCloseupEditPromptImpl,
-  buildPanoEditPromptImpl
+  buildCharactersImpl,
+  buildPropAssetsImpl,
+  generateShotFirstFrameImpl,
+  buildShotsImpl,
+  sanitizeCameraForFrameImpl,
+  buildCloseupEditPromptImpl,
+  buildPanoEditPromptImpl,
 } from './directorAssetBuilder'
+import { rebuildShotFirstFramesImpl, rerunCastingImpl, regenerateScenePanoImpl } from './directorManualOps'
 import {
-  rebuildShotFirstFramesImpl, rerunCastingImpl, regenerateScenePanoImpl
-} from './directorManualOps'
-import {
-  finishImpl, evictFinishedStatesImpl, renderShotsWithAuditImpl,
-  auditSingleShotImpl, approveShotsImpl
+  finishImpl,
+  evictFinishedStatesImpl,
+  renderShotsWithAuditImpl,
+  auditSingleShotImpl,
+  approveShotsImpl,
 } from './directorFinish'
-import {
-  runPipelineImpl, selfHealStageImpl, withTransientRetryImpl, concatDoneShotsImpl
-} from './directorPipeline'
+import { runPipelineImpl, selfHealStageImpl, withTransientRetryImpl, concatDoneShotsImpl } from './directorPipeline'
 
 /**
  * AI 导演：剧本 → 成片的全自动编排器（facade 壳）。
@@ -88,27 +116,46 @@ export class DirectorAgent extends EventEmitter {
     public ffmpeg: FFmpegService,
     public subtitles: SubtitleService,
     public settings: SettingsStore,
-    public skills: SkillLibrary
+    public skills: SkillLibrary,
   ) {
     super()
     this.picker = new CandidatePickService(llm)
     // 全局渲染进度桥接：流水线运行的项目由 subscribeRenderProgress 的专用监听写日志；
     // 其余直渲入队自动建影子任务同步到执行日志面板
-    this.queue.on('progress', (e: { projectId?: string; shotId?: string; step?: string; percent?: number; message?: string }) => {
-      this.onExternalProgress(e)
-    })
+    this.queue.on(
+      'progress',
+      (e: { projectId?: string; shotId?: string; step?: string; percent?: number; message?: string }) => {
+        this.onExternalProgress(e)
+      },
+    )
     this.queue.on('queue-finished', (p: { projectId: string }) => this.onExternalQueueFinished(p.projectId))
   }
 
   // ===== 委托到子模块的内部方法（保持原 this 调用语义，行为不变） =====
-  ensureShadowState(projectId: string) { return ensureShadowStateImpl(this, projectId) }
-  emitProgressEvent(projectId: string) { return emitProgressEventImpl(this, projectId) }
-  notifyProjectUpdated(projectId: string) { return notifyProjectUpdatedImpl(this, projectId) }
-  onExternalProgress(e: { projectId?: string; shotId?: string; step?: string; percent?: number; message?: string }) { return onExternalProgressImpl(this, e) }
-  onExternalQueueFinished(projectId: string) { return onExternalQueueFinishedImpl(this, projectId) }
-  freshState(projectId: string, title: string) { return freshStateImpl(this, projectId, title) }
-  isCancelled(projectId: string) { return isCancelledImpl(this, projectId) }
-  static currentStage(state: DirectorState) { return currentStageImpl(state) }
+  ensureShadowState(projectId: string) {
+    return ensureShadowStateImpl(this, projectId)
+  }
+  emitProgressEvent(projectId: string) {
+    return emitProgressEventImpl(this, projectId)
+  }
+  notifyProjectUpdated(projectId: string) {
+    return notifyProjectUpdatedImpl(this, projectId)
+  }
+  onExternalProgress(e: { projectId?: string; shotId?: string; step?: string; percent?: number; message?: string }) {
+    return onExternalProgressImpl(this, e)
+  }
+  onExternalQueueFinished(projectId: string) {
+    return onExternalQueueFinishedImpl(this, projectId)
+  }
+  freshState(projectId: string, title: string) {
+    return freshStateImpl(this, projectId, title)
+  }
+  isCancelled(projectId: string) {
+    return isCancelledImpl(this, projectId)
+  }
+  static currentStage(state: DirectorState) {
+    return currentStageImpl(state)
+  }
   setStage(projectId: string, stage: DirectorStage, status: StageStatus, message: string, percent?: number) {
     return setStageImpl(this, projectId, stage, status, message, percent)
   }
@@ -117,21 +164,38 @@ export class DirectorAgent extends EventEmitter {
     stage: DirectorStage,
     level: 'info' | 'success' | 'warn' | 'error',
     message: string,
-    extra?: { detail?: string; errorKind?: DirectorLogEntry['errorKind'] }
+    extra?: { detail?: string; errorKind?: DirectorLogEntry['errorKind'] },
   ) {
     return logImpl(this, projectId, stage, level, message, extra)
   }
-  maybeGate(projectId: string, afterStage: DirectorStage) { return maybeGateImpl(this, projectId, afterStage) }
-  pauseUntilShotsReviewed(projectId: string) { return pauseUntilShotsReviewedImpl(this, projectId) }
-  emitState(projectId: string) { return emitStateImpl(this, projectId) }
-  persist(projectId: string) { return persistImpl(this, projectId) }
+  maybeGate(projectId: string, afterStage: DirectorStage) {
+    return maybeGateImpl(this, projectId, afterStage)
+  }
+  pauseUntilShotsReviewed(projectId: string) {
+    return pauseUntilShotsReviewedImpl(this, projectId)
+  }
+  emitState(projectId: string) {
+    return emitStateImpl(this, projectId)
+  }
+  persist(projectId: string) {
+    return persistImpl(this, projectId)
+  }
   runPipeline(projectId: string, input: DirectorStartInput, from: DirectorStage = 'analyze') {
     return runPipelineImpl(this, projectId, input, from)
   }
-  selfHealStage(projectId: string, stage: DirectorStage, stageLabel: string, errors: string[], retry: () => Promise<void>) {
+  selfHealStage(
+    projectId: string,
+    stage: DirectorStage,
+    stageLabel: string,
+    errors: string[],
+    retry: () => Promise<void>,
+  ) {
     return selfHealStageImpl(this, projectId, stage, stageLabel, errors, retry)
   }
-  withTransientRetry<T>(fn: () => Promise<T>, opts: { retries?: number; notify?: (msg: string) => void; isCancelled?: () => boolean } = {}) {
+  withTransientRetry<T>(
+    fn: () => Promise<T>,
+    opts: { retries?: number; notify?: (msg: string) => void; isCancelled?: () => boolean } = {},
+  ) {
     return withTransientRetryImpl(this, fn, opts)
   }
   concatDoneShots(projectId: string, doneShots: Shot[], outputRel: string) {
@@ -145,34 +209,85 @@ export class DirectorAgent extends EventEmitter {
   }
   generateShotFirstFrame(
     projectId: string,
-    d: { id: string; index: number; as: AnalyzeResult['shots'][number]; board?: SceneBoard; characterIds: string[]; character?: Character; firstFramePath?: string },
+    d: {
+      id: string
+      index: number
+      as: AnalyzeResult['shots'][number]
+      board?: SceneBoard | undefined
+      characterIds: string[]
+      character?: Character | undefined
+      firstFramePath?: string | undefined
+    },
     sc: { frameWidth: number; frameHeight: number },
     abort: () => boolean,
-    allCharacterNames: string[] = []
+    allCharacterNames: string[] = [],
   ) {
     return generateShotFirstFrameImpl(this, projectId, d, sc, abort, allCharacterNames)
   }
   buildShots(projectId: string, analysis: AnalyzeResult, characterMap: Map<string, Character>) {
     return buildShotsImpl(this, projectId, analysis, characterMap)
   }
-  sanitizeCameraForFrame(camera: string) { return sanitizeCameraForFrameImpl(camera) }
-  buildCloseupEditPrompt(sceneHint: string, d: { as: { action?: string; emotion?: string; camera?: string; shotSize?: string; firstFrameEn?: string; lastFrameEn?: string; props?: string[] } }, sizeCue: string, phase: 'start' | 'end' = 'start') {
+  sanitizeCameraForFrame(camera: string) {
+    return sanitizeCameraForFrameImpl(camera)
+  }
+  buildCloseupEditPrompt(
+    sceneHint: string,
+    d: {
+      as: {
+        action?: string | undefined
+        emotion?: string | undefined
+        camera?: string | undefined
+        shotSize?: string | undefined
+        firstFrameEn?: string | undefined
+        lastFrameEn?: string | undefined
+        props?: string[] | undefined
+      }
+    },
+    sizeCue: string,
+    phase: 'start' | 'end' = 'start',
+  ) {
     return buildCloseupEditPromptImpl(sceneHint, d, sizeCue, phase)
   }
-  buildPanoEditPrompt(lookEn: string, sceneHint: string, d: { as: { action?: string; emotion?: string; camera?: string; shotSize?: string; firstFrameEn?: string; lastFrameEn?: string; props?: string[] } }, sizeCue: string, phase: 'start' | 'end' = 'start') {
+  buildPanoEditPrompt(
+    lookEn: string,
+    sceneHint: string,
+    d: {
+      as: {
+        action?: string | undefined
+        emotion?: string | undefined
+        camera?: string | undefined
+        shotSize?: string | undefined
+        firstFrameEn?: string | undefined
+        lastFrameEn?: string | undefined
+        props?: string[] | undefined
+      }
+    },
+    sizeCue: string,
+    phase: 'start' | 'end' = 'start',
+  ) {
     return buildPanoEditPromptImpl(lookEn, sceneHint, d, sizeCue, phase)
   }
-  subscribeRenderProgress(projectId: string) { return subscribeRenderProgressImpl(this, projectId) }
-  unsubscribeRenderProgress(projectId: string) { return unsubscribeRenderProgressImpl(this, projectId) }
-  finish(projectId: string, doneMessage?: string) { return finishImpl(this, projectId, doneMessage) }
-  evictFinishedStates() { return evictFinishedStatesImpl(this) }
+  subscribeRenderProgress(projectId: string) {
+    return subscribeRenderProgressImpl(this, projectId)
+  }
+  unsubscribeRenderProgress(projectId: string) {
+    return unsubscribeRenderProgressImpl(this, projectId)
+  }
+  finish(projectId: string, doneMessage?: string) {
+    return finishImpl(this, projectId, doneMessage)
+  }
+  evictFinishedStates() {
+    return evictFinishedStatesImpl(this)
+  }
   renderShotsWithAudit(projectId: string, shotDurations: Map<string, number>) {
     return renderShotsWithAuditImpl(this, projectId, shotDurations)
   }
   auditSingleShot(projectId: string, shot: Shot, project: Project, checklist: AuditCheckItem[], skipVision = false) {
     return auditSingleShotImpl(this, projectId, shot, project, checklist, skipVision)
   }
-  approveShots(projectId: string) { return approveShotsImpl(this, projectId) }
+  approveShots(projectId: string) {
+    return approveShotsImpl(this, projectId)
+  }
 
   static get STAGE_LABELS(): Record<DirectorStage, string> {
     return STAGE_LABELS
@@ -194,7 +309,7 @@ export class DirectorAgent extends EventEmitter {
     project.updatedAt = Date.now()
     await this.store.save(project)
     const state = this.freshState(project.id, input.title)
-    const gateList = (input.gateStages || []).filter(g => g !== 'done')
+    const gateList = (input.gateStages || []).filter((g) => g !== 'done')
     state.gateStages = gateList
     // "一口气跑到底"：无 gateStages 时同时临时关闭分镜审核门禁（仅本项目生命周期）
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- JSON.parse 动态字段注入，运行时约定
@@ -250,9 +365,9 @@ export class DirectorAgent extends EventEmitter {
   /** 退出/重启前取消所有仍在运行（或停在确认点）的任务：并行项目可能同时在渲染，不能只收尾最近一个 */
   async cancelAll(): Promise<void> {
     const ids = Array.from(this.states.values())
-      .filter(s => s.running || s.paused)
-      .map(s => s.projectId)
-    await Promise.all(ids.map(id => this.cancel(id).catch(() => undefined)))
+      .filter((s) => s.running || s.paused)
+      .map((s) => s.projectId)
+    await Promise.all(ids.map((id) => this.cancel(id).catch(() => undefined)))
   }
 
   /** 请求暂停：已在确认点则无操作；否则在当前阶段结束后停下 */
@@ -260,8 +375,12 @@ export class DirectorAgent extends EventEmitter {
     const state = this.states.get(projectId)
     if (!state || !state.running || state.paused) return
     this.pauseRequested.add(projectId)
-    this.log(projectId, DirectorAgent.currentStage(state), 'warn',
-      '已请求暂停，将在当前阶段结束后停下，不会中断进行中的渲染')
+    this.log(
+      projectId,
+      DirectorAgent.currentStage(state),
+      'warn',
+      '已请求暂停，将在当前阶段结束后停下，不会中断进行中的渲染',
+    )
   }
 
   /** 从确认点继续 */
@@ -297,8 +416,11 @@ export class DirectorAgent extends EventEmitter {
     if (!input?.script) {
       throw new Error('缺少原始剧本输入，无法断点续跑（请重新发起任务）')
     }
-    if (stageIndexOf(stage) <= stageIndexOf('scenes') && stageIndexOf(stage) > stageIndexOf('analyze')
-      && !state.analysis) {
+    if (
+      stageIndexOf(stage) <= stageIndexOf('scenes') &&
+      stageIndexOf(stage) > stageIndexOf('analyze') &&
+      !state.analysis
+    ) {
       throw new Error('缺少剧本分析结果，无法从该阶段续跑（可改从「剧本分析」重跑）')
     }
     const project = await this.store.get(projectId)
@@ -308,7 +430,7 @@ export class DirectorAgent extends EventEmitter {
     if (stageIndexOf(stage) >= stageIndexOf('render') && project.shots.length === 0) {
       throw new Error('项目中没有分镜数据，无法从渲染及之后阶段续跑')
     }
-    if (stage === 'combine' && !project.shots.some(s => s.status === 'done' && s.segmentPath)) {
+    if (stage === 'combine' && !project.shots.some((s) => s.status === 'done' && s.segmentPath)) {
       throw new Error('没有已渲染完成的镜头分段，无法拼接（请先从「逐镜渲染」重跑）')
     }
     if (stageIndexOf(stage) > stageIndexOf('combine') && state.stages.combine.status !== 'done') {
@@ -323,23 +445,22 @@ export class DirectorAgent extends EventEmitter {
     }
     state.running = true
     state.paused = false
-    state.finishedAt = undefined
-    state.reviewIssues = undefined
+    delete state.finishedAt
+    delete state.reviewIssues
     state.pendingGates = []
-    state.heal = undefined
+    delete state.heal
     state.failedShotIds = []
     state.cancelled = false
     // P0-1：续跑后清除「任务中断」标记，UI 的中断提示随之消失
     state.interrupted = false
-    state.interruptedStage = undefined
+    delete state.interruptedStage
 
     // 阶段门重建：只保留续跑范围内的门
-    this.gates.set(projectId, new Set(state.gateStages.filter(g => stageIndexOf(g) >= stageIndexOf(stage))))
+    this.gates.set(projectId, new Set(state.gateStages.filter((g) => stageIndexOf(g) >= stageIndexOf(stage))))
     this.cancelled.delete(projectId)
     this.states.set(projectId, state)
 
-    this.log(projectId, stage, 'info',
-      `断点续跑：从「${STAGE_LABELS[stage]}」阶段继续，此前已完成阶段自动跳过`)
+    this.log(projectId, stage, 'info', `断点续跑：从「${STAGE_LABELS[stage]}」阶段继续，此前已完成阶段自动跳过`)
 
     const runInput = input
     this.runPipeline(projectId, runInput, stage).catch((e) => {

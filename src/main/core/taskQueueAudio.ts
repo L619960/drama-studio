@@ -37,19 +37,21 @@ export async function prepareShotAudio(
   shot: Shot,
   project: Project,
   watcher: { promise: Promise<never> },
-  opts?: { capSec?: number }
-): Promise<{ syncAudioRelPath?: string; audioSec?: number }> {
+  opts?: { capSec?: number },
+): Promise<{ syncAudioRelPath?: string | undefined; audioSec?: number | undefined }> {
   let audioRelPath: string | undefined
   let audioSec: number | undefined
   const lastIndex = project.shots.reduce((max, s) => Math.max(max, s.index), shot.index)
-  const tailSec = audioTailSecFor({ dialogue: shot.dialogue, emotion: shot.emotion, isLast: shot.index === lastIndex })
+  const tailSec = audioTailSecFor({
+    dialogue: shot.dialogue,
+    ...(shot.emotion !== undefined ? { emotion: shot.emotion } : {}),
+    isLast: shot.index === lastIndex,
+  })
   // 本档位单镜能装下的纯语音预算：引擎输出（H3 网格/Wan 上限）减去开口留白。
   // 尾音只是静音垫，压不进输出时可自然丢失，不计入预算。
   // 台词超预算时音频必然长于视频 → 出现静音空洞/尾音被截断（实测 mid 档 5.2s 输出、
   // 台词镜音频 6.6~8.1s，成片多处 3s 静音）。因此超预算时提高 TTS 语速把语音压进预算。
-  const budgetSec = opts?.capSec
-    ? Math.max(1.2, opts.capSec - SHOT_TIMING.audioLeadSec - 0.15)
-    : Infinity
+  const budgetSec = opts?.capSec ? Math.max(1.2, opts.capSec - SHOT_TIMING.audioLeadSec - 0.15) : Infinity
 
   // 占位台词（「（无台词）」等）不是台词：不合成 TTS、不驱动口型，
   // 否则会烧出静音空洞/念出占位符。同时清掉历史遗留的 audioPath，
@@ -63,7 +65,7 @@ export async function prepareShotAudio(
     // 也避免同一台词反复合成浪费资源）；leaded 同步音频同样复用。
     // 例外：已有音频明显超预算 → 仍要重合成（提速），否则复用的长音频会继续截断。
     let reuse = false
-    if (shot.audioPath && await fileExists(rt.resolveInBase(shot.audioPath))) {
+    if (shot.audioPath && (await fileExists(rt.resolveInBase(shot.audioPath)))) {
       audioRelPath = shot.audioPath
       audioSec = await rt.ffmpeg.getDuration(rt.resolveInBase(audioRelPath))
       reuse = audioSec <= budgetSec + 0.05
@@ -72,7 +74,9 @@ export async function prepareShotAudio(
         shot.audioFailed = false
         shot.audioFailedReason = undefined
       } else {
-        log.warn(`[${shot.id}] 已有音频 ${audioSec.toFixed(2)}s 超出本档位预算 ${budgetSec.toFixed(2)}s，按提速重新合成`)
+        log.warn(
+          `[${shot.id}] 已有音频 ${audioSec.toFixed(2)}s 超出本档位预算 ${budgetSec.toFixed(2)}s，按提速重新合成`,
+        )
       }
     }
     if (!reuse) {
@@ -80,9 +84,7 @@ export async function prepareShotAudio(
       rt.emitProgress({ projectId, shotId: shot.id, step: 'tts', percent: 0, message: '生成语音中...' })
       const rel = `projects/${projectId}/audio/${shot.id}.mp3`
       const s = await rt.settings.get()
-      const character = shot.type === 't2v'
-        ? undefined
-        : project.characters.find(c => c.id === shot.characterIds[0])
+      const character = shot.type === 't2v' ? undefined : project.characters.find((c) => c.id === shot.characterIds[0])
       const baseRate = character?.voiceRate ? parseRate(character.voiceRate) : parseRate(s.tts.rate)
       const volume = toPercent(s.tts.volume)
       const voice = shot.voice || character?.voice || s.tts.defaultVoice
@@ -93,8 +95,11 @@ export async function prepareShotAudio(
       const rate = factor > 1.02 ? toPercent(baseRate * factor) : toPercent(baseRate)
       if (factor > 1.02) {
         rt.emitProgress({
-          projectId, shotId: shot.id, step: 'tts', percent: 0,
-          message: `台词较长（约 ${guessSec.toFixed(1)}s），提速 ${Math.round((factor - 1) * 100)}% 以适配单镜时长`
+          projectId,
+          shotId: shot.id,
+          step: 'tts',
+          percent: 0,
+          message: `台词较长（约 ${guessSec.toFixed(1)}s），提速 ${Math.round((factor - 1) * 100)}% 以适配单镜时长`,
         })
       }
       try {
@@ -104,7 +109,7 @@ export async function prepareShotAudio(
             rt.checkCancelled(projectId, shot.id)
             return false
           }),
-          watcher.promise
+          watcher.promise,
         ])
         shot.audioPath = audioRelPath
         // 本次 TTS 成功：清除历史失败标记（重渲/降级链恢复后必须回写）
@@ -129,18 +134,26 @@ export async function prepareShotAudio(
             audioSec = await rt.ffmpeg.getDuration(leadedAbs)
             usedCache = true
             rt.emitProgress({
-              projectId, shotId: shot.id, step: 'tts', percent: 100,
-              message: 'TTS 本次失败，已复用历史音频缓存继续（不降级静音）'
+              projectId,
+              shotId: shot.id,
+              step: 'tts',
+              percent: 100,
+              message: 'TTS 本次失败，已复用历史音频缓存继续（不降级静音）',
             })
           }
-        } catch { /* 无历史缓存 */ }
+        } catch {
+          /* 无历史缓存 */
+        }
         if (!usedCache) {
-          log.warn(`[${shot.id}] TTS ${limited ? '风控限流' : '失败'}，本镜降级为静音渲染：${e instanceof Error ? e.message : e}`)
+          log.warn(
+            `[${shot.id}] TTS ${limited ? '风控限流' : '失败'}，本镜降级为静音渲染：${e instanceof Error ? e.message : e}`,
+          )
           rt.emitProgress({
-            projectId, shotId: shot.id, step: 'tts', percent: 0,
-            message: limited
-              ? 'TTS 风控限流，本镜先静音出片（渲染后补配音）'
-              : 'TTS 失败，本镜先静音出片'
+            projectId,
+            shotId: shot.id,
+            step: 'tts',
+            percent: 0,
+            message: limited ? 'TTS 风控限流，本镜先静音出片（渲染后补配音）' : 'TTS 失败，本镜先静音出片',
           })
         }
       }
@@ -157,20 +170,15 @@ export async function prepareShotAudio(
       await rt.ffmpeg.padAudioLead(
         rt.resolveInBase(audioRelPath),
         rt.resolveInBase(syncAudioRelPath),
-        SHOT_TIMING.audioLeadSec
+        SHOT_TIMING.audioLeadSec,
       )
     }
   }
 
   // Wan2.2 帧数 = 秒*16+1；有台词含 lead+tail，无台词不低于 minSec
   const defaultSec = Math.max(1, Math.round((shot.frames - 1) / 16))
-  const needSec = audioSec !== undefined
-    ? Math.ceil(audioSec + SHOT_TIMING.audioLeadSec + tailSec)
-    : 0
-  const finalSec = Math.min(
-    SHOT_TIMING.maxSec,
-    Math.max(defaultSec, SHOT_TIMING.minSec, needSec)
-  )
+  const needSec = audioSec !== undefined ? Math.ceil(audioSec + SHOT_TIMING.audioLeadSec + tailSec) : 0
+  const finalSec = Math.min(SHOT_TIMING.maxSec, Math.max(defaultSec, SHOT_TIMING.minSec, needSec))
   shot.frames = finalSec * 16 + 1
   // 同步设计秒数：frameSeconds 是 UI/提示词时间轴的权威时长，frames 规范化后必须回写，
   // 否则出现 frameSeconds=2 而 frames=65(=4s) 的数据不一致（H3 再按 frames 反推会翻倍时长）
@@ -187,7 +195,7 @@ export async function prepareShotAudio(
  */
 export async function repairSilentDialogue(
   rt: AudioRuntime,
-  projectId: string
+  projectId: string,
 ): Promise<{ repaired: number[]; blocked: number[] }> {
   const project = await rt.store.get(projectId)
   const repaired: number[] = []
@@ -195,7 +203,13 @@ export async function repairSilentDialogue(
   const s = await rt.settings.get()
 
   for (const shot of project.shots) {
-    if (!shot.dialogue.trim() || isPlaceholderDialogueText(shot.dialogue) || !shot.audioFailed || shot.status !== 'done') continue
+    if (
+      !shot.dialogue.trim() ||
+      isPlaceholderDialogueText(shot.dialogue) ||
+      !shot.audioFailed ||
+      shot.status !== 'done'
+    )
+      continue
     if (shot.skipped) continue
     const rawRel = shot.rawVideoPath
     if (!rawRel || !shot.segmentPath) {
@@ -207,9 +221,7 @@ export async function repairSilentDialogue(
       blocked.push(shot.index)
       continue
     }
-    const character = shot.type === 't2v'
-      ? undefined
-      : project.characters.find(c => c.id === shot.characterIds[0])
+    const character = shot.type === 't2v' ? undefined : project.characters.find((c) => c.id === shot.characterIds[0])
     const rate = character?.voiceRate ? toPercent(parseRate(character.voiceRate)) : toPercent(s.tts.rate)
     const volume = toPercent(s.tts.volume)
     const voice = shot.voice || character?.voice || s.tts.defaultVoice
@@ -217,11 +229,7 @@ export async function repairSilentDialogue(
     try {
       const audioRel = await rt.tts.generate(shot.dialogue, voice, rel, rate, volume)
       const leadedRel = `projects/${projectId}/audio/${shot.id}_leaded.mp3`
-      await rt.ffmpeg.padAudioLead(
-        rt.resolveInBase(audioRel),
-        rt.resolveInBase(leadedRel),
-        SHOT_TIMING.audioLeadSec
-      )
+      await rt.ffmpeg.padAudioLead(rt.resolveInBase(audioRel), rt.resolveInBase(leadedRel), SHOT_TIMING.audioLeadSec)
       const segmentAbs = rt.resolveInBase(shot.segmentPath)
       await rt.ffmpeg.prepareSegment(rawAbs, rt.resolveInBase(leadedRel), segmentAbs)
       shot.audioPath = audioRel

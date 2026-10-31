@@ -43,17 +43,18 @@ const api: IpcApi = {
       const listener = (_: unknown, e: unknown) => cb(e as Parameters<typeof cb>[0])
       ipcRenderer.on(IpcChannels.projectArchiveProgress, listener)
       return () => ipcRenderer.removeListener(IpcChannels.projectArchiveProgress, listener)
-    }
+    },
   },
   character: {
     importImage: (projectId) => invoke(IpcChannels.characterImport, projectId),
-    casting: (projectId, characterId) => invoke(IpcChannels.characterCasting, { projectId, characterId })
+    casting: (projectId, characterId) => invoke(IpcChannels.characterCasting, { projectId, characterId }),
   },
   render: {
-    start: (projectId, shotIds, forceRebuildFirstFrame) => invoke(IpcChannels.renderStart, { projectId, shotIds, forceRebuildFirstFrame }),
+    start: (projectId, shotIds, forceRebuildFirstFrame) =>
+      invoke(IpcChannels.renderStart, { projectId, shotIds, forceRebuildFirstFrame }),
     cancel: (projectId, shotId) => invoke(IpcChannels.renderCancel, { projectId, shotId }),
     skipCurrent: (projectId, shotId) => invoke(IpcChannels.queueSkipCurrent, { projectId, shotId }),
-    list: () => invoke(IpcChannels.queueList)
+    list: () => invoke(IpcChannels.queueList),
   },
   comfyui: {
     healthCheck: () => invoke(IpcChannels.comfyuiHealth),
@@ -67,22 +68,25 @@ const api: IpcApi = {
       const listener = (_: unknown, connected: unknown) => cb(Boolean(connected))
       ipcRenderer.on(IpcChannels.comfyStatusChanged, listener)
       return () => ipcRenderer.removeListener(IpcChannels.comfyStatusChanged, listener)
-    }
+    },
   },
   memory: {
     list: (kind?) => invoke(IpcChannels.memoryList, kind),
     create: (input) => invoke(IpcChannels.memoryCreate, input),
     update: (id, patch) => invoke(IpcChannels.memoryUpdate, id, patch),
-    remove: (id) => invoke(IpcChannels.memoryDelete, id)
+    remove: (id) => invoke(IpcChannels.memoryDelete, id),
   },
   ffmpeg: {
     concat: (segmentPaths, outputPath) => invoke(IpcChannels.ffmpegConcat, { segmentPaths, outputPath }),
     smartConcat: (segments, outputPath) => invoke(IpcChannels.ffmpegSmartConcat, { segments, outputPath }),
-    mergeVideoAudio: (videoPath, audioPath, outputPath) => invoke(IpcChannels.ffmpegMerge, { videoPath, audioPath, outputPath }),
+    mergeVideoAudio: (videoPath, audioPath, outputPath) =>
+      invoke(IpcChannels.ffmpegMerge, { videoPath, audioPath, outputPath }),
     getDuration: (filePath) => invoke(IpcChannels.ffmpegDuration, filePath),
-    burnSubtitles: (videoPath, srtPath, outputPath) => invoke(IpcChannels.ffmpegBurnSubtitles, { videoPath, srtPath, outputPath }),
-    mixBgm: (videoPath, bgmPath, outputPath, bgmVolume) => invoke(IpcChannels.ffmpegMixBgm, { videoPath, bgmPath, outputPath, bgmVolume }),
-    extractFrames: (videoPath, outDir, count) => invoke(IpcChannels.ffmpegExtractFrames, { videoPath, outDir, count })
+    burnSubtitles: (videoPath, srtPath, outputPath) =>
+      invoke(IpcChannels.ffmpegBurnSubtitles, { videoPath, srtPath, outputPath }),
+    mixBgm: (videoPath, bgmPath, outputPath, bgmVolume) =>
+      invoke(IpcChannels.ffmpegMixBgm, { videoPath, bgmPath, outputPath, bgmVolume }),
+    extractFrames: (videoPath, outDir, count) => invoke(IpcChannels.ffmpegExtractFrames, { videoPath, outDir, count }),
   },
   llm: {
     test: () => invoke(IpcChannels.llmTest),
@@ -90,18 +94,17 @@ const api: IpcApi = {
     splitScript: (script, genre) => invoke(IpcChannels.llmSplitScript, script, genre),
     writeScript: (idea, genre, title) => invoke(IpcChannels.llmWriteScript, idea, genre, title),
     reviewScript: (script, genre, title) => invoke(IpcChannels.llmReviewScript, { script, genre, title }),
-    writeScriptFromVideo: (videoPath, genre) => invoke(IpcChannels.llmWriteScriptFromVideo, { videoPath, genre })
+    writeScriptFromVideo: (videoPath, genre) => invoke(IpcChannels.llmWriteScriptFromVideo, { videoPath, genre }),
   },
   shot: {
-    importSceneImage: (projectId) => invoke(IpcChannels.shotImportSceneImage, projectId)
+    importSceneImage: (projectId) => invoke(IpcChannels.shotImportSceneImage, projectId),
   },
   scene: {
-    regeneratePano: (projectId, boardId) =>
-      invoke(IpcChannels.sceneRegeneratePano, { projectId, boardId })
+    regeneratePano: (projectId, boardId) => invoke(IpcChannels.sceneRegeneratePano, { projectId, boardId }),
   },
   asset: {
     regenerate: (input) => invoke(IpcChannels.assetRegenerate, input),
-    rollback: (input) => invoke(IpcChannels.assetRollback, input)
+    rollback: (input) => invoke(IpcChannels.assetRollback, input),
   },
   prompt: {
     assist: (input) => invoke(IpcChannels.promptAssist, input),
@@ -112,10 +115,10 @@ const api: IpcApi = {
       const listener = (_: unknown, e: unknown) => cb(e as Parameters<typeof cb>[0])
       ipcRenderer.on(IpcChannels.promptBulkFillProgress, listener)
       return () => ipcRenderer.removeListener(IpcChannels.promptBulkFillProgress, listener)
-    }
+    },
   },
   subtitle: {
-    generate: (projectId) => invoke(IpcChannels.subtitleGenerate, projectId)
+    generate: (projectId) => invoke(IpcChannels.subtitleGenerate, projectId),
   },
   file: {
     exists: (relativePath) => invoke(IpcChannels.fileExists, relativePath),
@@ -123,32 +126,32 @@ const api: IpcApi = {
     copy: (relativePath, absoluteTarget) => invoke(IpcChannels.fileCopy, { relativePath, absoluteTarget }),
     delete: (relativePath) => invoke(IpcChannels.fileDelete, relativePath),
     resolvePath: (relativePath) => invoke(IpcChannels.fileResolvePath, relativePath),
-    mediaUrl: (relativePath) => invoke(IpcChannels.fileMediaUrl, relativePath)
+    mediaUrl: (relativePath) => invoke(IpcChannels.fileMediaUrl, relativePath),
+    thumbUrl: (relativePath) => invoke(IpcChannels.fileThumbUrl, relativePath),
   },
   shell: {
     showItem: (relativePath) => invoke(IpcChannels.shellShowItem, relativePath),
-    openPath: (absolutePath) => invoke(IpcChannels.shellOpenPath, absolutePath)
+    openPath: (absolutePath) => invoke(IpcChannels.shellOpenPath, absolutePath),
   },
   tts: {
     preview: (voice) => invoke(IpcChannels.ttsPreview, voice),
     clone: (text, refAudioPath, relativeOutput, opts) =>
-      invoke(IpcChannels.ttsClone, { text, refAudioPath, relativeOutput, ...opts })
+      invoke(IpcChannels.ttsClone, { text, refAudioPath, relativeOutput, ...opts }),
   },
   workflow: {
     list: () => invoke(IpcChannels.workflowList),
     getMeta: (name) => invoke(IpcChannels.workflowMeta, name),
     import: (absolutePath) => invoke(IpcChannels.workflowImport, absolutePath),
     getParams: (name) => invoke(IpcChannels.workflowGetParams, name),
-    updateParam: (name, nodeId, key, value) => invoke(IpcChannels.workflowUpdateParam, name, nodeId, key, value)
+    updateParam: (name, nodeId, key, value) => invoke(IpcChannels.workflowUpdateParam, name, nodeId, key, value),
   },
   image: {
     generate: (prompt, relativeOutput, workflowNameOrOpts) => {
-      const opts = typeof workflowNameOrOpts === 'string'
-        ? { workflowName: workflowNameOrOpts }
-        : (workflowNameOrOpts || {})
+      const opts =
+        typeof workflowNameOrOpts === 'string' ? { workflowName: workflowNameOrOpts } : workflowNameOrOpts || {}
       return invoke(IpcChannels.imageGenerate, { prompt, relativeOutput, ...opts })
     },
-    checkpoints: () => invoke(IpcChannels.imageCheckpoints)
+    checkpoints: () => invoke(IpcChannels.imageCheckpoints),
   },
   director: {
     start: (input) => invoke(IpcChannels.directorStart, input),
@@ -184,14 +187,14 @@ const api: IpcApi = {
       const listener = (_: unknown, e: unknown) => cb(e as Parameters<typeof cb>[0])
       ipcRenderer.on(IpcChannels.directorProjectUpdated, listener)
       return () => ipcRenderer.removeListener(IpcChannels.directorProjectUpdated, listener)
-    }
+    },
   },
   skills: {
     list: () => invoke(IpcChannels.skillList),
     create: (input) => invoke(IpcChannels.skillCreate, input),
     update: (id, patch) => invoke(IpcChannels.skillUpdate, id, patch),
     remove: (id) => invoke(IpcChannels.skillDelete, id),
-    toggle: (id, enabled) => invoke(IpcChannels.skillUpdate, id, { enabled })
+    toggle: (id, enabled) => invoke(IpcChannels.skillUpdate, id, { enabled }),
   },
   conversation: {
     list: (scope) => invoke(IpcChannels.conversationList, scope),
@@ -205,30 +208,30 @@ const api: IpcApi = {
       const listener = (_: unknown, e: unknown) => cb(e as Parameters<typeof cb>[0])
       ipcRenderer.on(IpcChannels.conversationTool, listener)
       return () => ipcRenderer.removeListener(IpcChannels.conversationTool, listener)
-    }
+    },
   },
   system: {
     selfcheck: () => invoke(IpcChannels.systemSelfcheck),
     diskSpace: () => invoke(IpcChannels.systemDiskSpace),
-    cleanupTmp: () => invoke(IpcChannels.systemCleanupTmp)
+    cleanupTmp: () => invoke(IpcChannels.systemCleanupTmp),
   },
   settings: {
     get: () => invoke(IpcChannels.settingsGet),
     save: (settings) => invoke(IpcChannels.settingsSave, settings),
-    previewAsset: (input) => invoke(IpcChannels.settingsPreviewAsset, input)
+    previewAsset: (input) => invoke(IpcChannels.settingsPreviewAsset, input),
   },
   dialog: {
     selectDirectory: () => invoke(IpcChannels.dialogSelectDirectory),
     selectFile: () => invoke(IpcChannels.dialogSelectFile),
     selectAudio: () => invoke(IpcChannels.dialogSelectAudio),
     selectVideo: () => invoke(IpcChannels.dialogSelectVideo),
-    saveFile: (defaultName) => invoke(IpcChannels.dialogSaveFile, defaultName)
+    saveFile: (defaultName) => invoke(IpcChannels.dialogSaveFile, defaultName),
   },
   onProgress: (cb) => {
     const listener = (_: unknown, e: ProgressEvent) => cb(e)
     ipcRenderer.on(IpcChannels.progress, listener)
     return () => ipcRenderer.removeListener(IpcChannels.progress, listener)
-  }
+  },
 }
 
 /**
@@ -244,9 +247,7 @@ if (process.env.DRAMA_TEST_HOOKS === '1') {
   const origGetState = api.director.getState
   const origResume = api.director.resume
   api.director.getState = (projectId: string) =>
-    fakeStates.has(projectId)
-      ? Promise.resolve(fakeStates.get(projectId) as GetStateResult)
-      : origGetState(projectId)
+    fakeStates.has(projectId) ? Promise.resolve(fakeStates.get(projectId) as GetStateResult) : origGetState(projectId)
   api.director.resume = (projectId: string) => {
     if (resumeMode === 'ok') return Promise.resolve() as ReturnType<typeof origResume>
     if (resumeMode === 'fail') return Promise.reject(new Error('模拟：继续失败')) as ReturnType<typeof origResume>
@@ -257,7 +258,9 @@ if (process.env.DRAMA_TEST_HOOKS === '1') {
       if (state == null) fakeStates.delete(projectId)
       else fakeStates.set(projectId, state as GetStateResult)
     },
-    setResumeMode: (mode: 'ok' | 'fail' | null) => { resumeMode = mode }
+    setResumeMode: (mode: 'ok' | 'fail' | null) => {
+      resumeMode = mode
+    },
   })
 }
 

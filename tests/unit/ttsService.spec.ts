@@ -25,11 +25,13 @@ const state = vi.hoisted(() => ({
   }>,
   toStreamN: 0,
   /** 返回 {audioStream} 或同步抛错；n 为全局第几次 toStream */
-  toStreamBehavior: null as null | ((text: string, opts: Record<string, string>, n: number) => { audioStream: AsyncIterable<Buffer> }),
+  toStreamBehavior: null as
+    null | ((text: string, opts: Record<string, string>, n: number) => { audioStream: AsyncIterable<Buffer> }),
   setMetadataBehavior: null as null | ((voice: string, format: string) => void),
   cpmCalls: [] as Array<{ bin: string; args: string[]; opts: unknown }>,
-  cpmExecFileBehavior: null as null | ((bin: string, args: string[], opts: unknown) => Promise<{ stdout: string; stderr: string }>),
-  fsCalls: [] as Array<{ fn: string; args: unknown[] }>
+  cpmExecFileBehavior: null as
+    null | ((bin: string, args: string[], opts: unknown) => Promise<{ stdout: string; stderr: string }>),
+  fsCalls: [] as Array<{ fn: string; args: unknown[] }>,
 }))
 
 vi.mock('msedge-tts', () => {
@@ -48,13 +50,19 @@ vi.mock('msedge-tts', () => {
       this.toStreamCalls.push({ text, opts })
       state.toStreamN++
       if (state.toStreamBehavior) return state.toStreamBehavior(text, opts, state.toStreamN)
-      return { audioStream: (async function* () { yield Buffer.from('FAKE-AUDIO') })() }
+      return {
+        audioStream: (async function* () {
+          yield Buffer.from('FAKE-AUDIO')
+        })(),
+      }
     }
-    close() { this.closed++ }
+    close() {
+      this.closed++
+    }
   }
   return {
     MsEdgeTTS: FakeMsEdgeTTS,
-    OUTPUT_FORMAT: { AUDIO_24KHZ_48KBITRATE_MONO_MP3: 'audio-24khz-48kbitrate-mono-mp3' }
+    OUTPUT_FORMAT: { AUDIO_24KHZ_48KBITRATE_MONO_MP3: 'audio-24khz-48kbitrate-mono-mp3' },
   }
 })
 
@@ -67,12 +75,12 @@ vi.mock('../../src/main/core/childProcessManager', () => ({
     },
     spawn: vi.fn(),
     killAll: vi.fn(),
-    getActiveHandles: vi.fn()
-  }
+    getActiveHandles: vi.fn(),
+  },
 }))
 
 vi.mock('../../src/main/core/logger', () => ({
-  createLogger: () => ({ info: () => {}, warn: () => {}, error: () => {} })
+  createLogger: () => ({ info: () => {}, warn: () => {}, error: () => {} }),
 }))
 
 // fs/promises mock：用 node:fs 的【同步】方法实现，返回同步值。
@@ -88,17 +96,23 @@ vi.mock('fs/promises', async () => {
     access: 'accessSync',
     stat: 'statSync',
     rename: 'renameSync',
-    rm: 'rmSync'
+    rm: 'rmSync',
   }
-  const wrap = (name: string) => (...args: unknown[]) => {
-    state.fsCalls.push({ fn: name, args })
-    try {
-      // 同步执行（无真实异步 IO），再包成 Promise：纯微任务，fake timers 一定能等到
-      return Promise.resolve((fs as unknown as Record<string, (...a: unknown[]) => unknown>)[SYNC_MAP[name]](...args))
-    } catch (e) {
-      return Promise.reject(e)
+  const wrap =
+    (name: string) =>
+    (...args: unknown[]) => {
+      state.fsCalls.push({ fn: name, args })
+      try {
+        const syncName = SYNC_MAP[name]
+        if (!syncName) throw new Error(`测试夹具缺少 fs 同步方法映射：${name}`)
+        const syncFn = (fs as unknown as Record<string, (...a: unknown[]) => unknown>)[syncName]
+        if (!syncFn) throw new Error(`测试夹具缺少 fs 同步方法：${syncName}`)
+        // 同步执行（无真实异步 IO），再包成 Promise：纯微任务，fake timers 一定能等到
+        return Promise.resolve(syncFn(...args))
+      } catch (e) {
+        return Promise.reject(e)
+      }
     }
-  }
   const out: Record<string, unknown> = {}
   for (const n of Object.keys(SYNC_MAP)) {
     out[n] = wrap(n)
@@ -129,26 +143,37 @@ function makeStubs(o: StubOpts = {}) {
     builds: [] as Array<{ name: string; vars: Record<string, unknown> }>,
     submits: 0,
     historyN: 0,
-    downloads: [] as Array<{ f: string; s: string; t: string; abs: string }>
+    downloads: [] as Array<{ f: string; s: string; t: string; abs: string }>,
   }
   const comfyui = {
-    hasNode: async (n: string) => { calls.hasNode.push(n); return o.hasNode ?? true },
-    uploadAudio: async (p: string) => { calls.uploads.push(p); return o.uploadName ?? `up_${nodePath.basename(p)}` },
-    submit: async () => { calls.submits++; return { promptId: 'pid-1' } },
+    hasNode: async (n: string) => {
+      calls.hasNode.push(n)
+      return o.hasNode ?? true
+    },
+    uploadAudio: async (p: string) => {
+      calls.uploads.push(p)
+      return o.uploadName ?? `up_${nodePath.basename(p)}`
+    },
+    submit: async () => {
+      calls.submits++
+      return { promptId: 'pid-1' }
+    },
     getHistory: async () => {
       const i = Math.min(calls.historyN, (o.historyQueue?.length ?? 1) - 1)
       calls.historyN++
       if (o.historyQueue) return o.historyQueue[i]
       return MP3_HISTORY
     },
-    download: async (f: string, s: string, t: string, abs: string) => { calls.downloads.push({ f, s, t, abs }) }
+    download: async (f: string, s: string, t: string, abs: string) => {
+      calls.downloads.push({ f, s, t, abs })
+    },
   } as unknown as ComfyUIClient
   const workflow = {
-    list: async () => (o.workflows ?? ['tts_clone', 'tts_plain']).map(name => ({ name })),
+    list: async () => (o.workflows ?? ['tts_clone', 'tts_plain']).map((name) => ({ name })),
     buildGraph: async (name: string, vars: Record<string, unknown>) => {
       calls.builds.push({ name, vars })
       return { __graph: name } as never
-    }
+    },
   } as unknown as WorkflowLoader
   return { comfyui, workflow, calls }
 }
@@ -211,8 +236,9 @@ describe('getCacheKey', () => {
 describe('synthesize 入参校验', () => {
   it('空白文本直接抛错，不创建 MsEdgeTTS', async () => {
     const svc = new TTSService(baseDir)
-    await expect(svc.synthesize({ text: '   ', voice: VOICE, outputPath: nodePath.join(baseDir, 'a.mp3') }))
-      .rejects.toThrow('TTS text is empty')
+    await expect(
+      svc.synthesize({ text: '   ', voice: VOICE, outputPath: nodePath.join(baseDir, 'a.mp3') }),
+    ).rejects.toThrow('TTS text is empty')
     expect(state.ttsInstances).toHaveLength(0)
   })
 })
@@ -223,20 +249,24 @@ describe('synthesize ① Edge TTS 成功路径', () => {
     const out = nodePath.join(baseDir, 'sub', 'line.mp3')
     await svc.synthesize({ text: '你好', voice: VOICE, outputPath: out })
     const inst = state.ttsInstances[0]
+    if (!inst) throw new Error('测试夹具缺少 state.ttsInstances[0]')
     expect(inst.setMetadataCalls).toEqual([{ voice: VOICE, format: 'audio-24khz-48kbitrate-mono-mp3' }])
-    expect(inst.toStreamCalls[0].opts).toEqual({ rate: '+0%', volume: '+0%' })
+    expect(inst.toStreamCalls[0]?.opts).toEqual({ rate: '+0%', volume: '+0%' })
     expect(inst.closed).toBe(1)
     expect(nodeFs.readFileSync(out).toString()).toBe('FAKE-AUDIO')
   })
 
   it('显式 rate/volume 透传 toStream；多 chunk 拼接', async () => {
     state.toStreamBehavior = () => ({
-      audioStream: (async function* () { yield Buffer.from('AB'); yield Buffer.from('CD') })()
+      audioStream: (async function* () {
+        yield Buffer.from('AB')
+        yield Buffer.from('CD')
+      })(),
     })
     const svc = new TTSService(baseDir)
     const out = nodePath.join(baseDir, 'line.mp3')
     await svc.synthesize({ text: 'x', voice: VOICE, outputPath: out, rate: '+10%', volume: '-5%' })
-    expect(state.ttsInstances[0].toStreamCalls[0].opts).toEqual({ rate: '+10%', volume: '-5%' })
+    expect(state.ttsInstances[0]?.toStreamCalls[0]?.opts).toEqual({ rate: '+10%', volume: '-5%' })
     expect(nodeFs.readFileSync(out).toString()).toBe('ABCD')
   })
 
@@ -245,7 +275,7 @@ describe('synthesize ① Edge TTS 成功路径', () => {
     const rel = nodePath.join('voices', 'e1.mp3')
     const got = await svc.generate('台词', VOICE, rel)
     expect(got).toBe(rel)
-    const write = state.fsCalls.find(c => c.fn === 'writeFile')
+    const write = state.fsCalls.find((c) => c.fn === 'writeFile')
     expect(write?.args[0]).toBe(nodePath.join(baseDir, rel))
   })
 })
@@ -254,7 +284,11 @@ describe('synthesize ① 重试退避', () => {
   it('空音频流：抛 no audio，2.5s 短退避后第三次成功', async () => {
     state.toStreamBehavior = (_t, _o, n) => {
       if (n <= 2) return { audioStream: (async function* () {})() }
-      return { audioStream: (async function* () { yield Buffer.from('OK') })() }
+      return {
+        audioStream: (async function* () {
+          yield Buffer.from('OK')
+        })(),
+      }
     }
     vi.useFakeTimers()
     const svc = new TTSService(baseDir)
@@ -262,14 +296,18 @@ describe('synthesize ① 重试退避', () => {
     await fastForward(5000)
     await expect(p).resolves.toBeUndefined()
     expect(state.toStreamN).toBe(3)
-    expect(state.ttsInstances.every(i => i.closed === 1)).toBe(true)
+    expect(state.ttsInstances.every((i) => i.closed === 1)).toBe(true)
     expect(nodeFs.readFileSync(nodePath.join(baseDir, 'a.mp3')).toString()).toBe('OK')
   })
 
   it('403 风控：15s 长退避（2.5s 不足以触发第二次尝试），第二次成功', async () => {
     state.toStreamBehavior = (_t, _o, n) => {
       if (n <= 1) throw new Error('Request failed with status code 403')
-      return { audioStream: (async function* () { yield Buffer.from('OK') })() }
+      return {
+        audioStream: (async function* () {
+          yield Buffer.from('OK')
+        })(),
+      }
     }
     vi.useFakeTimers()
     const svc = new TTSService(baseDir)
@@ -282,7 +320,9 @@ describe('synthesize ① 重试退避', () => {
   })
 
   it('普通错误 2.5s×2 退避共 3 次尝试后转降级链（Qwen 未注入 → SAPI 成功）', async () => {
-    state.toStreamBehavior = () => { throw new Error('socket hang up') }
+    state.toStreamBehavior = () => {
+      throw new Error('socket hang up')
+    }
     const out = nodePath.join(baseDir, 'a.mp3')
     const wav = out.replace(/\.mp3$/i, '.wav')
     state.cpmExecFileBehavior = async (bin) => {
@@ -298,14 +338,16 @@ describe('synthesize ① 重试退避', () => {
     expect(state.toStreamN).toBe(3)
     expect(nodeFs.readFileSync(out).toString()).toBe('MP3-DATA')
     expect(nodeFs.existsSync(wav)).toBe(false)
-    const sapi = state.cpmCalls.find(c => c.bin === 'powershell')
+    const sapi = state.cpmCalls.find((c) => c.bin === 'powershell')
     expect(sapi?.opts).toMatchObject({ timeout: 60_000, label: 'tts-sapi', windowsHide: true })
-    const ff = state.cpmCalls.find(c => c.bin !== 'powershell')
+    const ff = state.cpmCalls.find((c) => c.bin !== 'powershell')
     expect(ff?.args).toEqual(['-y', '-i', wav, '-codec:a', 'libmp3lame', '-q:a', '4', out])
   })
 
   it('Edge 抛非 Error 字符串：String 分支日志，后续 SAPI 成功', async () => {
-    state.toStreamBehavior = () => { throw 'oops' }
+    state.toStreamBehavior = () => {
+      throw 'oops'
+    }
     const out = nodePath.join(baseDir, 'b.mp3')
     const wav = out.replace(/\.mp3$/i, '.wav')
     state.cpmExecFileBehavior = async (bin) => {
@@ -342,7 +384,11 @@ describe('enforceRateLimit', () => {
 })
 
 describe('synthesize ② Qwen3 克隆降级层', () => {
-  const edgeFails403 = () => { state.toStreamBehavior = () => { throw new Error('403 Forbidden') } }
+  const edgeFails403 = () => {
+    state.toStreamBehavior = () => {
+      throw new Error('403 Forbidden')
+    }
+  }
 
   it('Edge 全挂 → 样本缺失先 SAPI 造参考音 → 克隆轮询产出 mp3 → download 落盘', async () => {
     edgeFails403()
@@ -360,12 +406,19 @@ describe('synthesize ② Qwen3 克隆降级层', () => {
     await expect(p).resolves.toBeUndefined()
     expect(state.toStreamN).toBe(3)
     expect(calls.uploads).toEqual([sampleWav])
-    expect(calls.builds[0].name).toBe('tts_clone')
-    expect(calls.builds[0].vars).toEqual({
-      PROMPT: '台词', REF_AUDIO: 'up_zh-CN-XiaoxiaoNeural.wav', REF_TEXT: '',
-      SEED: expectedSeed(VOICE), X_VECTOR: true
+    const build0 = calls.builds[0]
+    if (!build0) throw new Error('测试夹具缺少 calls.builds[0]')
+    expect(build0.name).toBe('tts_clone')
+    expect(build0.vars).toEqual({
+      PROMPT: '台词',
+      REF_AUDIO: 'up_zh-CN-XiaoxiaoNeural.wav',
+      REF_TEXT: '',
+      SEED: expectedSeed(VOICE),
+      X_VECTOR: true,
     })
-    expect(calls.downloads[0]).toEqual({ f: 'clip.mp3', s: 'q', t: 'output', abs: out })
+    const download0 = calls.downloads[0]
+    if (!download0) throw new Error('测试夹具缺少 calls.downloads[0]')
+    expect(download0).toEqual({ f: 'clip.mp3', s: 'q', t: 'output', abs: out })
     expect(nodeFs.existsSync(sampleWav)).toBe(true)
   })
 
@@ -382,11 +435,13 @@ describe('synthesize ② Qwen3 克隆降级层', () => {
     await vi.advanceTimersByTimeAsync(15000)
     await vi.advanceTimersByTimeAsync(1500)
     await expect(p).resolves.toBeUndefined()
-    expect(state.cpmCalls.filter(c => c.bin === 'powershell')).toHaveLength(0)
+    expect(state.cpmCalls.filter((c) => c.bin === 'powershell')).toHaveLength(0)
   })
 
   it('shouldAbort 命中：克隆取消后继续降级 SAPI 成功', async () => {
-    state.toStreamBehavior = () => { throw new Error('boom') }
+    state.toStreamBehavior = () => {
+      throw new Error('boom')
+    }
     const refDir = nodePath.join(baseDir, 'tts_ref')
     nodeFs.mkdirSync(refDir, { recursive: true })
     nodeFs.writeFileSync(nodePath.join(refDir, 'zh-CN-XiaoxiaoNeural.wav'), Buffer.alloc(2000))
@@ -437,7 +492,7 @@ describe('synthesize ② Qwen3 克隆降级层', () => {
     nodeFs.writeFileSync(nodePath.join(refDir, 'zh-CN-XiaoxiaoNeural.wav'), Buffer.alloc(2000))
     vi.useFakeTimers()
     const { comfyui, workflow, calls } = makeStubs({
-      historyQueue: [{ '1': [{ filename: 'a.wav' }] }, { '1': [{ filename: 'b.MP3' }] }]
+      historyQueue: [{ '1': [{ filename: 'a.wav' }] }, { '1': [{ filename: 'b.MP3' }] }],
     })
     const svc = new TTSService(baseDir, comfyui, workflow)
     const p = svc.synthesize({ text: 'x', voice: VOICE, outputPath: nodePath.join(baseDir, 'a.mp3') })
@@ -466,11 +521,17 @@ describe('synthesize ② Qwen3 克隆降级层', () => {
 })
 
 describe('synthesize ④ 全链失败', () => {
-  const edgeFails403 = () => { state.toStreamBehavior = () => { throw new Error('403 rate limited') } }
+  const edgeFails403 = () => {
+    state.toStreamBehavior = () => {
+      throw new Error('403 rate limited')
+    }
+  }
 
   it('Edge 403×3 + Qwen 未注入 + SAPI 进程失败 → TTSRateLimitedError', async () => {
     edgeFails403()
-    state.cpmExecFileBehavior = async () => { throw new Error('powershell exited 1') }
+    state.cpmExecFileBehavior = async () => {
+      throw new Error('powershell exited 1')
+    }
     vi.useFakeTimers()
     const svc = new TTSService(baseDir)
     const p = svc.synthesize({ text: 'x', voice: VOICE, outputPath: nodePath.join(baseDir, 'a.mp3') })
@@ -529,8 +590,9 @@ describe('generateClone', () => {
 
   it('未注入 ComfyUI/工作流 → 抛不可用', async () => {
     const svc = new TTSService(baseDir)
-    await expect(svc.generateClone('x', nodePath.join(baseDir, 'ref.wav'), rel))
-      .rejects.toThrow('TTS 克隆不可用：未注入 ComfyUI/工作流服务')
+    await expect(svc.generateClone('x', nodePath.join(baseDir, 'ref.wav'), rel)).rejects.toThrow(
+      'TTS 克隆不可用：未注入 ComfyUI/工作流服务',
+    )
   })
 
   it('空文本 → TTS text is empty', async () => {
@@ -560,10 +622,18 @@ describe('generateClone', () => {
     await vi.advanceTimersByTimeAsync(1500)
     await expect(p).resolves.toBe(rel)
     expect(calls.uploads).toEqual([refAbs])
-    expect(calls.builds[0].vars).toEqual({
-      PROMPT: '台词', REF_AUDIO: 'up_ref.wav', REF_TEXT: '参考转录', SEED: 7, X_VECTOR: false
+    const build0 = calls.builds[0]
+    if (!build0) throw new Error('测试夹具缺少 calls.builds[0]')
+    expect(build0.vars).toEqual({
+      PROMPT: '台词',
+      REF_AUDIO: 'up_ref.wav',
+      REF_TEXT: '参考转录',
+      SEED: 7,
+      X_VECTOR: false,
     })
-    expect(calls.downloads[0]).toEqual({ f: 'clip.mp3', s: 'q', t: 'output', abs: nodePath.join(baseDir, rel) })
+    const download0 = calls.downloads[0]
+    if (!download0) throw new Error('测试夹具缺少 calls.downloads[0]')
+    expect(download0).toEqual({ f: 'clip.mp3', s: 'q', t: 'output', abs: nodePath.join(baseDir, rel) })
   })
 
   it('不传 opts：随机 seed + x-vector 模式', async () => {
@@ -573,7 +643,9 @@ describe('generateClone', () => {
     const p = svc.generateClone('台词', 'ref.wav', rel)
     await vi.advanceTimersByTimeAsync(1500)
     await expect(p).resolves.toBe(rel)
-    const vars = calls.builds[0].vars
+    const build = calls.builds[0]
+    if (!build) throw new Error('测试夹具缺少 calls.builds[0]')
+    const vars = build.vars
     expect(vars.REF_TEXT).toBe('')
     expect(vars.X_VECTOR).toBe(true)
     expect(typeof vars.SEED).toBe('number')
@@ -584,8 +656,7 @@ describe('generateClone', () => {
   it('shouldAbort → 克隆已取消（提交前轮询即抛）', async () => {
     const { comfyui, workflow, calls } = makeStubs()
     const svc = new TTSService(baseDir, comfyui, workflow)
-    await expect(svc.generateClone('x', 'ref.wav', rel, { shouldAbort: () => true }))
-      .rejects.toThrow('TTS 克隆已取消')
+    await expect(svc.generateClone('x', 'ref.wav', rel, { shouldAbort: () => true })).rejects.toThrow('TTS 克隆已取消')
     expect(calls.submits).toBe(1)
     expect(calls.historyN).toBe(0)
   })
@@ -614,10 +685,14 @@ describe('generateLocal（已废弃私有方法，经强转补覆盖）', () => 
     const p = asLocal(svc)('你好', VOICE, outAbs)
     await vi.advanceTimersByTimeAsync(1500)
     await expect(p).resolves.toBeUndefined()
-    expect(calls.builds[0].name).toBe('tts_plain')
-    expect(calls.builds[0].vars).toEqual({ PROMPT: '你好', SEED: expectedSeed(VOICE) })
-    expect(calls.downloads[0].abs).toBe(outAbs)
-    expect(state.fsCalls.some(c => c.fn === 'mkdir' && c.args[0] === nodePath.dirname(outAbs))).toBe(true)
+    const build0 = calls.builds[0]
+    if (!build0) throw new Error('测试夹具缺少 calls.builds[0]')
+    expect(build0.name).toBe('tts_plain')
+    expect(build0.vars).toEqual({ PROMPT: '你好', SEED: expectedSeed(VOICE) })
+    const download0 = calls.downloads[0]
+    if (!download0) throw new Error('测试夹具缺少 calls.downloads[0]')
+    expect(download0.abs).toBe(outAbs)
+    expect(state.fsCalls.some((c) => c.fn === 'mkdir' && c.args[0] === nodePath.dirname(outAbs))).toBe(true)
   })
 
   it('未注入服务 → 兜底不可用', async () => {
@@ -627,13 +702,16 @@ describe('generateLocal（已废弃私有方法，经强转补覆盖）', () => 
 
   it('空文本 / 缺节点 / 缺工作流分别抛错', async () => {
     const s1 = makeStubs()
-    await expect(asLocal(new TTSService(baseDir, s1.comfyui, s1.workflow))('  ', VOICE, 'o.mp3'))
-      .rejects.toThrow('TTS text is empty')
+    await expect(asLocal(new TTSService(baseDir, s1.comfyui, s1.workflow))('  ', VOICE, 'o.mp3')).rejects.toThrow(
+      'TTS text is empty',
+    )
     const s2 = makeStubs({ hasNode: false })
-    await expect(asLocal(new TTSService(baseDir, s2.comfyui, s2.workflow))('x', VOICE, 'o.mp3'))
-      .rejects.toThrow('未安装 FB_Qwen3TTSVoiceClone 节点，无法本地合成')
+    await expect(asLocal(new TTSService(baseDir, s2.comfyui, s2.workflow))('x', VOICE, 'o.mp3')).rejects.toThrow(
+      '未安装 FB_Qwen3TTSVoiceClone 节点，无法本地合成',
+    )
     const s3 = makeStubs({ workflows: ['tts_clone'] })
-    await expect(asLocal(new TTSService(baseDir, s3.comfyui, s3.workflow))('x', VOICE, 'o.mp3'))
-      .rejects.toThrow('工作流 tts_plain 不存在，无法本地合成')
+    await expect(asLocal(new TTSService(baseDir, s3.comfyui, s3.workflow))('x', VOICE, 'o.mp3')).rejects.toThrow(
+      '工作流 tts_plain 不存在，无法本地合成',
+    )
   })
 })

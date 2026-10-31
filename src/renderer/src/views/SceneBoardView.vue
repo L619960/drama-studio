@@ -27,13 +27,7 @@
     </div>
 
     <div class="toolbar">
-      <el-input
-        v-model="searchQuery"
-        clearable
-        size="small"
-        placeholder="搜索场景板名称 / 描述"
-        style="width: 240px"
-      >
+      <el-input v-model="searchQuery" clearable size="small" placeholder="搜索场景板名称 / 描述" style="width: 240px">
         <template #prefix>
           <el-icon><Search /></el-icon>
         </template>
@@ -77,11 +71,7 @@
         @contextmenu="menu.open($event, board)"
       >
         <div class="board-image" @click="preview(board)">
-          <img
-            v-if="board.panoGrid && urlCache[board.panoGrid]"
-            :src="urlCache[board.panoGrid]"
-            alt="全景宫格看板"
-          />
+          <img v-if="board.panoGrid && urlCache[board.panoGrid]" :src="urlCache[board.panoGrid]" alt="全景宫格看板" />
           <img
             v-else-if="board.emptyPlatePath && urlCache[board.emptyPlatePath]"
             :src="urlCache[board.emptyPlatePath]"
@@ -103,7 +93,9 @@
         <div class="board-info">
           <h3>{{ board.name }}</h3>
           <p class="meta">键：{{ board.key }} · 被 {{ usageCount(board.id) }} 个分镜引用</p>
-          <p v-if="board.panoViews" class="meta">全景 {{ board.panoViews.length }} 方位<template v-if="board.panoGrid"> + 宫格</template></p>
+          <p v-if="board.panoViews" class="meta">
+            全景 {{ board.panoViews.length }} 方位<template v-if="board.panoGrid"> + 宫格</template>
+          </p>
           <p v-if="board.description" class="desc">{{ board.description }}</p>
         </div>
         <div class="board-actions">
@@ -111,17 +103,23 @@
             <el-icon><Upload /></el-icon>导入
           </el-button>
           <el-button size="small" :loading="generating === board.id" @click="generatePlate(board)">
-            <el-icon><MagicStick /></el-icon>{{ generating === board.id ? '生成中...' : (panoramaMode ? (board.panoPath ? '重出全景' : '生成全景') : (board.emptyPlatePath ? '重新生成' : 'AI 生成')) }}
+            <el-icon><MagicStick /></el-icon
+            >{{
+              generating === board.id
+                ? '生成中...'
+                : panoramaMode
+                  ? board.panoPath
+                    ? '重出全景'
+                    : '生成全景'
+                  : board.emptyPlatePath
+                    ? '重新生成'
+                    : 'AI 生成'
+            }}
           </el-button>
           <el-button size="small" @click="editBoard(board)">
             <el-icon><Edit /></el-icon>编辑
           </el-button>
-          <el-button
-            size="small"
-            type="danger"
-            :disabled="usageCount(board.id) > 0"
-            @click="deleteBoard(board)"
-          >
+          <el-button size="small" type="danger" :disabled="usageCount(board.id) > 0" @click="deleteBoard(board)">
             <el-icon><Delete /></el-icon>
           </el-button>
         </div>
@@ -139,7 +137,16 @@
           <el-icon><Edit /></el-icon>编辑信息
         </div>
         <div class="menu-item" @click="generatePlate(menu.state.data!)">
-          <el-icon><MagicStick /></el-icon>{{ panoramaMode ? (menu.state.data?.panoPath ? '重出全景场景板' : '生成全景场景板') : (menu.state.data?.emptyPlatePath ? '重出场景板图' : 'AI 生成场景板图') }}
+          <el-icon><MagicStick /></el-icon
+          >{{
+            panoramaMode
+              ? menu.state.data?.panoPath
+                ? '重出全景场景板'
+                : '生成全景场景板'
+              : menu.state.data?.emptyPlatePath
+                ? '重出场景板图'
+                : 'AI 生成场景板图'
+          }}
         </div>
         <div class="menu-item" @click="importPlate(menu.state.data!)">
           <el-icon><Upload /></el-icon>导入本地图
@@ -162,7 +169,9 @@
           <div class="edit-preview" @click="preview(editing)">
             <img :src="urlCache[editing.emptyPlatePath]" alt="当前场景板" />
           </div>
-          <span v-if="usageCount(editing.id) > 0" class="edit-usage">被 {{ usageCount(editing.id) }} 个分镜引用，改名会同步更新这些分镜的场景名</span>
+          <span v-if="usageCount(editing.id) > 0" class="edit-usage"
+            >被 {{ usageCount(editing.id) }} 个分镜引用，改名会同步更新这些分镜的场景名</span
+          >
         </el-form-item>
         <el-form-item label="名称" required>
           <el-input v-model="form.name" placeholder="如：便利店雨夜" />
@@ -204,7 +213,9 @@ import ErrorStateCard from '../components/common/ErrorStateCard.vue'
 
 const { urlCache, ensureFileUrl, ensureFileUrls } = useFileUrl()
 const router = useRouter()
-const projectId = useRouteProjectId((id) => { void loadProject(id) })
+const projectId = useRouteProjectId((id) => {
+  void loadProject(id)
+})
 
 const project = ref<Project | null>(null)
 /** REQ-17：三态区分——加载中 / 加载失败 / 已加载 */
@@ -228,9 +239,7 @@ const searchQuery = ref('')
 const filteredBoards = computed(() => {
   const q = searchQuery.value.trim().toLowerCase()
   if (!q) return boards.value
-  return boards.value.filter(b =>
-    b.name.toLowerCase().includes(q) || (b.description || '').toLowerCase().includes(q)
-  )
+  return boards.value.filter((b) => b.name.toLowerCase().includes(q) || (b.description || '').toLowerCase().includes(q))
 })
 /** 项目是否启用全景固定场景模式（重出/生成走全景链路而非旧单图） */
 const panoramaMode = ref(false)
@@ -245,16 +254,14 @@ onMounted(async () => {
   // 后台流水线（导演 agent 场景板/逐镜渲染）落盘后自动刷新，无需手动切页
   projectUpdatedUnsub = window.api.director.onProjectUpdated((e) => {
     if (e?.projectId === projectId.value) {
-      clearFileUrlCache()
+      // UI-07：只清本项目前缀，避免误伤其它项目的 URL 缓存
+      clearFileUrlCache(`projects/${projectId.value}/`)
       void loadProject(projectId.value)
     }
   })
   try {
-    const [wf, s] = await Promise.all([
-      window.api.workflow.list(),
-      window.api.settings.get()
-    ])
-    t2iWorkflows.value = wf.filter(w => w.capability === 't2i' || (!w.capability && !w.hasImageInput))
+    const [wf, s] = await Promise.all([window.api.workflow.list(), window.api.settings.get()])
+    t2iWorkflows.value = wf.filter((w) => w.capability === 't2i' || (!w.capability && !w.hasImageInput))
     panoramaMode.value = s?.creation?.scene?.panorama !== false
     if (project.value?.assetWorkflows?.scene) {
       sceneWorkflow.value = project.value.assetWorkflows.scene
@@ -275,7 +282,7 @@ async function saveWorkflowChoice(): Promise<void> {
   if (!project.value) return
   project.value.assetWorkflows = {
     ...(project.value.assetWorkflows || {}),
-    scene: sceneWorkflow.value || undefined
+    ...(sceneWorkflow.value ? { scene: sceneWorkflow.value } : {}),
   }
   try {
     await window.api.project.save(snapshot(project.value))
@@ -285,7 +292,7 @@ async function saveWorkflowChoice(): Promise<void> {
 }
 
 function usageCount(boardId: string): number {
-  return (project.value?.shots || []).filter(s => s.sceneBoardId === boardId).length
+  return (project.value?.shots || []).filter((s) => s.sceneBoardId === boardId).length
 }
 
 async function loadProject(id?: string) {
@@ -301,8 +308,8 @@ async function loadProject(id?: string) {
     }
     project.value = p
     if (!project.value.sceneBoards) project.value.sceneBoards = []
-    const paths = project.value.sceneBoards.flatMap(b =>
-      [b.emptyPlatePath, b.panoGrid, ...(b.panoViews || [])].filter(Boolean) as string[]
+    const paths = project.value.sceneBoards.flatMap(
+      (b) => [b.emptyPlatePath, b.panoGrid, ...(b.panoViews || [])].filter(Boolean) as string[],
     )
     await ensureFileUrls(paths)
   } catch (e) {
@@ -311,7 +318,6 @@ async function loadProject(id?: string) {
     loading.value = false
   }
 }
-
 
 function addBoard() {
   editing.value = null
@@ -361,7 +367,7 @@ async function saveBoard() {
         key: normalizeSceneKey(form.value.name),
         name: form.value.name.trim(),
         description: form.value.description || undefined,
-        emptyPlatePath: ''
+        emptyPlatePath: '',
       })
     }
     await window.api.project.save(snapshot(project.value))
@@ -414,10 +420,15 @@ async function generatePlate(board: SceneBoard) {
       await window.api.image.generate(
         scenePlatePrompt(board.description || board.name, undefined, {
           weatherHint: sc.weatherHint,
-          emptyStrict: sc.emptyStrict
+          emptyStrict: sc.emptyStrict,
         }),
         rel,
-        { width: sc.plateWidth, height: sc.plateHeight, negative: sceneNegativeFor('standard', project.value?.genre), workflowName: sceneWorkflow.value || sc.t2iWorkflow || undefined }
+        {
+          width: sc.plateWidth,
+          height: sc.plateHeight,
+          negative: sceneNegativeFor('standard', project.value?.genre),
+          ...(sceneWorkflow.value || sc.t2iWorkflow ? { workflowName: sceneWorkflow.value || sc.t2iWorkflow } : {}),
+        },
       )
       board.emptyPlatePath = rel
       for (const s of project.value.shots) {
@@ -461,13 +472,13 @@ async function deleteBoard(board: SceneBoard) {
   }
   const ok = await confirmDanger(`确定删除场景板「${board.name}」吗？删除后 5 秒内可撤销。`, {
     title: '删除场景板',
-    confirmText: '删除'
+    confirmText: '删除',
   })
   if (!ok) return
-  const at = (project.value.sceneBoards || []).findIndex(b => b.id === board.id)
+  const at = (project.value.sceneBoards || []).findIndex((b) => b.id === board.id)
   if (at < 0) return
   // REQ-16：内存暂存 + 5 秒撤销窗，撤销即原位恢复
-  project.value.sceneBoards = (project.value.sceneBoards || []).filter(b => b.id !== board.id)
+  project.value.sceneBoards = (project.value.sceneBoards || []).filter((b) => b.id !== board.id)
   try {
     await window.api.project.save(snapshot(project.value))
   } catch (e) {
@@ -475,33 +486,58 @@ async function deleteBoard(board: SceneBoard) {
     ElMessage.error(`删除失败：${e instanceof Error ? e.message : String(e)}`)
     return
   }
-  showUndoToast(`场景板「${board.name}」已删除`, async () => {
-    if (!project.value || !project.value.sceneBoards) return
-    if (project.value.sceneBoards.some(b => b.id === board.id)) return
-    project.value.sceneBoards.splice(Math.min(at, project.value.sceneBoards.length), 0, board)
-    try {
-      await window.api.project.save(snapshot(project.value))
-      ElMessage.success('已撤销删除')
-    } catch (e) {
-      ElMessage.error(`撤销失败：${e instanceof Error ? e.message : String(e)}`)
-    }
-  }, () => {})
+  showUndoToast(
+    `场景板「${board.name}」已删除`,
+    async () => {
+      if (!project.value || !project.value.sceneBoards) return
+      if (project.value.sceneBoards.some((b) => b.id === board.id)) return
+      project.value.sceneBoards.splice(Math.min(at, project.value.sceneBoards.length), 0, board)
+      try {
+        await window.api.project.save(snapshot(project.value))
+        ElMessage.success('已撤销删除')
+      } catch (e) {
+        ElMessage.error(`撤销失败：${e instanceof Error ? e.message : String(e)}`)
+      }
+    },
+    () => {},
+  )
 }
 </script>
 
 <style scoped>
-.empty-panel { padding: 36px 16px; }
-.wf-picker { display: flex; align-items: center; gap: 6px; margin-right: 4px; }
-.wf-label { font-size: 12px; color: var(--text-muted); }
-.toolbar { margin-bottom: 12px; }
+.empty-panel {
+  padding: 36px 16px;
+}
+.wf-picker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 4px;
+}
+.wf-label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.toolbar {
+  margin-bottom: 12px;
+}
 .board-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 16px;
 }
-.board-card { animation: fade-up var(--dur-slow) var(--ease-out) both; cursor: context-menu; }
-.board-card :deep(.el-card__body) { padding: 14px; }
-.menu-tip { margin-left: auto; font-size: 11px; color: var(--text-muted); }
+.board-card {
+  animation: fade-up var(--dur-slow) var(--ease-out) both;
+  cursor: context-menu;
+}
+.board-card :deep(.el-card__body) {
+  padding: 14px;
+}
+.menu-tip {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-muted);
+}
 .board-image {
   height: 180px;
   background: rgba(0, 0, 0, 0.22);
@@ -519,8 +555,13 @@ async function deleteBoard(board: SceneBoard) {
   object-fit: cover;
   transition: transform var(--dur-slow) var(--ease-out);
 }
-.board-image:hover img { transform: scale(1.03); }
-.no-image { color: var(--text-muted); font-size: 13px; }
+.board-image:hover img {
+  transform: scale(1.03);
+}
+.no-image {
+  color: var(--text-muted);
+  font-size: 13px;
+}
 .pano-views {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -536,18 +577,39 @@ async function deleteBoard(board: SceneBoard) {
   background: rgba(0, 0, 0, 0.22);
   transition: border-color var(--dur-fast, 0.15s) var(--ease-out);
 }
-.pano-thumb:hover, .pano-thumb.active { border-color: var(--brand-strong, #5b8cff); }
-.pano-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.board-info { padding: 12px 0; }
+.pano-thumb:hover,
+.pano-thumb.active {
+  border-color: var(--brand-strong, #5b8cff);
+}
+.pano-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.board-info {
+  padding: 12px 0;
+}
 .board-info h3 {
   font-family: var(--font-display);
   color: var(--text-primary);
   margin-bottom: 4px;
   font-size: 16px;
 }
-.meta { color: var(--text-muted); font-size: 12px; }
-.desc { color: var(--text-secondary); font-size: 12px; margin-top: 4px; }
-.board-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.meta {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.desc {
+  color: var(--text-secondary);
+  font-size: 12px;
+  margin-top: 4px;
+}
+.board-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
 .edit-preview {
   width: 240px;
   height: 135px;
@@ -560,6 +622,14 @@ async function deleteBoard(board: SceneBoard) {
   align-items: center;
   justify-content: center;
 }
-.edit-preview img { width: 100%; height: 100%; object-fit: cover; }
-.edit-usage { font-size: 12px; color: var(--text-secondary); margin-left: 12px; }
+.edit-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.edit-usage {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-left: 12px;
+}
 </style>

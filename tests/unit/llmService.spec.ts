@@ -8,7 +8,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 // —— 全部下游依赖 mock ——
 vi.mock('../../src/main/core/llmHttp', () => ({
   httpChatCompletion: vi.fn(),
-  httpTest: vi.fn()
+  httpTest: vi.fn(),
 }))
 
 vi.mock('../../src/main/core/llmScriptOps', () => ({
@@ -21,13 +21,13 @@ vi.mock('../../src/main/core/llmScriptOps', () => ({
   writeScriptFromFramesOp: vi.fn(),
   reviewScriptOp: vi.fn(),
   splitScriptOp: vi.fn(),
-  analyzeOp: vi.fn()
+  analyzeOp: vi.fn(),
 }))
 
 vi.mock('../../src/main/core/llmAudit', () => ({
   reviewStoryOp: vi.fn(),
   diagnoseFailureOp: vi.fn(),
-  auditImageOp: vi.fn()
+  auditImageOp: vi.fn(),
 }))
 
 import { LLMService } from '../../src/main/core/llmService'
@@ -53,14 +53,30 @@ const rStory = auditOps.reviewStoryOp as unknown as Fn
 const dFail = auditOps.diagnoseFailureOp as unknown as Fn
 const aImg = auditOps.auditImageOp as unknown as Fn
 
-const getSettings = vi.fn(async () =>
-  ({ llm: { model: 'test', apiKey: 'sk', baseUrl: 'https://x/' } }) as unknown as AppSettings
+const getSettings = vi.fn(
+  async () => ({ llm: { model: 'test', apiKey: 'sk', baseUrl: 'https://x/' } }) as unknown as AppSettings,
 )
-const GT: GenreTemplate[] = [{ key: 'wuxia', name: '武侠', promptStyle: 'wuxia tone' }]
+const GT: GenreTemplate[] = [{ key: 'wuxia', label: '武侠', promptStyle: 'wuxia tone' }]
 
 beforeEach(() => {
   vi.clearAllMocks()
-  for (const m of [hcc, ht, pick, tPrompt, oPrompt, fillField, tText, wScript, wFrames, rScript, sScript, aOp, rStory, dFail, aImg]) {
+  for (const m of [
+    hcc,
+    ht,
+    pick,
+    tPrompt,
+    oPrompt,
+    fillField,
+    tText,
+    wScript,
+    wFrames,
+    rScript,
+    sScript,
+    aOp,
+    rStory,
+    dFail,
+    aImg,
+  ]) {
     m.mockReset()
     m.mockResolvedValue({})
   }
@@ -75,15 +91,27 @@ describe('LLMService · HTTP 层门面', () => {
   it('chatCompletion 把 messages + opts 原样转发到 httpChatCompletion', async () => {
     const messages = [{ role: 'user' as const, content: 'hi' }]
     hcc.mockResolvedValue({ role: 'assistant', content: 'yo' })
-    const r = await svc.chatCompletion(messages, { temperature: 0.2, timeoutMs: 30_000, tools: [], signal: undefined, effort: 'high' })
-    expect(hcc).toHaveBeenCalledWith(getSettings, messages, { temperature: 0.2, timeoutMs: 30_000, tools: [], signal: undefined, effort: 'high' })
+    const r = await svc.chatCompletion(messages, {
+      temperature: 0.2,
+      timeoutMs: 30_000,
+      tools: [],
+      signal: undefined,
+      effort: 'high',
+    })
+    expect(hcc).toHaveBeenCalledWith(getSettings, messages, {
+      temperature: 0.2,
+      timeoutMs: 30_000,
+      tools: [],
+      signal: undefined,
+      effort: 'high',
+    })
     expect(r).toEqual({ role: 'assistant', content: 'yo' })
   })
 
   it('chatCompletion 默认 opts 为空对象', async () => {
     hcc.mockResolvedValue({ role: 'assistant', content: 'x' })
     await svc.chatCompletion([{ role: 'user', content: 'a' }])
-    expect(hcc.mock.calls[0][2]).toEqual({})
+    expect(hcc.mock.calls[0]?.[2]).toEqual({})
   })
 
   it('test 转发到 httpTest 并返回模型名字符串', async () => {
@@ -94,8 +122,7 @@ describe('LLMService · HTTP 层门面', () => {
 
   it('chatCompletion 错误透传（下游 http 400 → 抛出）', async () => {
     hcc.mockRejectedValue(new Error('HTTP 400 bad request'))
-    await expect(svc.chatCompletion([{ role: 'user', content: 'x' }]))
-      .rejects.toThrow('HTTP 400 bad request')
+    await expect(svc.chatCompletion([{ role: 'user', content: 'x' }])).rejects.toThrow('HTTP 400 bad request')
   })
 
   it('test 错误透传（无 API Key → 抛出）', async () => {
@@ -109,9 +136,11 @@ describe('LLMService · HTTP 层门面', () => {
 describe('LLMService · 剧本操作层门面', () => {
   it('pickCandidate / translatePrompt / optimizePrompt / fillPromptField / translateText 正确透传', async () => {
     pick.mockResolvedValue({ index: 2, reason: '最优' })
-    expect(await svc.pickCandidate({ kind: 'character', brief: '', candidates: [] }))
-      .toEqual({ index: 2, reason: '最优' })
-    expect(pick.mock.calls[0][0]).toBe(getSettings)
+    expect(await svc.pickCandidate({ kind: 'character', brief: '', candidates: [] })).toEqual({
+      index: 2,
+      reason: '最优',
+    })
+    expect(pick.mock.calls[0]?.[0]).toBe(getSettings)
 
     tPrompt.mockResolvedValue('professional prompt')
     await svc.translatePrompt({ scene: '巷', action: '跑', dialogue: '走', genre: 'wuxia' })
@@ -160,7 +189,7 @@ describe('LLMService · 剧本操作层门面', () => {
   it('analyze 省略 opts → 下游收到 undefined', async () => {
     aOp.mockResolvedValue({ characters: [], shots: [] })
     await svc.analyze('s', 'wuxia')
-    expect(aOp.mock.calls[0][4]).toBeUndefined()
+    expect(aOp.mock.calls[0]?.[4]).toBeUndefined()
   })
 
   it('剧本操作层错误原样透传', async () => {
@@ -178,7 +207,7 @@ describe('LLMService · 审核层门面', () => {
     imagePath: 'C:/out/shot1.jpg',
     kind: 'video' as const,
     checklist: [],
-    context: { index: 1, scene: '', character: '', action: '', shotSize: '', camera: '' }
+    context: { index: 1, scene: '', character: '', action: '', shotSize: '', camera: '' },
   }
 
   it('reviewStory / diagnoseFailure / auditImage 正确透传输入对象', async () => {

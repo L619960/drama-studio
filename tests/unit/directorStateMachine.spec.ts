@@ -13,11 +13,11 @@ import * as fs from 'node:fs/promises'
 // 单元测试只测状态机逻辑，不落盘：mock 掉原子写，避免 emitStateImpl 里 fire-and-forget
 // 的 persistImpl 在测试清理 tmp 目录时抛未处理 rejection。hydrate 的读盘仍用真实 fs。
 vi.mock('../../src/main/core/fsUtil', () => ({
-  atomicWriteJson: vi.fn().mockResolvedValue(undefined)
+  atomicWriteJson: vi.fn().mockResolvedValue(undefined),
 }))
 
 import type { DirectorAgent } from '../../src/main/core/directorAgent'
-import type { DirectorState, DirectorStage, StageState } from '../../src/shared/ipcTypes'
+import type { AppSettings, Project, DirectorState, DirectorStage, StageState } from '../../src/shared/ipcTypes'
 import { STAGE_ORDER, LOG_LIMIT } from '../../src/main/core/directorConstants'
 import { DEFAULT_DIRECTOR_GATES } from '../../src/shared/pipelineGuards'
 import {
@@ -35,7 +35,7 @@ import {
   listInterruptedImpl,
   enableGatesImpl,
   clearStateImpl,
-  emitStateImpl
+  emitStateImpl,
 } from '../../src/main/core/directorStateMachine'
 
 function makeState(projectId: string): DirectorState {
@@ -53,7 +53,7 @@ function makeState(projectId: string): DirectorState {
     doneShots: 0,
     failedShotIds: [],
     startedAt: Date.now(),
-    logs: []
+    logs: [],
   }
 }
 
@@ -76,7 +76,7 @@ function makeAgent(baseDir: string) {
     unsubscribeRenderProgress: vi.fn(),
     // 仅 pauseUntilShotsReviewed / recoverAll 用到，本测试不触达，留空
     settings: { get: vi.fn() },
-    store: { get: vi.fn() }
+    store: { get: vi.fn() },
   } as unknown as DirectorAgent & {
     waiters: Map<string, () => void>
   }
@@ -130,7 +130,7 @@ describe('setStageImpl', () => {
     setStageImpl(agent, 'p1', 'render', 'running', '同一条进度', 10)
     setStageImpl(agent, 'p1', 'render', 'running', '同一条进度', 20)
     const logs = agent.states.get('p1')!.logs
-    expect(logs.filter(l => l.message.includes('同一条进度'))).toHaveLength(1)
+    expect(logs.filter((l) => l.message.includes('同一条进度'))).toHaveLength(1)
   })
 })
 
@@ -177,8 +177,8 @@ describe('maybeGateImpl：pause → resume 放行', () => {
     await done
 
     // 恢复后应补一条「已继续执行」日志
-    const logs = agent.states.get('p1')!.logs.map(l => l.message)
-    expect(logs.some(m => m.includes('已继续执行'))).toBe(true)
+    const logs = agent.states.get('p1')!.logs.map((l) => l.message)
+    expect(logs.some((m) => m.includes('已继续执行'))).toBe(true)
   })
 
   it('已取消时直接放行，不挂起', async () => {
@@ -215,7 +215,7 @@ describe('hydrateImpl：崩溃恢复', () => {
     expect(restored!.stages.render.percent).toBe(33)
     expect(restored!.stages.render.message).toContain('应用重启')
     // 补了一条中断说明日志
-    expect(restored!.logs.some(l => l.message.includes('应用重启'))).toBe(true)
+    expect(restored!.logs.some((l) => l.message.includes('应用重启'))).toBe(true)
     // 已入内存
     expect(agent.states.get('p1')).toBe(restored)
   })
@@ -286,7 +286,7 @@ describe('hydrateImpl：崩溃恢复', () => {
     await fs.writeFile(path.join(projDir, 'director-state.json'), JSON.stringify(disk))
 
     const restored = await hydrateImpl(agent, 'p_log')
-    const interruptedLog = restored!.logs.find(l => l.message.includes('应用重启'))
+    const interruptedLog = restored!.logs.find((l) => l.message.includes('应用重启'))
     expect(interruptedLog).toBeTruthy()
     expect(interruptedLog!.message).toContain('角色建档')
   })
@@ -345,10 +345,10 @@ describe('listInterruptedImpl：重启后中断任务清单', () => {
     await fs.mkdir(path.join(tmpDir, 'projects', 'p_none'), { recursive: true })
 
     const list = await listInterruptedImpl(agent)
-    expect(list.map(t => t.projectId)).toEqual(['p_b', 'p_a'])
-    expect(list[1].interruptedStage).toBe('render')
-    expect(list[1].reason).toContain('渲染')
-    expect(list[0].interruptedStage).toBe('render')
+    expect(list.map((t) => t.projectId)).toEqual(['p_b', 'p_a'])
+    expect(list[1]?.interruptedStage).toBe('render')
+    expect(list[1]?.reason).toContain('渲染')
+    expect(list[0]?.interruptedStage).toBe('render')
   })
 
   it('title 为空时回退 project.json 标题，仍无则用项目 id', async () => {
@@ -371,8 +371,8 @@ describe('listInterruptedImpl：重启后中断任务清单', () => {
     await fs.writeFile(path.join(dir2, 'director-state.json'), JSON.stringify(s2))
 
     const list = await listInterruptedImpl(agent)
-    expect(list.find(t => t.projectId === 'p_json')!.projectName).toBe('来自项目文件')
-    expect(list.find(t => t.projectId === 'p_id')!.projectName).toBe('p_id')
+    expect(list.find((t) => t.projectId === 'p_json')!.projectName).toBe('来自项目文件')
+    expect(list.find((t) => t.projectId === 'p_id')!.projectName).toBe('p_id')
   })
 })
 
@@ -480,7 +480,7 @@ describe('listActiveStatesImpl：并行活跃任务', () => {
     agent.states.set('p-done', finished)
 
     const active = listActiveStatesImpl(agent)
-    expect(active.map(s => s.projectId)).toEqual(['p-pause', 'p-run'])
+    expect(active.map((s) => s.projectId)).toEqual(['p-pause', 'p-run'])
   })
 
   it('最后日志时间优先于 startedAt', () => {
@@ -492,7 +492,7 @@ describe('listActiveStatesImpl：并行活跃任务', () => {
     b.logs.push({ id: 1, stage: 'analyze', level: 'info', message: 'x', timestamp: 900 })
     agent.states.set('a', a)
     agent.states.set('b', b)
-    expect(listActiveStatesImpl(agent)[0].projectId).toBe('b')
+    expect(listActiveStatesImpl(agent)[0]?.projectId).toBe('b')
   })
 })
 
@@ -500,26 +500,32 @@ describe('pauseUntilShotsReviewedImpl：结构化门禁负载', () => {
   function makeProject(ids: string[]) {
     return {
       shots: ids.map((id, i) => ({
-        id, index: i + 1, type: 'i2v' as const, reviewed: undefined as boolean | undefined,
-        firstFramePath: ''
-      }))
+        id,
+        index: i + 1,
+        type: 'i2v' as const,
+        reviewed: undefined as boolean | undefined,
+        firstFramePath: '',
+      })),
     }
   }
 
   it('block 模式：pendingGates 写入完整镜号清单，恢复后清空', async () => {
     const agent = makeAgent(tmpDir)
     agent.states.set('p1', makeState('p1'))
-    agent.settings.get = vi.fn(async () => ({ render: { shotReviewGate: 'block' } }))
-    agent.store.get = vi.fn(async () => makeProject(['a', 'b', 'c', 'd', 'e', 'f']))
+    agent.settings.get = vi.fn(async () => ({ render: { shotReviewGate: 'block' } }) as unknown as AppSettings)
+    agent.store.get = vi.fn(async () => makeProject(['a', 'b', 'c', 'd', 'e', 'f']) as unknown as Project)
 
     const promise = pauseUntilShotsReviewedImpl(agent, 'p1')
     await vi.waitFor(() => {
       const st = agent.states.get('p1')!
       expect(st.paused).toBe(true)
-      expect(st.pendingGates).toEqual([{
-        stage: 'render', reason: 'shotReview',
-        unreviewedShotIds: ['a', 'b', 'c', 'd', 'e', 'f']
-      }])
+      expect(st.pendingGates).toEqual([
+        {
+          stage: 'render',
+          reason: 'shotReview',
+          unreviewedShotIds: ['a', 'b', 'c', 'd', 'e', 'f'],
+        },
+      ])
     })
     agent.waiters.get('p1')!()
     await promise
@@ -529,8 +535,8 @@ describe('pauseUntilShotsReviewedImpl：结构化门禁负载', () => {
   it('warn 模式：告警放行，不暂停也不写负载', async () => {
     const agent = makeAgent(tmpDir)
     agent.states.set('p1', makeState('p1'))
-    agent.settings.get = vi.fn(async () => ({ render: { shotReviewGate: 'warn' } }))
-    agent.store.get = vi.fn(async () => makeProject(['a']))
+    agent.settings.get = vi.fn(async () => ({ render: { shotReviewGate: 'warn' } }) as unknown as AppSettings)
+    agent.store.get = vi.fn(async () => makeProject(['a']) as unknown as Project)
     await expect(pauseUntilShotsReviewedImpl(agent, 'p1')).resolves.toBe(true)
     expect(agent.states.get('p1')!.paused).toBe(false)
     expect(agent.states.get('p1')!.pendingGates).toBeUndefined()
@@ -541,8 +547,8 @@ describe('pauseUntilShotsReviewedImpl：结构化门禁负载', () => {
     const st = makeState('p1')
     st.pendingGates = [{ stage: 'render', reason: 'shotReview', unreviewedShotIds: ['old'] }]
     agent.states.set('p1', st)
-    agent.settings.get = vi.fn(async () => ({ render: { shotReviewGate: 'block' } }))
-    agent.store.get = vi.fn(async () => ({ shots: [] }))
+    agent.settings.get = vi.fn(async () => ({ render: { shotReviewGate: 'block' } }) as unknown as AppSettings)
+    agent.store.get = vi.fn(async () => ({ shots: [] }) as unknown as Project)
     await expect(pauseUntilShotsReviewedImpl(agent, 'p1')).resolves.toBe(true)
     expect(agent.states.get('p1')!.pendingGates).toEqual([])
   })
@@ -560,7 +566,7 @@ describe('maybeGateImpl：配置门命中', () => {
     // 调用登记的 resolve 放行；函数本身只补续跑日志，paused 由调用方续跑时清除
     agent.waiters.get('p1')!()
     await done
-    expect(agent.states.get('p1')!.logs.some(l => l.message.includes('已继续执行'))).toBe(true)
+    expect(agent.states.get('p1')!.logs.some((l) => l.message.includes('已继续执行'))).toBe(true)
   })
 })
 

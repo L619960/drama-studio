@@ -1,7 +1,9 @@
 /**
  * 文本净化域：渲染提示词清洗、对戏从句剥离、户外暗示净化、声音拟音词剥离、
- * 概念召唤词擦洗、中文台词保留。叶子模块：纯字符串处理，不依赖其它提示词模块。
+ * 概念召唤词擦洗、中文台词保留。叶子模块：纯字符串处理，仅依赖词表 promptLexicon。
  */
+
+import { SUMMON_ELDERLY_SOURCE } from './promptLexicon'
 
 /* ============ 逻辑原子化（图生视频提示词强制规范） ============ */
 /* 注：原 LOGIC_ATOMIZATION_RULES / MOTION_* 常量已删除——该块从未被注入任何 prompt
@@ -20,7 +22,10 @@ export function sanitizeCinematicPrompt(prompt: string): string {
   // 中文虚词（用户禁令原词 + 常见近义）
   p = p.replace(/(唯美|涟漪|旋涡|氛围|灵魂|能量|如诗如画|诗情画意|诗意|梦幻|缥缈|意境|空灵)/g, '')
   // 英文虚词（与中文禁令对等的艺术化形容词/名词）
-  p = p.replace(/\b(ethereal|dreamy|poetic|enchanted|whimsical|soulful|soul|energy|vortex|ripple|serene|breathtaking|magical)\b/gi, '')
+  p = p.replace(
+    /\b(ethereal|dreamy|poetic|enchanted|whimsical|soulful|soul|energy|vortex|ripple|serene|breathtaking|magical)\b/gi,
+    '',
+  )
   // 因果解释词（中英文）——删除后用逗号衔接，避免句子断裂
   p = p.replace(/(因为|所以|为了|导致|由于|因而)/g, ',')
   p = p.replace(/\b(because|therefore|in order to|so as to|lead to|leads to|caused by|due to)\b/gi, ',')
@@ -38,10 +43,12 @@ export function sanitizeCinematicPrompt(prompt: string): string {
 /**
  * 只剥离「否定式」召唤词（如 "no old man" / "without cars"），保留剧本本体里合法的
  * 年龄/胡茬/车辆正写内容——此前裸词剥离会把老年角色与真实皮肤纹理一起删掉，
- * 属于压制模型正面发挥的规则（2026-10-31 整改）。
+ * 属于压制模型正面发挥的规则（2026-10-31 整改）。老年词源由 promptLexicon 单一维护。
  */
-const SUMMON_RE =
-  /\b(?:no|without|avoid|never|not)\s+(?:old man|old woman|elderly(?:\s+(?:face|man|woman|person))?|white stubble|gr[ae]y stubble|weathered face|white beard|gr[ae]y beard|automobiles?|vehicles?|cars?|suv|motorcycle)\b/gi
+const SUMMON_RE = new RegExp(
+  `\\b(?:no|without|avoid|never|not)\\s+(?:${SUMMON_ELDERLY_SOURCE}|automobiles?|vehicles?|cars?|suv|motorcycle)\\b`,
+  'gi',
+)
 
 /** 送进正向提示词前去掉会把概念召进画面的词。负向词只允许进有负向入口的工作流。 */
 export function scrubSummoningTerms(text: string): string {
@@ -56,9 +63,10 @@ export function scrubSummoningTerms(text: string): string {
 
 /** 正向里的中文会变成旁白。台词标记 <d>[Chinese]…</d> 保留。 */
 export function keepDialogueChinese(text: string): string {
-  return text.split(/(<d>\[Chinese\][\s\S]*?<\/d>)/g).map(part =>
-    part.startsWith('<d>') ? part : part.replace(/[\u4e00-\u9fff]+/g, ' ').replace(/\s{2,}/g, ' ')
-  ).join('')
+  return text
+    .split(/(<d>\[Chinese\][\s\S]*?<\/d>)/g)
+    .map((part) => (part.startsWith('<d>') ? part : part.replace(/[\u4e00-\u9fff]+/g, ' ').replace(/\s{2,}/g, ' ')))
+    .join('')
 }
 
 /** 台词里的表演指示括号（（录音播放）（画外音）（冷笑）…）不是台词本体：
@@ -81,8 +89,14 @@ export function stripDialogueDirections(text: string): string {
 export function stripSoundCuesForImage(text: string): string {
   if (!text) return text
   return text
-    .replace(/\b[\w-]+(?:\s+[\w-]+){0,2}\s+(?:hiss|hissing|rustle|rustling|echoes?|echoing|rumble|rumbling|murmur|buzz|buzzing|hum|humming|whirr|clatter|patter|drumming|sizzle)\b/gi, '')
-    .replace(/\b(?:sound|sounds|soundscape|ambience|ambiance|ambient noise|background noise)\s+(?:of|from|like)\s+[^,;.]*/gi, '')
+    .replace(
+      /\b[\w-]+(?:\s+[\w-]+){0,2}\s+(?:hiss|hissing|rustle|rustling|echoes?|echoing|rumble|rumbling|murmur|buzz|buzzing|hum|humming|whirr|clatter|patter|drumming|sizzle)\b/gi,
+      '',
+    )
+    .replace(
+      /\b(?:sound|sounds|soundscape|ambience|ambiance|ambient noise|background noise)\s+(?:of|from|like)\s+[^,;.]*/gi,
+      '',
+    )
     .replace(/\s*,\s*,\s*/g, ',')
     .replace(/\s{2,}/g, ' ')
     .replace(/^[,.\s]+|[,.\s]+$/g, '')
@@ -110,12 +124,30 @@ export function soloizeAction(text: string): string {
   if (!text) return text
   let t = text
   // 人名可能已先被换成 off-screen partner，所以 collides with / collides the partner 都要清
-  t = t.replace(/\b(?:collides?|bumps?|crashes?)(?:\s+with)?(?:\s+(?:the\s+)?(?:off-screen\s+partner|subject))?\b[^,.;]*/gi, 'stands still')
-  t = t.replace(/\b(?:leans?|leaning)\s+close(?:\s+to)?(?:\s+(?:the\s+)?(?:off-screen\s+partner|subject))?\b[^,.;]*/gi, 'leans slightly forward')
-  t = t.replace(/\b(?:whispers?|whispering|speaks?|speaking|talks?|talking)\s+(?:into|to|in)\s+(?:his|her|their|[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*|the\s+(?:off-screen\s+partner|subject))(?:'s)?\s*(?:ear)?\b[^,.;]*/gi, 'speaks softly')
-  t = t.replace(/\b(?:(?:her|his|their)\s+)?(?:hands?\s+)?(?:gripping|grabs?|grabbing|holds?|holding|clutches?|clutching)\s+(?:his|her|their)\s+(?:waist|arm|shoulder|hand|collar)\b[^,.;]*/gi, 'hands held near the torso')
-  t = t.replace(/\b(?:embraces?|embracing|hugs?|hugging|pulls?\s+(?:him|her|them)\s+(?:in|close)|pushes?\s+(?:him|her|them))\b[^,.;]*/gi, 'reaches one hand forward')
-  t = t.replace(/\b(?:looking|looks)\s+up\s+(?:at|to)\s+(?:him|her|them|the\s+(?:subject|off-screen\s+partner))\b/gi, 'looking up')
+  t = t.replace(
+    /\b(?:collides?|bumps?|crashes?)(?:\s+with)?(?:\s+(?:the\s+)?(?:off-screen\s+partner|subject))?\b[^,.;]*/gi,
+    'stands still',
+  )
+  t = t.replace(
+    /\b(?:leans?|leaning)\s+close(?:\s+to)?(?:\s+(?:the\s+)?(?:off-screen\s+partner|subject))?\b[^,.;]*/gi,
+    'leans slightly forward',
+  )
+  t = t.replace(
+    /\b(?:whispers?|whispering|speaks?|speaking|talks?|talking)\s+(?:into|to|in)\s+(?:his|her|their|[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*|the\s+(?:off-screen\s+partner|subject))(?:'s)?\s*(?:ear)?\b[^,.;]*/gi,
+    'speaks softly',
+  )
+  t = t.replace(
+    /\b(?:(?:her|his|their)\s+)?(?:hands?\s+)?(?:gripping|grabs?|grabbing|holds?|holding|clutches?|clutching)\s+(?:his|her|their)\s+(?:waist|arm|shoulder|hand|collar)\b[^,.;]*/gi,
+    'hands held near the torso',
+  )
+  t = t.replace(
+    /\b(?:embraces?|embracing|hugs?|hugging|pulls?\s+(?:him|her|them)\s+(?:in|close)|pushes?\s+(?:him|her|them))\b[^,.;]*/gi,
+    'reaches one hand forward',
+  )
+  t = t.replace(
+    /\b(?:looking|looks)\s+up\s+(?:at|to)\s+(?:him|her|them|the\s+(?:subject|off-screen\s+partner))\b/gi,
+    'looking up',
+  )
   t = t.replace(/\bthe\s+off-screen\s+partner(?:\s*\([^)]*\))?/gi, '')
   t = t.replace(/\b(?:him|her|them)\b/gi, '')
   t = t.replace(/\bhands\s+hands\b/gi, 'hands')
@@ -127,10 +159,7 @@ export function soloizeAction(text: string): string {
 /**
  * 按给定姓名表替换（中文名 + 拼音空格名）。主体名删成空主语，其余名改画外。
  */
-export function maskCastNames(
-  text: string,
-  opts: { selfNames?: string[]; otherNames?: string[] }
-): string {
+export function maskCastNames(text: string, opts: { selfNames?: string[]; otherNames?: string[] }): string {
   if (!text) return text
   let s = text
   const esc = (n: string) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -142,7 +171,10 @@ export function maskCastNames(
     if (!n?.trim()) continue
     s = s.replace(new RegExp(`\\b${esc(n.trim())}\\b`, 'gi'), '')
   }
-  return s.replace(/\s{2,}/g, ' ').replace(/\s*,\s*,/g, ',').trim()
+  return s
+    .replace(/\s{2,}/g, ' ')
+    .replace(/\s*,\s*,/g, ',')
+    .trim()
 }
 
 /**
@@ -160,21 +192,36 @@ export function stripOtherPersonClauses(text: string): string {
   // "off-screen X" / "off frame X"
   t = t.replace(/\boff-?screen\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b/g, 'off-screen partner')
   // ", eyes/gaze locked on X ..." 对视从句（删到标点）
-  t = t.replace(/,\s*(?:eyes|gaze|glance|looks?|stare|staring|watching|meeting)\s+(?:locked\s+)?(?:on|at|toward|into|for|with)\s+[^,。;]+/g, '')
+  t = t.replace(
+    /,\s*(?:eyes|gaze|glance|looks?|stare|staring|watching|meeting)\s+(?:locked\s+)?(?:on|at|toward|into|for|with)\s+[^,。;]+/g,
+    '',
+  )
   // ", eyes searching X ..."（searching 直接接宾语，不接介词）
   t = t.replace(/,\s*eyes\s+searching\s+[^,。;]+/g, '')
   // ", looking/turning/glancing/nodding/facing (toward/at) X ..." 面向从句
-  t = t.replace(/,\s*(?:looking|turning|glancing|nodding|facing)\s+(?:toward|towards|at|away from|past)\s+[^,。;]+/g, '')
+  t = t.replace(
+    /,\s*(?:looking|turning|glancing|nodding|facing)\s+(?:toward|towards|at|away from|past)\s+[^,。;]+/g,
+    '',
+  )
   // 对坐结构整段剥离（须在最前面命中，先于下方介词替换——否则人名先被换成
   // "the off-screen partner"，from 消失后整段对坐结构就无法再匹配）：
   // "across the counter from crouching Lin Chuan" / "opposite the counter from him"——
   // 只替换人名会留下 "across the counter + partner"（两人隔着柜台对坐），实测模型必画双人；
   // 整段换成 "alone" 后画面只剩主体单人在柜台前。
-  t = t.replace(/\b(?:across|opposite)\s+the\s+[\w ]+?\s+from\s+(?:crouching|standing|sitting|leaning|reacting|waiting|holding|watching|speaking|talking|staring|looking|facing|another|the other)?\s*(?:[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*|him|her|them)\b/g, 'alone')
+  t = t.replace(
+    /\b(?:across|opposite)\s+the\s+[\w ]+?\s+from\s+(?:crouching|standing|sitting|leaning|reacting|waiting|holding|watching|speaking|talking|staring|looking|facing|another|the other)?\s*(?:[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*|him|her|them)\b/g,
+    'alone',
+  )
   // "opposite Su Wan"、"reacting to Lin Chuan"、"collides with Lu Hanzhou"、"close to Su Tang's ear"
-  t = t.replace(/\b(?:from|across|opposite|beside|next to|behind|in front of|against|with|to|into|toward|towards|at)\s+(?:the\s+)?(?:crouching|standing|sitting|leaning|reacting|waiting|holding|watching|speaking|talking|staring|looking|facing|another|the other)?\s*[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*(?:'s)?/g, 'the off-screen partner')
+  t = t.replace(
+    /\b(?:from|across|opposite|beside|next to|behind|in front of|against|with|to|into|toward|towards|at)\s+(?:the\s+)?(?:crouching|standing|sitting|leaning|reacting|waiting|holding|watching|speaking|talking|staring|looking|facing|another|the other)?\s*[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*(?:'s)?/g,
+    'the off-screen partner',
+  )
   // "toward/at off-screen X" 独立对戏指向
-  t = t.replace(/\b(?:toward|towards|at|to)\s+(?:the\s+)?off-?screen\s+[A-Za-z][^,。;]*/g, 'toward the off-screen partner')
+  t = t.replace(
+    /\b(?:toward|towards|at|to)\s+(?:the\s+)?off-?screen\s+[A-Za-z][^,。;]*/g,
+    'toward the off-screen partner',
+  )
   // 残留双词英文名一律去掉（对戏对象漏网时的兜底）
   t = stripEnglishCastNames(t)
   // 清理残留双逗号与多余空白
@@ -195,7 +242,10 @@ export function isPlaybackOrVoiceoverAction(action?: string): boolean {
  */
 export function stripOutdoorHints(text: string, scene: string): string {
   if (!text) return text
-  const indoor = /店|室|内|barbershop|barber\s*shop|shop|store|room|office|home|kitchen|studio|hall|cafe|restaurant|garage|school|hospital/i.test(scene || '')
+  const indoor =
+    /店|室|内|barbershop|barber\s*shop|shop|store|room|office|home|kitchen|studio|hall|cafe|restaurant|garage|school|hospital/i.test(
+      scene || '',
+    )
   if (!indoor) return text
   return text
     .replace(/\brain hiss continues outside\b/gi, 'rain hiss continues on the window')

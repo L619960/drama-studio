@@ -29,7 +29,9 @@ describe('postChatCompletion · 统一 POST 与 400/422 回退', () => {
     const out = await postChatCompletion(settings, body)
     expect(out).toBe(resp)
     expect(post).toHaveBeenCalledTimes(1)
-    const [url, sentBody, cfg] = post.mock.calls[0]
+    const call = post.mock.calls[0]
+    if (!call) throw new Error('测试夹具缺少 post.mock.calls[0]')
+    const [url, sentBody, cfg] = call
     expect(url).toBe('https://api.test.com/chat/completions')
     expect(sentBody).toBe(body)
     expect(cfg.headers).toEqual({ Authorization: 'Bearer sk-test' })
@@ -41,7 +43,7 @@ describe('postChatCompletion · 统一 POST 与 400/422 回退', () => {
     post.mockResolvedValue({ data: {} })
     const ac = new AbortController()
     await postChatCompletion(settings, {}, { timeoutMs: 5000, signal: ac.signal })
-    expect(post.mock.calls[0][2]).toMatchObject({ timeout: 5000, signal: ac.signal })
+    expect(post.mock.calls[0]?.[2]).toMatchObject({ timeout: 5000, signal: ac.signal })
   })
 
   it('400 + dropOn422 → 丢弃 thinking/effort 重试一次并成功', async () => {
@@ -50,7 +52,7 @@ describe('postChatCompletion · 统一 POST 与 400/422 回退', () => {
     const out = await postChatCompletion(settings, body, { dropOn422: ['thinking', 'effort'] })
     expect(out.data).toEqual({ ok: 1 })
     expect(post).toHaveBeenCalledTimes(2)
-    const retryBody = post.mock.calls[1][1]
+    const retryBody = post.mock.calls[1]?.[1]
     expect(retryBody.thinking).toBeUndefined()
     expect(retryBody.effort).toBeUndefined()
     expect(retryBody.temperature).toBe(0.7)
@@ -60,7 +62,7 @@ describe('postChatCompletion · 统一 POST 与 400/422 回退', () => {
   it('422 + dropOn422=["thinking"] → 仅丢 thinking', async () => {
     post.mockRejectedValueOnce(httpErr(422)).mockResolvedValueOnce({ data: { ok: 2 } })
     await postChatCompletion(settings, { thinking: 1, effort: 2 }, { dropOn422: ['thinking'] })
-    const retryBody = post.mock.calls[1][1]
+    const retryBody = post.mock.calls[1]?.[1]
     expect(retryBody.thinking).toBeUndefined()
     expect(retryBody.effort).toBe(2)
   })
@@ -82,9 +84,7 @@ describe('postChatCompletion · 统一 POST 与 400/422 回退', () => {
   it('非 400/422（500）+ dropOn422 → 仍原样抛出', async () => {
     const err = httpErr(500)
     post.mockRejectedValue(err)
-    await expect(
-      postChatCompletion(settings, { thinking: 1 }, { dropOn422: ['thinking'] })
-    ).rejects.toBe(err)
+    await expect(postChatCompletion(settings, { thinking: 1 }, { dropOn422: ['thinking'] })).rejects.toBe(err)
     expect(post).toHaveBeenCalledTimes(1)
   })
 
@@ -92,9 +92,7 @@ describe('postChatCompletion · 统一 POST 与 400/422 回退', () => {
     const err1 = httpErr(400)
     const err2 = httpErr(401)
     post.mockRejectedValueOnce(err1).mockRejectedValueOnce(err2)
-    await expect(
-      postChatCompletion(settings, { thinking: 1 }, { dropOn422: ['thinking'] })
-    ).rejects.toBe(err2)
+    await expect(postChatCompletion(settings, { thinking: 1 }, { dropOn422: ['thinking'] })).rejects.toBe(err2)
     expect(post).toHaveBeenCalledTimes(2)
   })
 

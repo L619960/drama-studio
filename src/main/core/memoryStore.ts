@@ -7,7 +7,7 @@ const SAVE_FILE = 'memory.json'
 const KIND_TITLE: Record<MemoryKind, string> = {
   preference: '用户偏好',
   rule: '制作规则',
-  lesson: '经验教训'
+  lesson: '经验教训',
 }
 const PER_KIND_LIMIT = 30
 /** token 优化：单条记忆注入 system prompt 的内容截断长度（title 全文 + content 截断）。
@@ -47,7 +47,7 @@ export class MemoryStore {
       }
     }
     const all = [...this.cache].sort((a, b) => b.updatedAt - a.updatedAt)
-    return kind ? all.filter(m => m.kind === kind) : all
+    return kind ? all.filter((m) => m.kind === kind) : all
   }
 
   async create(input: { kind: MemoryKind; title: string; content: string }): Promise<MemoryItem> {
@@ -60,7 +60,7 @@ export class MemoryStore {
         title: input.title.trim(),
         content: input.content.trim(),
         createdAt: now,
-        updatedAt: now
+        updatedAt: now,
       }
       all.unshift(item)
       this.cache = all
@@ -72,9 +72,10 @@ export class MemoryStore {
   async update(id: string, patch: Partial<Pick<MemoryItem, 'title' | 'content' | 'kind'>>): Promise<void> {
     await this.enqueueWrite(async () => {
       const all = await this.list()
-      const idx = all.findIndex(m => m.id === id)
-      if (idx < 0) throw new Error('记忆不存在')
-      all[idx] = { ...all[idx], ...patch, updatedAt: Date.now() }
+      const idx = all.findIndex((m) => m.id === id)
+      const cur = all[idx]
+      if (!cur) throw new Error('记忆不存在')
+      all[idx] = { ...cur, ...patch, updatedAt: Date.now() }
       this.cache = all
       await this.persist()
     })
@@ -83,7 +84,7 @@ export class MemoryStore {
   async remove(id: string): Promise<void> {
     await this.enqueueWrite(async () => {
       const all = await this.list()
-      this.cache = all.filter(m => m.id !== id)
+      this.cache = all.filter((m) => m.id !== id)
       await this.persist()
     })
   }
@@ -95,13 +96,14 @@ export class MemoryStore {
     const sections: string[] = []
     let total = 0
     for (const kind of ['preference', 'rule', 'lesson'] as MemoryKind[]) {
-      const items = all.filter(m => m.kind === kind).slice(0, PER_KIND_LIMIT)
+      const items = all.filter((m) => m.kind === kind).slice(0, PER_KIND_LIMIT)
       if (!items.length) continue
       const lines: string[] = []
       for (const m of items) {
-        const content = m.content.length > MEMORY_CONTENT_KEEP
-          ? `${m.content.slice(0, MEMORY_CONTENT_KEEP)}…（后略，需要全文可让我调 list_memories）`
-          : m.content
+        const content =
+          m.content.length > MEMORY_CONTENT_KEEP
+            ? `${m.content.slice(0, MEMORY_CONTENT_KEEP)}…（后略，需要全文可让我调 list_memories）`
+            : m.content
         const line = `- ${m.title}：${content}`
         if (total + line.length > MEMORY_SUMMARY_BUDGET) {
           lines.push(`- ${m.title}：…（记忆较长已略，需要全文可让我调 list_memories）`)

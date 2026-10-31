@@ -5,12 +5,7 @@
     <el-form label-width="140px">
       <el-form-item label="默认工作流">
         <el-select v-model="settings.workflow.default" placeholder="选择默认工作流" style="width: 280px">
-          <el-option
-            v-for="w in workflows"
-            :key="w.name"
-            :label="w.name"
-            :value="w.name"
-          >
+          <el-option v-for="w in workflows" :key="w.name" :label="w.name" :value="w.name">
             <span>{{ w.name }}</span>
             <el-tag size="small" style="margin-left: 8px">{{ w.hasImageInput ? 'I2V' : 'T2V' }}</el-tag>
           </el-option>
@@ -21,22 +16,14 @@
         <div class="stage-grid">
           <div v-for="stage in STAGES" :key="stage.key" class="stage-row">
             <span class="stage-label">{{ stage.label }}</span>
-            <el-select
-              v-model="settings.workflow[stage.key]"
-              clearable
-              placeholder="内置默认"
-              style="width: 240px"
-            >
-              <el-option
-                v-for="w in workflows"
-                :key="w.name"
-                :label="w.name"
-                :value="w.name"
-              />
+            <el-select v-model="settings.workflow[stage.key]" clearable placeholder="内置默认" style="width: 240px">
+              <el-option v-for="w in workflows" :key="w.name" :label="w.name" :value="w.name" />
             </el-select>
           </div>
         </div>
-        <span class="form-tip">留空=用内置默认图片工作流（定妆/场景板/首尾帧是 t2i/i2i，不是上面的视频默认工作流）</span>
+        <span class="form-tip"
+          >留空=用内置默认图片工作流（定妆/场景板/首尾帧是 t2i/i2i，不是上面的视频默认工作流）</span
+        >
       </el-form-item>
       <el-form-item label="负向词补充">
         <div class="stage-grid">
@@ -75,13 +62,15 @@
         <el-tag v-if="w.hasDuration" size="small" type="warning">支持时长</el-tag>
         <el-tag v-if="w.hasEndFrame" size="small" type="danger">首尾帧</el-tag>
       </div>
-      <div class="workflow-ph">占位符：{{ w.placeholders.map(p => '$' + p + '$').join('、') }}</div>
+      <div class="workflow-ph">占位符：{{ w.placeholders.map((p) => '$' + p + '$').join('、') }}</div>
     </div>
   </div>
 
   <!-- 工作流参数配置对话框 -->
   <el-dialog v-model="paramsDialog.visible" :title="`参数配置：${paramsDialog.workflowName}`" width="680px" top="6vh">
-    <div v-if="paramsDialog.loading" style="text-align: center; padding: 40px; color: var(--text-secondary)">加载中...</div>
+    <div v-if="paramsDialog.loading" style="text-align: center; padding: 40px; color: var(--text-secondary)">
+      加载中...
+    </div>
     <div v-else-if="paramsDialog.params.length === 0" class="empty-tip">无可编辑参数</div>
     <div v-else class="params-scroll">
       <div v-for="group in paramsGroups" :key="group.nodeId" class="param-node-group">
@@ -145,7 +134,7 @@ const STAGES = [
   { key: 'casting', label: '定妆照' },
   { key: 'scene', label: '场景板' },
   { key: 'shot', label: '首/尾帧' },
-  { key: 'prop', label: '道具' }
+  { key: 'prop', label: '道具' },
 ] as const
 /** 测试连接 / 停止 ComfyUI / 导入工作流 按钮 loading（UXA-P1-05） */
 const importingWf = ref(false)
@@ -155,7 +144,7 @@ const paramsDialog = reactive({
   visible: false,
   workflowName: '',
   loading: false,
-  params: [] as WorkflowParam[]
+  params: [] as WorkflowParam[],
 })
 
 // 按节点分组参数
@@ -231,11 +220,14 @@ function notifySaved(): void {
     return
   }
   if (savedToastTimer) return
-  savedToastTimer = setTimeout(() => {
-    savedToastTimer = null
-    savedToastAt = Date.now()
-    ElMessage.success('已保存')
-  }, Math.max(0, 3000 - (now - savedToastAt)))
+  savedToastTimer = setTimeout(
+    () => {
+      savedToastTimer = null
+      savedToastAt = Date.now()
+      ElMessage.success('已保存')
+    },
+    Math.max(0, 3000 - (now - savedToastAt)),
+  )
 }
 
 // 保存单个参数修改
@@ -243,8 +235,9 @@ async function saveParam(param: WorkflowParam) {
   try {
     await window.api.workflow.updateParam(paramsDialog.workflowName, param.nodeId, param.key, param.value)
     // 同步更新本地列表中的值
-    const idx = paramsDialog.params.findIndex(p => p.nodeId === param.nodeId && p.key === param.key)
-    if (idx !== -1) paramsDialog.params[idx].value = param.value
+    const idx = paramsDialog.params.findIndex((p) => p.nodeId === param.nodeId && p.key === param.key)
+    const row = idx === -1 ? undefined : paramsDialog.params[idx]
+    if (row) row.value = param.value
     notifySaved()
   } catch (e) {
     ElMessage.error((e as Error).message || '保存失败')
@@ -264,11 +257,29 @@ async function saveParam(param: WorkflowParam) {
   border-bottom: 1px solid var(--border-weak);
 }
 
-.form-tip { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+.form-tip {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
 
-.stage-grid { display: flex; flex-direction: column; gap: 8px; }
-.stage-row { display: flex; align-items: flex-start; gap: 10px; }
-.stage-label { width: 56px; flex-shrink: 0; font-size: 12px; color: var(--text-secondary); line-height: 32px; }
+.stage-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.stage-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.stage-label {
+  width: 56px;
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 32px;
+}
 
 .workflow-card {
   background: var(--bg-card);
@@ -277,19 +288,40 @@ async function saveParam(param: WorkflowParam) {
   padding: 12px 16px;
   margin-bottom: 10px;
 }
-.workflow-name { font-size: 14px; color: var(--text-primary); font-weight: 600; margin-bottom: 6px; }
-.workflow-tags { display: flex; gap: 6px; margin-bottom: 6px; }
-.workflow-ph { font-size: 12px; color: var(--text-secondary); font-family: monospace; }
+.workflow-name {
+  font-size: 14px;
+  color: var(--text-primary);
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.workflow-tags {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.workflow-ph {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-family: monospace;
+}
 .workflow-card-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 6px;
 }
-.empty-tip { color: var(--text-muted); font-size: 13px; padding: 16px; }
+.empty-tip {
+  color: var(--text-muted);
+  font-size: 13px;
+  padding: 16px;
+}
 
 /* 工作流参数配置对话框 */
-.params-scroll { max-height: 65vh; overflow-y: auto; padding-right: 6px; }
+.params-scroll {
+  max-height: 65vh;
+  overflow-y: auto;
+  padding-right: 6px;
+}
 .param-node-group {
   background: var(--bg-card);
   border: 1px solid var(--border);
@@ -306,7 +338,11 @@ async function saveParam(param: WorkflowParam) {
   color: var(--text-primary);
   font-weight: 600;
 }
-.param-node-id { font-size: 11px; color: var(--text-muted); font-weight: 400; }
+.param-node-id {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 400;
+}
 .param-row {
   display: flex;
   align-items: center;
@@ -319,5 +355,8 @@ async function saveParam(param: WorkflowParam) {
   color: var(--text-secondary);
   flex-shrink: 0;
 }
-.param-input { flex: 1; max-width: 280px; }
+.param-input {
+  flex: 1;
+  max-width: 280px;
+}
 </style>

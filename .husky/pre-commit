@@ -1,3 +1,5 @@
 #!/usr/bin/env sh
 . "$(dirname -- "$0")/_/husky.sh"
+# P2-8：只格式化本次暂存的文件（全仓 180+ 文件尚未合 Prettier 口径，不做整仓重排）
+npx lint-staged
 npm run typecheck && npm test

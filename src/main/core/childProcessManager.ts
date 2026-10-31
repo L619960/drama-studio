@@ -23,9 +23,9 @@ export interface ChildHandle {
   bin: string
   args: string[]
   startTime: number
-  timeoutMs?: number
-  logFile?: string
-  reason?: string
+  timeoutMs?: number | undefined
+  logFile?: string | undefined
+  reason?: string | undefined
 }
 
 export interface SpawnOptions {
@@ -78,49 +78,60 @@ export class ChildProcessManager {
       env: options.env,
       windowsHide: options.windowsHide ?? true,
       detached: options.detached,
-      stdio: ['ignore', 'pipe', 'pipe']
+      stdio: ['ignore', 'pipe', 'pipe'],
     })
+    this.register(proc, { bin, args, timeout: options.timeout, label: options.label })
+    return proc
+  }
 
+  /**
+   * CORE-06：登记一个「已由第三方库自行 spawn」的子进程（如 fluent-ffmpeg），
+   * 让它享受同一套超时 kill / 日志落盘 / 退出前批量清理，避免库内进程卡死后无法取消、
+   * 应用退出后残留孤儿进程。
+   */
+  register(
+    proc: ChildProcess,
+    meta: { bin: string; args?: string[]; timeout?: number | undefined; label?: string | undefined },
+  ): void {
     const pid = proc.pid ?? -1
+    if (pid <= 0) return
     const handle: RegisteredChild = {
       pid,
-      bin,
-      args,
+      bin: meta.bin,
+      args: meta.args ?? [],
       startTime: Date.now(),
-      timeoutMs: options.timeout,
+      timeoutMs: meta.timeout,
       proc,
       timer: null,
-      reason: options.label
+      reason: meta.label,
     }
 
     // 日志落盘（best-effort：打不开不影响子进程运行）
-    if (pid > 0) {
-      void this.openLogFile(handle).catch(() => undefined)
-    }
+    void this.openLogFile(handle).catch(() => undefined)
 
     // 超时自动 kill
-    if (options.timeout && pid > 0) {
+    if (meta.timeout) {
       handle.timer = setTimeout(() => {
-        log.warn(`子进程超时（${options.timeout}ms）自动 kill: pid=${pid} ${bin}`)
-        try { proc.kill() } catch { /* 进程可能已退出 */ }
-      }, options.timeout)
+        log.warn(`子进程超时（${meta.timeout}ms）自动 kill: pid=${pid} ${meta.bin}`)
+        try {
+          proc.kill()
+        } catch {
+          /* 进程可能已退出 */
+        }
+      }, meta.timeout)
       // unref 避免定时器阻止进程退出
       handle.timer.unref?.()
     }
 
-    if (pid > 0) {
-      this.children.set(pid, handle)
-    }
+    this.children.set(pid, handle)
 
     const cleanup = (): void => {
       if (handle.timer) clearTimeout(handle.timer)
       if (handle.logFd) void handle.logFd.close().catch(() => undefined)
-      if (pid > 0) this.children.delete(pid)
+      this.children.delete(pid)
     }
     proc.once('close', cleanup)
     proc.once('error', cleanup)
-
-    return proc
   }
 
   /**
@@ -147,7 +158,9 @@ export class ChildProcessManager {
           resolve({ stdout, stderr })
         } else {
           const tail = stderr.slice(-500)
-          const err = new Error(`子进程退出码 ${code}: ${bin} ${args.slice(0, 6).join(' ')}${tail ? `\n--- stderr ---\n${tail}` : ''}`) as Error & { stdout?: string; stderr?: string; code?: number }
+          const err = new Error(
+            `子进程退出码 ${code}: ${bin} ${args.slice(0, 6).join(' ')}${tail ? `\n--- stderr ---\n${tail}` : ''}`,
+          ) as Error & { stdout?: string; stderr?: string; code?: number | undefined }
           err.stdout = stdout
           err.stderr = stderr
           err.code = code ?? undefined
@@ -175,14 +188,14 @@ export class ChildProcessManager {
 
   /** 诊断：当前活跃子进程快照 */
   getActiveHandles(): ChildHandle[] {
-    return [...this.children.values()].map(c => ({
+    return [...this.children.values()].map((c) => ({
       pid: c.pid,
       bin: c.bin,
       args: c.args,
       startTime: c.startTime,
       timeoutMs: c.timeoutMs,
       logFile: c.logFile,
-      reason: c.reason
+      reason: c.reason,
     }))
   }
 

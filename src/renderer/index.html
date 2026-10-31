@@ -3,10 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <!-- CSP（I-6）：阻断注入的外部脚本/远程资源。dev 模式 HMR 需 ws: 与 blob:；
-       Element Plus 运行时注入 style 需 unsafe-inline；媒体/图片走本地 file: 与 blob: -->
+  <!-- CSP（I-6 / SEC-07）：阻断注入的外部脚本与任意外发。
+       渲染层不发网络请求（LLM/ComfyUI 全在主进程），connect-src 只留本机回环；
+       开发态 HMR 所需的 ws://localhost:* 由 electron.vite.config.ts 的 serve 插件注入，
+       生产构建保持收窄。Element Plus 运行时注入 style 需 unsafe-inline；
+       媒体/图片走本地 file: 与 blob:；app-file: 为本机自定义协议（SEC-09 已去 bypassCSP） -->
   <meta http-equiv="Content-Security-Policy"
-    content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: file: app-file:; media-src 'self' blob: file: app-file:; font-src 'self' data:; connect-src 'self' ws: wss: http://127.0.0.1:* http://localhost:* https:; object-src 'none'; frame-src 'none'" />
+    content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: file: app-file:; media-src 'self' blob: file: app-file:; font-src 'self' data:; connect-src 'self' http://127.0.0.1:* ws://127.0.0.1:*; object-src 'none'; frame-src 'none'" />
   <title>短剧工坊 · Drama Studio</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }

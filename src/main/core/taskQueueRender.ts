@@ -26,7 +26,7 @@ export function selectEngineMode(opts: {
   if (opts.preferFlf) return 'wan'
   if (opts.preferH3) {
     if (opts.forceI2v) return 'h3-i2v'
-    return (opts.hasLine && opts.lipMode !== 'latentsync') ? 'h3-r2v' : 'h3-i2v'
+    return opts.hasLine && opts.lipMode !== 'latentsync' ? 'h3-r2v' : 'h3-i2v'
   }
   return 'wan'
 }
@@ -51,13 +51,15 @@ export function computeH3NeedSec(
   shot: Shot,
   audioSec: number | undefined,
   allShots: Shot[],
-  audioLeadSec: number
+  audioLeadSec: number,
 ): number {
   const lastIndex = allShots.reduce((max, s) => Math.max(max, s.index), shot.index)
-  const tailSec = audioTailSecFor({ dialogue: shot.dialogue, emotion: shot.emotion, isLast: shot.index === lastIndex })
-  const designSec = Number.isFinite(shot.frames) && shot.frames > 1
-    ? Math.round((shot.frames - 1) / 16)
-    : 0
+  const tailSec = audioTailSecFor({
+    dialogue: shot.dialogue,
+    ...(shot.emotion !== undefined ? { emotion: shot.emotion } : {}),
+    isLast: shot.index === lastIndex,
+  })
+  const designSec = Number.isFinite(shot.frames) && shot.frames > 1 ? Math.round((shot.frames - 1) / 16) : 0
   const audioNeed = audioSec !== undefined ? audioSec + audioLeadSec + tailSec : 0
   const floorSec = audioSec === undefined ? 2 : 0
   return Math.max(floorSec, designSec, audioNeed)
@@ -69,7 +71,7 @@ export function computeH3NeedSec(
  */
 export function computeH3Length(
   h3NeedSec: number,
-  maxFrames: number
+  maxFrames: number,
 ): { length: number; capped: boolean; capSec: number; needSecRounded: number } {
   const raw = 17 * Math.max(3, Math.ceil((h3NeedSec * 24 - 5) / 17)) + 5
   const length = Math.min(maxFrames, raw)
@@ -85,19 +87,19 @@ export function computeH3Length(
  */
 export function applyOomLightDowngrade(
   mode: EngineMode,
-  state: { h3Length: number; h3Steps: number; wanDurationSec: number }
+  state: { h3Length: number; h3Steps: number; wanDurationSec: number },
 ): { h3Length: number; h3Steps: number; wanDurationSec: number } {
   if (mode.startsWith('h3')) {
     return {
       h3Length: Math.max(56, state.h3Length - 17),
       h3Steps: 8,
-      wanDurationSec: state.wanDurationSec
+      wanDurationSec: state.wanDurationSec,
     }
   }
   return {
     h3Length: state.h3Length,
     h3Steps: state.h3Steps,
-    wanDurationSec: Math.max(2, state.wanDurationSec - 2)
+    wanDurationSec: Math.max(2, state.wanDurationSec - 2),
   }
 }
 
@@ -107,11 +109,11 @@ export function applyOomLightDowngrade(
 export function applyOomTierDowngrade(
   tier: VramTier,
   h3Length: number,
-  wanDurationSec: number
+  wanDurationSec: number,
 ): { h3Length: number; wanDurationSec: number } {
   return {
     h3Length: Math.min(tier.maxFrames, h3Length),
-    wanDurationSec: Math.min(tier.maxWanSec, wanDurationSec)
+    wanDurationSec: Math.min(tier.maxWanSec, wanDurationSec),
   }
 }
 
@@ -141,7 +143,7 @@ export function computeWantedCandidates(renderCandidates: number | undefined): n
 export function computeLipProfile(
   mode: EngineMode,
   needLipSync: boolean,
-  lipSynced: boolean
+  lipSynced: boolean,
 ): RenderProfile['lipSync'] {
   if (mode === 'h3-r2v') return 'native'
   if (needLipSync && lipSynced) return 'latentsync'
@@ -153,20 +155,20 @@ export function computeLipProfile(
  */
 export function isFlf2vWorkflow(
   workflowName: string,
-  meta: { hasEndFrame?: boolean; placeholders?: string[] } | undefined
+  meta: { hasEndFrame?: boolean; placeholders?: string[] } | undefined,
 ): boolean {
-  return workflowName === 'wan22_remix_flf2v' ||
-    (meta?.hasEndFrame ?? (meta?.placeholders ?? []).includes('END_IMAGE'))
+  return workflowName === 'wan22_remix_flf2v' || (meta?.hasEndFrame ?? (meta?.placeholders ?? []).includes('END_IMAGE'))
 }
 
 /**
  * 从工作流元数据列表中挑选 flf2v 工作流名（优先精确名 wan22_remix_flf2v）。
  */
 export function resolveFlfWorkflowName(
-  metas: Array<{ name: string; hasEndFrame?: boolean; placeholders: string[] }>
+  metas: Array<{ name: string; hasEndFrame?: boolean; placeholders: string[] }>,
 ): string | undefined {
-  const flf = metas.find(w => w.name === 'wan22_remix_flf2v')
-    || metas.find(w => w.hasEndFrame || w.placeholders.includes('END_IMAGE'))
+  const flf =
+    metas.find((w) => w.name === 'wan22_remix_flf2v') ||
+    metas.find((w) => w.hasEndFrame || w.placeholders.includes('END_IMAGE'))
   return flf?.name
 }
 
@@ -179,13 +181,13 @@ export function injectH3TurboLora(
   mode: EngineMode,
   turboH3: boolean,
   loraT2v: string,
-  loraR2v: string
+  loraR2v: string,
 ): boolean {
   if (!turboH3 || !mode.startsWith('h3')) return false
   const loraName = mode === 'h3-r2v' ? loraR2v : loraT2v
   graph['25'] = {
     inputs: { model: ['20', 0], lora_name: loraName, strength_model: 1.0 },
-    class_type: 'LoraLoaderModelOnly'
+    class_type: 'LoraLoaderModelOnly',
   }
   const sched42 = graph['42'] as { inputs?: Record<string, unknown> } | undefined
   const guider43 = graph['43'] as { inputs?: Record<string, unknown> } | undefined

@@ -1,4 +1,5 @@
 import type { PromptAuditIssue, PromptAuditStatus } from './ipcTypes'
+import { OOC_WARDROBE_CORE, PERIOD_CUE_RE } from './promptLexicon'
 
 /** 问题码 → 中文类型名（顶部概览与筛选共用） */
 export const AUDIT_CODE_LABELS: Record<string, string> = {
@@ -22,7 +23,7 @@ export const AUDIT_CODE_LABELS: Record<string, string> = {
   'taboo-minor': '敏感·未成年人风险',
   'taboo-politics': '敏感·政治符号',
   'taboo-weapon': '敏感·武器/危险道具',
-  'taboo-substance': '敏感·烟酒赌博'
+  'taboo-substance': '敏感·烟酒赌博',
 }
 /** 英文提示词里混入的中日韩全角/标点字符 */
 export const CJK_RE = /[\u3000-\u303f\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\ufe30-\ufe4f\uff00-\uffef]/g
@@ -32,32 +33,52 @@ export const SLANG_RE = /\bclearly visible\b|\bholding a [\w -]+ visible\b/gi
 export const CROSS_SOURCE =
   '\\b(Lin Chuan|Su Wan|barber|scissor|razor|comb|denim jacket|satchel|barber chair|mirror reflection|dog-eared photograph)\\b'
 /** 时代隔离组：古装/年代剧负向必须包含（实测事故：古装酒楼镜门外开进现代 SUV） */
-export const ERA_TERMS = [
-  'no modern vehicles', 'no cars', 'no electronics',
-  'no asphalt road', 'no glass buildings'
-]
-/** 古装/年代线索（只对命中该线索的镜头做时代隔离校验，避免现代剧被误加 no cars） */
-const PERIOD_RE =
-  /古装|年代|民国|宫廷|武侠|仙侠|古代|清朝|明朝|唐朝|宋朝|汉朝|晋朝|抗战|长袍|汉服|马褂|旗袍|官服|官府|衙门|客栈|酒楼|掌柜|轿子/i
+export const ERA_TERMS = ['no modern vehicles', 'no cars', 'no electronics', 'no asphalt road', 'no glass buildings']
 /** 中文提示词里的高危敏感词（中文描述字段兜底扫描） */
 export const ZH_TABOO_RE = /(裸体|全裸|性行为|色情|血腥|肢解|冰毒|海洛因|未成年)/
 
-/** 高危服装词（lock-unaware 负向会造成"挂上/脱掉"漂移，与 imagePrompts.oocWardrobeNegativeFor 同源） */
-export const OOC_WARDROBE_TERMS = [
-  'apron', 'vest', 'hat', 'cap', 'necktie', 'bow tie', 'scarf', 'gown', 'blazer',
-  'uniform', 'overalls', 'lab coat', 'name tag', 'waiter costume'
-]
+/** 高危服装词（lock-unaware 负向会造成"挂上/脱掉"漂移；与 imagePrompts.oocWardrobeNegativeFor 同源，
+ *  词表本体由 promptLexicon.OOC_WARDROBE_CORE 单一维护） */
+export const OOC_WARDROBE_TERMS = OOC_WARDROBE_CORE
 
 /** 敏感内容规则：error=内容违规必须处理，warn=高风险但不必然违规 */
-interface TabooRule { code: string; level: 'error' | 'warn'; re: RegExp }
+interface TabooRule {
+  code: string
+  level: 'error' | 'warn'
+  re: RegExp
+}
 export const TABOO_RULES: TabooRule[] = [
-  { code: 'taboo-nudity', level: 'error', re: /\b(nude|naked|topless|bare breasts|explicit sex|pornograph\w*|erotic|sexually explicit|undress\w*)\b/i },
-  { code: 'taboo-violence', level: 'error', re: /\b(gore|bloody wound|mutilat\w*|dismember\w*|decapitat\w*|torture|corpse|open wound|stab wound|massacre)\b/i },
-  { code: 'taboo-drugs', level: 'error', re: /\b(cocaine|heroin|methamphetamine|meth\b|fentanyl|drug paraphernalia|injecting drug)\b/i },
-  { code: 'taboo-minor', level: 'error', re: /\b(underage|minor (?:girl|boy|child)|child (?:in|wearing) (?:bikini|swimsuit|lingerie|underwear))\b/i },
-  { code: 'taboo-politics', level: 'error', re: /\b(national flag|political slogan|protest banner|military emblem|government seal|leader portrait)\b/i },
-  { code: 'taboo-weapon', level: 'warn', re: /\b(handgun|pistol|rifle|machine gun|grenade|explosive device|bomb\b|dagger)\b/i },
-  { code: 'taboo-substance', level: 'warn', re: /\b(cigarette|smoking|whisky|vodka|gambling|casino|slot machine)\b/i }
+  {
+    code: 'taboo-nudity',
+    level: 'error',
+    re: /\b(nude|naked|topless|bare breasts|explicit sex|pornograph\w*|erotic|sexually explicit|undress\w*)\b/i,
+  },
+  {
+    code: 'taboo-violence',
+    level: 'error',
+    re: /\b(gore|bloody wound|mutilat\w*|dismember\w*|decapitat\w*|torture|corpse|open wound|stab wound|massacre)\b/i,
+  },
+  {
+    code: 'taboo-drugs',
+    level: 'error',
+    re: /\b(cocaine|heroin|methamphetamine|meth\b|fentanyl|drug paraphernalia|injecting drug)\b/i,
+  },
+  {
+    code: 'taboo-minor',
+    level: 'error',
+    re: /\b(underage|minor (?:girl|boy|child)|child (?:in|wearing) (?:bikini|swimsuit|lingerie|underwear))\b/i,
+  },
+  {
+    code: 'taboo-politics',
+    level: 'error',
+    re: /\b(national flag|political slogan|protest banner|military emblem|government seal|leader portrait)\b/i,
+  },
+  {
+    code: 'taboo-weapon',
+    level: 'warn',
+    re: /\b(handgun|pistol|rifle|machine gun|grenade|explosive device|bomb\b|dagger)\b/i,
+  },
+  { code: 'taboo-substance', level: 'warn', re: /\b(cigarette|smoking|whisky|vodka|gambling|casino|slot machine)\b/i },
 ]
 
 /** 可交给 AI 补写的问题码：需要语义理解（缺失/过短/串戏）。
@@ -90,28 +111,52 @@ export function readStr(src: unknown, field: string): string {
 
 /** 段内首尾可安全删去的虚词（删除词条后遗留的悬空连接词，如 "the hiss of" → "of"） */
 const EDGE_STOP = new Set([
-  'the', 'a', 'an', 'and', 'or', 'of', 'with', 'for', 'to', 'in', 'on', 'at', 'by',
-  'from', 'as', 'into', 'over', 'under', 'that', 'this', 'its', 'their', 'his', 'her'
+  'the',
+  'a',
+  'an',
+  'and',
+  'or',
+  'of',
+  'with',
+  'for',
+  'to',
+  'in',
+  'on',
+  'at',
+  'by',
+  'from',
+  'as',
+  'into',
+  'over',
+  'under',
+  'that',
+  'this',
+  'its',
+  'their',
+  'his',
+  'her',
 ])
 
 /** 收尾清理：删除空的括号/标点杂块，丢弃「只剩虚词」的碎片段，并去掉各段首尾悬空连接词。
  *  例：'the hiss of rain and the sound of chatter,   wide hall interior'
  *   → 'rain, wide hall interior'；'**beauty** (多余空白)' → 'beauty'。 */
 export function tidy(text: string): string {
-  const stripped = text
-    .replace(/\s*[[({]\s*[)\]}\s,;]*\s*[)\]}]/g, ' ')
-    .replace(/\s{2,}/g, ' ')
+  const stripped = text.replace(/\s*[[({]\s*[)\]}\s,;]*\s*[)\]}]/g, ' ').replace(/\s{2,}/g, ' ')
   const segments: string[] = []
   for (const raw of stripped.split(',')) {
     const tokens = raw.trim().split(/\s+/).filter(Boolean)
     // 保留有实义词的段（含数字或 ≥2 字母的词即视为实义；纯虚词残段丢弃）
-    const meaningful = tokens.some(t => !EDGE_STOP.has(t.toLowerCase()) && /[a-z]{2,}|\d/i.test(t))
+    const meaningful = tokens.some((t) => !EDGE_STOP.has(t.toLowerCase()) && /[a-z]{2,}|\d/i.test(t))
     if (!meaningful) continue
-    while (tokens.length > 1 && EDGE_STOP.has(tokens[0].toLowerCase())) tokens.shift()
-    while (tokens.length > 1 && EDGE_STOP.has(tokens[tokens.length - 1].toLowerCase())) tokens.pop()
+    while (tokens.length > 1 && EDGE_STOP.has((tokens[0] ?? '').toLowerCase())) tokens.shift()
+    while (tokens.length > 1 && EDGE_STOP.has((tokens[tokens.length - 1] ?? '').toLowerCase())) tokens.pop()
     segments.push(tokens.join(' '))
   }
-  return segments.join(', ').replace(/,\s*,/g, ',').replace(/^[,\s]+|[,\s]+$/g, '').trim()
+  return segments
+    .join(', ')
+    .replace(/,\s*,/g, ',')
+    .replace(/^[,\s]+|[,\s]+$/g, '')
+    .trim()
 }
 export function makeIssue(
   code: string,
@@ -119,16 +164,18 @@ export function makeIssue(
   field: string,
   fieldLabel: string,
   message: string,
-  fixable: boolean
+  fixable: boolean,
 ): PromptAuditIssue {
   return { code, level, field, fieldLabel, message, fixable }
 }
 
+/** 古装/年代线索（只对命中该线索的镜头做时代隔离校验，避免现代剧被误加 no cars）。
+ *  判定词表由 promptLexicon.PERIOD_CUE_RE 单一维护（比流派判定宽，含服化道线索）。 */
 export function hasPeriodCue(text: string): boolean {
-  return PERIOD_RE.test(text || '')
+  return PERIOD_CUE_RE.test(text || '')
 }
 export function statusOf(issues: PromptAuditIssue[]): PromptAuditStatus {
-  if (issues.some(i => i.level === 'error')) return 'error'
+  if (issues.some((i) => i.level === 'error')) return 'error'
   if (issues.length > 0) return 'warn'
   return 'ok'
 }

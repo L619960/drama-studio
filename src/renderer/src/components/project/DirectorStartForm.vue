@@ -20,7 +20,13 @@
     </el-form-item>
     <el-form-item v-if="draft.mode === 'idea'" label="想法" prop="idea">
       <div class="prompt-row">
-        <el-input v-model="draft.idea" type="textarea" :rows="3" placeholder="写一句灵感，AI 扩写成剧本" style="flex: 1" />
+        <el-input
+          v-model="draft.idea"
+          type="textarea"
+          :rows="3"
+          placeholder="写一句灵感，AI 扩写成剧本"
+          style="flex: 1"
+        />
         <el-button :loading="writingScript" size="small" @click="generateScript">AI 写剧本</el-button>
       </div>
     </el-form-item>
@@ -39,7 +45,9 @@
     </el-form-item>
     <el-form-item label="BGM">
       <div class="bgm-row">
-        <span class="bgm-name" :class="{ placeholder: !draft.bgmPath }">{{ draft.bgmPath || '可选：选择背景音乐' }}</span>
+        <span class="bgm-name" :class="{ placeholder: !draft.bgmPath }">{{
+          draft.bgmPath || '可选：选择背景音乐'
+        }}</span>
         <el-button size="small" @click="selectBgm">选择</el-button>
         <el-button v-if="draft.bgmPath" size="small" link @click="draft.bgmPath = ''">清除</el-button>
       </div>
@@ -49,9 +57,7 @@
         <el-switch v-model="noGates" active-text="一口气跑到底（不在任何阶段暂停）" />
       </div>
       <el-checkbox-group v-if="!noGates" v-model="draft.gateStages">
-        <el-checkbox v-for="g in GATE_OPTIONS" :key="g.value" :label="g.value">
-          {{ g.label }}完成后暂停
-        </el-checkbox>
+        <el-checkbox v-for="g in GATE_OPTIONS" :key="g.value" :label="g.value"> {{ g.label }}完成后暂停 </el-checkbox>
       </el-checkbox-group>
     </el-form-item>
   </el-form>
@@ -91,21 +97,26 @@ const noGates = ref(false)
 const rules: FormRules = {
   title: [{ required: true, whitespace: true, message: '请填写片名', trigger: 'blur' }],
   genre: [{ required: true, whitespace: true, message: '请填写题材', trigger: 'blur' }],
-  idea: [{
-    validator: (_rule, value, callback) => {
-      if (draft.value.mode === 'idea' && !String(value ?? '').trim()) callback(new Error('请写一句灵感'))
-      else callback()
+  idea: [
+    {
+      validator: (_rule, value, callback) => {
+        if (draft.value.mode === 'idea' && !String(value ?? '').trim()) callback(new Error('请写一句灵感'))
+        else callback()
+      },
+      trigger: 'blur',
     },
-    trigger: 'blur'
-  }],
-  videoPath: [{
-    validator: (_rule, value, callback) => {
-      if (draft.value.mode === 'video' && !String(value ?? '').trim()) callback(new Error('请选择视频（或用它拆解剧本）'))
-      else callback()
+  ],
+  videoPath: [
+    {
+      validator: (_rule, value, callback) => {
+        if (draft.value.mode === 'video' && !String(value ?? '').trim())
+          callback(new Error('请选择视频（或用它拆解剧本）'))
+        else callback()
+      },
+      trigger: 'change',
     },
-    trigger: 'change'
-  }],
-  script: [{ required: true, whitespace: true, message: '请粘贴或生成剧本', trigger: 'blur' }]
+  ],
+  script: [{ required: true, whitespace: true, message: '请粘贴或生成剧本', trigger: 'blur' }],
 }
 
 function emptyDraft(): {
@@ -126,25 +137,28 @@ function emptyDraft(): {
     script: '',
     videoPath: '',
     bgmPath: '',
-    gateStages: [...DEFAULT_DIRECTOR_GATES]
+    gateStages: [...DEFAULT_DIRECTOR_GATES],
   }
 }
 
-watch(() => props.open, (open) => {
-  if (open) {
-    const keep = draft.value
-    noGates.value = false
-    draft.value = {
-      ...emptyDraft(),
-      title: keep.title,
-      genre: keep.genre,
-      idea: keep.idea,
-      script: keep.script,
-      videoPath: keep.videoPath,
-      bgmPath: keep.bgmPath
+watch(
+  () => props.open,
+  (open) => {
+    if (open) {
+      const keep = draft.value
+      noGates.value = false
+      draft.value = {
+        ...emptyDraft(),
+        title: keep.title,
+        genre: keep.genre,
+        idea: keep.idea,
+        script: keep.script,
+        videoPath: keep.videoPath,
+        bgmPath: keep.bgmPath,
+      }
     }
-  }
-})
+  },
+)
 
 function pickGenre(key: string): void {
   if (!key) return
@@ -154,8 +168,14 @@ function pickGenre(key: string): void {
 
 async function generateScript(): Promise<void> {
   const idea = draft.value.idea.trim()
-  if (!idea) { ElMessage.warning('请先写想法'); return }
-  if (!draft.value.genre.trim()) { ElMessage.warning('请先填写题材'); return }
+  if (!idea) {
+    ElMessage.warning('请先写想法')
+    return
+  }
+  if (!draft.value.genre.trim()) {
+    ElMessage.warning('请先填写题材')
+    return
+  }
   writingScript.value = true
   try {
     draft.value.script = await window.api.llm.writeScript(idea, draft.value.genre.trim())
@@ -178,7 +198,10 @@ async function selectVideo(): Promise<void> {
 
 async function generateScriptFromVideo(): Promise<void> {
   if (!draft.value.videoPath) return
-  if (!draft.value.genre.trim()) { ElMessage.warning('请先填写题材'); return }
+  if (!draft.value.genre.trim()) {
+    ElMessage.warning('请先填写题材')
+    return
+  }
   writingScript.value = true
   try {
     draft.value.script = await window.api.llm.writeScriptFromVideo(draft.value.videoPath, draft.value.genre.trim())
@@ -213,7 +236,7 @@ async function submit(): Promise<void> {
     genre: draft.value.genre.trim(),
     script: draft.value.script.trim(),
     gateStages: noGates.value ? [] : [...draft.value.gateStages],
-    bgmAbsolutePath: draft.value.bgmPath || undefined
+    ...(draft.value.bgmPath ? { bgmAbsolutePath: draft.value.bgmPath } : {}),
   })
 }
 
@@ -222,18 +245,23 @@ function focusFirstInvalid(err: unknown): void {
   if (!err || typeof err !== 'object') return
   const first = Object.keys(err)[0]
   if (!first) return
-  const form = formRef.value as unknown as {
-    scrollToField?: (prop: string) => void
-    fields?: Array<{ prop?: string; $el?: HTMLElement }>
-  } | undefined
+  const form = formRef.value as unknown as
+    | {
+        scrollToField?: (prop: string) => void
+        fields?: Array<{ prop?: string; $el?: HTMLElement }>
+      }
+    | undefined
   form?.scrollToField?.(first)
-  const item = form?.fields?.find(f => f.prop === first)
+  const item = form?.fields?.find((f) => f.prop === first)
   item?.$el?.querySelector<HTMLElement>('input, textarea')?.focus()
 }
 </script>
 
 <style scoped>
-.genre-row, .prompt-row, .bgm-row, .gate-row {
+.genre-row,
+.prompt-row,
+.bgm-row,
+.gate-row {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -246,7 +274,9 @@ function focusFirstInvalid(err: unknown): void {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.bgm-name.placeholder { color: var(--text-muted); }
+.bgm-name.placeholder {
+  color: var(--text-muted);
+}
 .director-tip {
   font-size: 12px;
   color: var(--text-muted);

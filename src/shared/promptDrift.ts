@@ -6,44 +6,92 @@
 
 import { actionLacksEnglish, motionCueFromAction } from './motion'
 import { extractOutfitLock } from './castAppearance'
-
-/** 定妆已写明老年时，允许提示词出现老年身份。 */
-const ELDERLY_LOOK_RE =
-  /\b(?:60s|70s|80s|90s|elderly|senior|old man|old woman|in his (?:6|7|8|9)0s|in her (?:6|7|8|9)0s)\b/i
-
-/**
- * 视频模型会优先听「the same old man…」这类主语，压过前面的身份锁。
- * 这些短语不在定妆里、且定妆不是老年时，一律视为身份幻觉。
- */
-const IDENTITY_DRIFT_RE =
-  /\b(old man|old woman|elderly(?: man| woman| person)?|senior citizen|weathered face|white stubble|gr[ae]y stubble|white beard|gr[ae]y beard|white hair|silver hair)\b/gi
+import { ELDERLY_DRIFT_SOURCE, ELDERLY_LOOK_RE } from './promptLexicon'
 
 /** 定妆没有的服装名词。卫衣、紧身裤、牛仔是现代串戏的身份锚。 */
-const FOREIGN_COAT_RE = /\b(?:[\w-]+\s+){0,3}(?:coat|gown|apron|blazer|hoodie|sweatshirt|leggings|jeans|t-shirt|shirt|sneakers|trainers|tank top|sweater|jacket|backpack|trench coat|puffer jacket)\b/gi
+const FOREIGN_COAT_RE =
+  /\b(?:[\w-]+\s+){0,3}(?:coat|gown|apron|blazer|hoodie|sweatshirt|leggings|jeans|t-shirt|shirt|sneakers|trainers|tank top|sweater|jacket|backpack|trench coat|puffer jacket)\b/gi
 /** 本镜动作里没有的室内陈设/现代场景。中文 action 对不上英文时，这些词就是另一场戏。 */
-const FOREIGN_PLACE_RE = /\b(doorknob|doorframe|hallway|bookshelf|floorboards?|cobwebs?|wooden door|cellar|basement|attic|kitchen|bathroom|bedroom|classroom|hospital|office|parking|sidewalk|driveway|gas station|supermarket|elevator|stairwell|corridor|warehouse|factory|apartment|dormitory)\b/gi
+const FOREIGN_PLACE_RE =
+  /\b(doorknob|doorframe|hallway|bookshelf|floorboards?|cobwebs?|wooden door|cellar|basement|attic|kitchen|bathroom|bedroom|classroom|hospital|office|parking|sidewalk|driveway|gas station|supermarket|elevator|stairwell|corridor|warehouse|factory|apartment|dormitory)\b/gi
 
 const ACTION_CONTENT_STOP = new Set([
-  'the', 'from', 'with', 'then', 'than', 'that', 'this', 'these', 'those', 'into', 'onto',
-  'over', 'under', 'while', 'their', 'there', 'here', 'have', 'has', 'had', 'his', 'her',
-  'him', 'she', 'its', 'and', 'but', 'not', 'for', 'are', 'was', 'were', 'been', 'being',
-  'same', 'reference', 'image', 'slight', 'slow', 'slowly', 'push', 'shot', 'pan', 'tilt',
-  'arc', 'static', 'zoom', 'camera', 'rhythm', 'keeps', 'still', 'starting', 'fixed',
-  'framing', 'level', 'speaking', 'naturally', 'motion'
+  'the',
+  'from',
+  'with',
+  'then',
+  'than',
+  'that',
+  'this',
+  'these',
+  'those',
+  'into',
+  'onto',
+  'over',
+  'under',
+  'while',
+  'their',
+  'there',
+  'here',
+  'have',
+  'has',
+  'had',
+  'his',
+  'her',
+  'him',
+  'she',
+  'its',
+  'and',
+  'but',
+  'not',
+  'for',
+  'are',
+  'was',
+  'were',
+  'been',
+  'being',
+  'same',
+  'reference',
+  'image',
+  'slight',
+  'slow',
+  'slowly',
+  'push',
+  'shot',
+  'pan',
+  'tilt',
+  'arc',
+  'static',
+  'zoom',
+  'camera',
+  'rhythm',
+  'keeps',
+  'still',
+  'starting',
+  'fixed',
+  'framing',
+  'level',
+  'speaking',
+  'naturally',
+  'motion',
 ])
 
+/** 定妆已写明老年时，允许提示词出现老年身份（词表由 promptLexicon 单一维护）。 */
 export function lookAllowsElderly(lookEn: string): boolean {
   return ELDERLY_LOOK_RE.test(lookEn || '')
 }
 
-/** 提示词里与定妆冲突的身份/服装短语。空数组表示没有这类冲突。 */
+/**
+ * 视频模型会优先听「the same old man…」这类主语，压过前面的身份锁定；
+ * 这些短语不在定妆里、且定妆不是老年时，一律视为身份幻觉。
+ */
 export function identityDriftHits(text: string, lookEn: string): string[] {
   if (!text) return []
   const look = lookEn || ''
   const lookLower = look.toLowerCase()
   const hits: string[] = []
   if (!lookAllowsElderly(look)) {
-    const re = new RegExp(IDENTITY_DRIFT_RE.source, 'gi')
+    const re = new RegExp(ELDERLY_DRIFT_SOURCE, 'gi')
     let m: RegExpExecArray | null
     while ((m = re.exec(text))) {
       if (!lookLower.includes(m[0].toLowerCase())) hits.push(m[0].toLowerCase())
@@ -58,7 +106,11 @@ export function identityDriftHits(text: string, lookEn: string): string[] {
   const coat = new RegExp(FOREIGN_COAT_RE.source, 'gi')
   let c: RegExpExecArray | null
   while ((c = coat.exec(text))) {
-    const noun = (c[0].toLowerCase().match(/coat|gown|apron|blazer|hoodie|sweatshirt|leggings|jeans|t-shirt|shirt|sneakers|trainers|tank top|sweater|jacket|backpack|trench coat|puffer jacket/) || [])[0]
+    const noun = (c[0]
+      .toLowerCase()
+      .match(
+        /coat|gown|apron|blazer|hoodie|sweatshirt|leggings|jeans|t-shirt|shirt|sneakers|trainers|tank top|sweater|jacket|backpack|trench coat|puffer jacket/,
+      ) || [])[0]
     if (noun && !lookLower.includes(noun)) hits.push(c[0].toLowerCase().replace(/\s+/g, ' ').trim())
   }
   return [...new Set(hits)]
@@ -76,7 +128,7 @@ export function ageLockFor(lookEn: string): string {
  */
 export function actionContentOverlap(action: string, prompt: string): number | null {
   const words = (t: string): Set<string> =>
-    new Set((t.toLowerCase().match(/[a-z]{4,}/g) || []).filter(w => !ACTION_CONTENT_STOP.has(w)))
+    new Set((t.toLowerCase().match(/[a-z]{4,}/g) || []).filter((w) => !ACTION_CONTENT_STOP.has(w)))
   const aw = words(action || '')
   if (aw.size < 4) return null
   const pw = words(prompt || '')
@@ -94,7 +146,7 @@ export function castPromptPoisoned(action: string, prompt: string, lookEn: strin
   if (actionLacksEnglish(action)) return true
   const grounded = `${action || ''} ${lookEn || ''} ${sceneEn || ''}`.toLowerCase()
   const place = new RegExp(FOREIGN_PLACE_RE.source, 'gi')
-  if ([...prompt.matchAll(place)].some(m => !grounded.includes(m[0].toLowerCase()))) return true
+  if ([...prompt.matchAll(place)].some((m) => !grounded.includes(m[0].toLowerCase()))) return true
   const ratio = actionContentOverlap(action, prompt)
   return ratio !== null && ratio < 0.35
 }
@@ -130,7 +182,7 @@ export function repairCastText(
   text: string | undefined,
   action: string,
   lookEn: string,
-  mode: 'motion' | 'frame'
+  mode: 'motion' | 'frame',
 ): string | undefined {
   if (!text?.trim()) return text
   if (!castPromptPoisoned(action, text, lookEn)) return text
@@ -141,20 +193,20 @@ export function repairCastText(
 }
 
 export interface StoryboardPromptShot {
-  type?: string
-  scene?: string
-  action?: string
-  dialogue?: string
-  characterName?: string
-  characters?: string[]
-  sceneEn?: string
-  promptEn?: string
-  firstFrameEn?: string
-  midFrameEn?: string
-  lastFrameEn?: string
-  transitionEn?: string
-  continuity?: string
-  handoffToNext?: string
+  type?: string | undefined
+  scene?: string | undefined
+  action?: string | undefined
+  dialogue?: string | undefined
+  characterName?: string | undefined
+  characters?: string[] | undefined
+  sceneEn?: string | undefined
+  promptEn?: string | undefined
+  firstFrameEn?: string | undefined
+  midFrameEn?: string | undefined
+  lastFrameEn?: string | undefined
+  transitionEn?: string | undefined
+  continuity?: string | undefined
+  handoffToNext?: string | undefined
 }
 
 /**
@@ -163,21 +215,20 @@ export interface StoryboardPromptShot {
  */
 export function claimPerformer<T extends StoryboardPromptShot>(
   shot: T,
-  cast: Array<{ name: string; pinyin: string }>
+  cast: Array<{ name: string; pinyin: string }>,
 ): { shot: T; claimed: boolean } {
   if (shot.type === 'i2v' && shot.characterName && /[\u4e00-\u9fff]/.test(shot.characterName)) {
     return { shot, claimed: false }
   }
   const raw = `${shot.action || ''} ${shot.characterName || ''} ${shot.dialogue || ''}`
   const flat = raw.toLowerCase().replace(/[^a-z\u4e00-\u9fff]+/g, '')
-  const hit = cast.find(c =>
-    (c.name && raw.includes(c.name)) ||
-    (c.pinyin.length >= 2 && flat.includes(c.pinyin.toLowerCase()))
+  const hit = cast.find(
+    (c) => (c.name && raw.includes(c.name)) || (c.pinyin.length >= 2 && flat.includes(c.pinyin.toLowerCase())),
   )
   if (!hit) return { shot, claimed: false }
   return {
     shot: { ...shot, type: 'i2v', characterName: hit.name, characters: [hit.name] },
-    claimed: true
+    claimed: true,
   }
 }
 
@@ -187,7 +238,7 @@ export function claimPerformer<T extends StoryboardPromptShot>(
  */
 export function alignStoryboardPrompts<T extends StoryboardPromptShot>(
   shots: T[],
-  lookOf: (shot: T) => string
+  lookOf: (shot: T) => string,
 ): { shots: T[]; notes: string[] } {
   const notes: string[] = []
   let prev: T | undefined
@@ -196,7 +247,11 @@ export function alignStoryboardPrompts<T extends StoryboardPromptShot>(
     const action = s.action || ''
     const nxt: T = { ...s }
     const idx = i + 1
-    const rewrite = (field: 'promptEn' | 'firstFrameEn' | 'midFrameEn' | 'lastFrameEn' | 'transitionEn' | 'handoffToNext' | 'continuity', mode: 'motion' | 'frame') => {
+    const rewrite = (
+      field:
+        'promptEn' | 'firstFrameEn' | 'midFrameEn' | 'lastFrameEn' | 'transitionEn' | 'handoffToNext' | 'continuity',
+      mode: 'motion' | 'frame',
+    ) => {
       const cur = nxt[field]
       const repaired = repairCastText(cur, action, look, mode)
       if (cur && repaired && repaired !== cur) {
@@ -212,7 +267,7 @@ export function alignStoryboardPrompts<T extends StoryboardPromptShot>(
     rewrite('handoffToNext', 'frame')
     rewrite('continuity', 'frame')
     if (nxt.sceneEn && castPromptPoisoned(action, nxt.sceneEn, look)) {
-      nxt.sceneEn = undefined
+      delete nxt.sceneEn
       notes.push(`提示词核对：第${idx}镜场景提示词串戏，已弃用，场景板改用场景名`)
     }
     if (prev && prev.scene && prev.scene === nxt.scene && prev.action && !nxt.continuity?.trim()) {

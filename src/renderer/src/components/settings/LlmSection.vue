@@ -8,10 +8,12 @@
           v-model="settings.llm.apiKey"
           type="password"
           show-password
-          placeholder="sk-..."
+          :placeholder="settings.llm.hasApiKey ? `已配置（${settings.llm.apiKeyMasked}），留空保持不变` : 'sk-...'"
           style="max-width: 380px"
-          @contextmenu.prevent="openInputMenu($event, { el: $event.target as HTMLInputElement })"
+          @input="markApiKeyDirty"
+          @contextmenu.prevent="openInputMenu($event, { el: $event.target as HTMLInputElement, onClear: clearApiKey })"
         />
+        <div class="form-tip">密钥只保存在本机（系统密钥环加密），保存后不再回显；清空输入框并保存可删除密钥</div>
       </el-form-item>
       <el-form-item label="接口地址">
         <el-select
@@ -23,14 +25,12 @@
           style="max-width: 380px; width: 380px"
           :no-data-text="'输入新地址后回车，保存即加入下拉记忆'"
         >
-          <el-option
-            v-for="u in settings.llm.baseUrlHistory || []"
-            :key="u"
-            :label="u"
-            :value="u"
-          />
+          <el-option v-for="u in settings.llm.baseUrlHistory || []" :key="u" :label="u" :value="u" />
         </el-select>
-        <div class="form-tip">DeepSeek: https://api.deepseek.com；火山方舟: https://ark.cn-beijing.volces.com/api/v3；历史地址自动记忆（最多 12 条），点击下拉即可选择</div>
+        <div class="form-tip">
+          DeepSeek: https://api.deepseek.com；火山方舟: https://ark.cn-beijing.volces.com/api/v3；历史地址自动记忆（最多
+          12 条），点击下拉即可选择
+        </div>
       </el-form-item>
       <el-form-item label="模型">
         <el-select
@@ -41,16 +41,25 @@
           placeholder="deepseek-chat"
           style="max-width: 380px; width: 380px"
           :no-data-text="'输入新模型后回车，保存即加入下拉记忆'"
-          @contextmenu.prevent="openInputMenu($event, { el: $event.target as HTMLInputElement, onPick: (v) => { settings.llm.model = v }, onClear: () => { settings.llm.model = '' }, history: () => memModel.read(), clearHistory: () => memModel.clear() })"
+          @contextmenu.prevent="
+            openInputMenu($event, {
+              el: $event.target as HTMLInputElement,
+              onPick: (v) => {
+                settings.llm.model = v
+              },
+              onClear: () => {
+                settings.llm.model = ''
+              },
+              history: () => memModel.read(),
+              clearHistory: () => memModel.clear(),
+            })
+          "
         >
-          <el-option
-            v-for="u in memModel.read()"
-            :key="u"
-            :label="u"
-            :value="u"
-          />
+          <el-option v-for="u in memModel.read()" :key="u" :label="u" :value="u" />
         </el-select>
-        <div class="form-tip">DeepSeek: deepseek-chat；火山方舟: 推理接入点 ID（ep-xxx）；历史模型自动记忆，点击下拉即可选择</div>
+        <div class="form-tip">
+          DeepSeek: deepseek-chat；火山方舟: 推理接入点 ID（ep-xxx）；历史模型自动记忆，点击下拉即可选择
+        </div>
       </el-form-item>
       <el-form-item label="连接状态">
         <el-tag :type="llmStatus.type">{{ llmStatus.text }}</el-tag>
@@ -88,20 +97,31 @@ function openInputMenu(
     clearHistory?: () => void
     onClear?: () => void
     onPick?: (value: string) => void
-  }
+  },
 ): void {
   inputCtxMenu.value?.open(e, {
     el: ctx.el,
     onClear: ctx.onClear,
     onPick: ctx.onPick,
     history: ctx.history ? ctx.history() : [],
-    clearHistory: ctx.clearHistory
+    clearHistory: ctx.clearHistory,
   })
 }
 
 // LLM 连接测试
 const llmTesting = ref(false)
 const llmStatus = ref<{ type: 'success' | 'danger' | 'info'; text: string }>({ type: 'info', text: '未测试' })
+
+/** SEC-04：用户编辑过输入框才允许覆盖/清空主进程保存的密钥 */
+function markApiKeyDirty(): void {
+  props.settings.llm.apiKeyDirty = true
+}
+
+/** 右键菜单「清空」：同样视为显式修改，保存后删除密钥 */
+function clearApiKey(): void {
+  props.settings.llm.apiKey = ''
+  props.settings.llm.apiKeyDirty = true
+}
 
 async function testLLM() {
   llmTesting.value = true
@@ -135,7 +155,13 @@ defineExpose({ rememberInputs })
   border-bottom: 1px solid var(--border-weak);
 }
 
-.form-tip { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+.form-tip {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
 
-:deep(.el-form-item__label) { color: var(--text-secondary); }
+:deep(.el-form-item__label) {
+  color: var(--text-secondary);
+}
 </style>

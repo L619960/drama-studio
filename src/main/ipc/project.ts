@@ -16,7 +16,9 @@ export interface ProjectIpcCtx {
 export function registerProjectIpc(ctx: ProjectIpcCtx): void {
   // Project
   handleIpc(IpcChannels.projectList, () => ctx.projectStore.list())
-  handleIpc(IpcChannels.projectCreate, (_, { title, genre }: { title: string; genre: string }) => ctx.projectStore.create(title, genre))
+  handleIpc(IpcChannels.projectCreate, (_, { title, genre }: { title: string; genre: string }) =>
+    ctx.projectStore.create(title, genre),
+  )
   handleIpc(IpcChannels.projectGet, (_, id: string) => ctx.projectStore.get(id))
   handleIpc(IpcChannels.projectSave, (_, project: Project) => ctx.projectStore.save(project))
   handleIpc(IpcChannels.projectDelete, async (_, id: string) => {
@@ -35,10 +37,11 @@ export function registerProjectIpc(ctx: ProjectIpcCtx): void {
     await ctx.projectStore.get(projectId)
     const result = await dialog.showOpenDialog(getMainWindow()!, {
       properties: ['openFile'],
-      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }]
+      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
     })
     if (result.canceled || result.filePaths.length === 0) throw new Error('User cancelled')
     const sourcePath = result.filePaths[0]
+    if (!sourcePath) throw new Error('User cancelled')
     const ext = extname(sourcePath) || '.png'
     const relPath = `projects/${projectId}/scene_${Date.now()}${ext}`
     await fs.copyFile(sourcePath, resolveInsideRoot(relPath))
@@ -48,13 +51,14 @@ export function registerProjectIpc(ctx: ProjectIpcCtx): void {
   // 道具上传本地图片：选择文件并复制到项目 props 目录（与 AI 生成同路径，便于预览/渲染复用）
   handleIpc(IpcChannels.projectImportPropImage, async (_, input: { projectId: string; propId: string }) => {
     const project = await ctx.projectStore.get(input.projectId)
-    if (!project.props?.some(p => p.id === input.propId)) throw new Error('道具不存在')
+    if (!project.props?.some((p) => p.id === input.propId)) throw new Error('道具不存在')
     const result = await dialog.showOpenDialog(getMainWindow()!, {
       properties: ['openFile'],
-      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }]
+      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
     })
     if (result.canceled || result.filePaths.length === 0) throw new Error('User cancelled')
     const sourcePath = result.filePaths[0]
+    if (!sourcePath) throw new Error('User cancelled')
     const ext = extname(sourcePath) || '.png'
     const relPath = `projects/${input.projectId}/props/${input.propId}${ext}`
     await fs.copyFile(sourcePath, resolveInsideRoot(relPath))

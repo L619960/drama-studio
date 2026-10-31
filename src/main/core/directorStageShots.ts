@@ -1,20 +1,24 @@
-﻿﻿import * as fs from 'node:fs/promises'
+﻿import * as fs from 'node:fs/promises'
 import * as path from 'node:path'
 import { ImageGenerateCancelled } from './imageService'
 import { mapPool } from './asyncPool'
-import type {
-  AnalyzeResult, Character, Shot, SceneBoard
-} from '../../shared/ipcTypes'
+import type { AnalyzeResult, Character, Shot, SceneBoard } from '../../shared/ipcTypes'
 import { normalizeSceneKey } from '../../shared/ipcTypes'
 import {
-  scenePlatePrompt, shotFramePrompt, SHOT_SIZE_CUE,
-  panoramaScenePrompt, emptySceneNegativeFor, stripOtherPersonClauses,
-  soloizeAction, maskCastNames, alignStoryboardPrompts, stripDialogueDirections
+  scenePlatePrompt,
+  shotFramePrompt,
+  SHOT_SIZE_CUE,
+  panoramaScenePrompt,
+  emptySceneNegativeFor,
+  stripOtherPersonClauses,
+  soloizeAction,
+  maskCastNames,
+  alignStoryboardPrompts,
+  stripDialogueDirections,
 } from '../../shared/imagePrompts'
 import { resolveCreation } from '../../shared/creationSettings'
-import {
-  pickPanoView, buildCloseupEditPrompt, buildPanoEditPrompt, sanitizeCameraForFrame
-} from './directorPrompts'
+import { shotContentEqual, mergeRebuiltShot } from '../../shared/pipelineGuards'
+import { pickPanoView, buildCloseupEditPrompt, buildPanoEditPrompt, sanitizeCameraForFrame } from './directorPrompts'
 import { castNameVariants } from './roleBinding'
 import type { DirectorStageRuntime } from './directorStageAssets'
 
@@ -33,41 +37,43 @@ export async function generateShotFirstFrame(
     id: string
     index: number
     as: AnalyzeResult['shots'][number]
-    board?: SceneBoard
+    board?: SceneBoard | undefined
     characterIds: string[]
-    character?: Character
+    character?: Character | undefined
     /** 首帧生成产物相对路径（本方法内写回） */
-    firstFramePath?: string
+    firstFramePath?: string | undefined
   },
   sc: { frameWidth: number; frameHeight: number },
   abort: () => boolean,
-  allCharacterNames: string[] = []
+  allCharacterNames: string[] = [],
 ): Promise<void> {
   const look = d.character?.appearanceLock || 'chinese person, natural everyday appearance'
-  const sizeCue = SHOT_SIZE_CUE[d.as.shotSize || 'medium']
+  const sizeCue = SHOT_SIZE_CUE[d.as.shotSize || 'medium'] ?? SHOT_SIZE_CUE.medium
   const env = d.as.sceneEn || d.as.scene
   // 单人居：首帧只允许主体。LLM 动作常写英文名（Su Tang / Lu Hanzhou），只屏蔽中文名会漏网，
   // 成片《鱼塘》镜6 因此画出双分身。中文名 + 拼音变体一并屏蔽，再剥对戏肢体接触。
   const selfVariants = castNameVariants(d.character?.name || '')
   const otherVariants = allCharacterNames
-    .filter(n => n && n !== d.character?.name)
-    .flatMap(n => castNameVariants(n))
+    .filter((n) => n && n !== d.character?.name)
+    .flatMap((n) => castNameVariants(n))
   const maskOtherIn = (t: string): string =>
-    soloizeAction(stripOtherPersonClauses(maskCastNames(t, {
-      selfNames: selfVariants,
-      otherNames: otherVariants
-    })))
+    soloizeAction(
+      stripOtherPersonClauses(
+        maskCastNames(t, {
+          selfNames: selfVariants,
+          otherNames: otherVariants,
+        }),
+      ),
+    )
   // 镜内场景描述：优先 continuity（含本镜起点的具体场景/站位），次选 action——
   // 防止场景板底图与镜动作场景错位；对戏角色名已屏蔽为画外对象（单人居）
   const shotSceneDesc = maskOtherIn(d.as.continuity?.trim() || d.as.action?.trim() || '')
-  const plateHint = (d.board?.emptyPlatePath
-    ? `matching the empty location plate mood of ${env}`
-    : env) + (shotSceneDesc ? `；本镜场景：${shotSceneDesc}` : '')
+  const plateHint =
+    (d.board?.emptyPlatePath ? `matching the empty location plate mood of ${env}` : env) +
+    (shotSceneDesc ? `；本镜场景：${shotSceneDesc}` : '')
   const firstRel = `projects/${projectId}/shots/${d.id}_first.png`
   const firstAbs = path.join(rt.baseDir, firstRel)
-  const faceAbs = d.character?.faceImagePath
-    ? path.join(rt.baseDir, d.character.faceImagePath)
-    : ''
+  const faceAbs = d.character?.faceImagePath ? path.join(rt.baseDir, d.character.faceImagePath) : ''
   // 供 build*EditPrompt 使用的净化副本：动作/连续性里对戏角色名屏蔽为画外对象，camera 剥离第二人从句
   const dMasked = {
     ...d,
@@ -75,8 +81,8 @@ export async function generateShotFirstFrame(
       ...d.as,
       action: maskOtherIn(d.as.action?.trim() || ''),
       continuity: maskOtherIn(d.as.continuity?.trim() || ''),
-      camera: sanitizeCameraForFrame(d.as.camera?.trim() || '')
-    }
+      camera: sanitizeCameraForFrame(d.as.camera?.trim() || ''),
+    },
   }
 
   const imageWorkflow = faceAbs ? 'qwen2511_i2i_edit' : 't2i'
@@ -84,39 +90,39 @@ export async function generateShotFirstFrame(
   if (faceAbs) {
     // 一级：单图定妆融合（定妆图做底，锁脸/发型/服装/肤色最稳）
     try {
-      await rt.image.generate(
-        buildCloseupEditPrompt(look, plateHint, dMasked, sizeCue, 'start'),
-        firstAbs,
-        {
-          workflowName: 'qwen2511_i2i_edit',
-          referenceImagePath: faceAbs,
-          shouldAbort: abort
-        }
-      )
+      await rt.image.generate(buildCloseupEditPrompt(look, plateHint, dMasked, sizeCue, 'start'), firstAbs, {
+        workflowName: 'qwen2511_i2i_edit',
+        referenceImagePath: faceAbs,
+        shouldAbort: abort,
+      })
       d.firstFramePath = firstRel
     } catch (e) {
       if (e instanceof ImageGenerateCancelled) throw e
-      rt.log(projectId, 'scenes', 'warn',
-        `第${d.index}镜单图定妆融合失败（${e instanceof Error ? e.message : String(e)}），尝试全景双图融合`)
+      rt.log(
+        projectId,
+        'scenes',
+        'warn',
+        `第${d.index}镜单图定妆融合失败（${e instanceof Error ? e.message : String(e)}），尝试全景双图融合`,
+      )
       // 二级：全景双图融合（场景方位图做底 + 定妆图参考，备选）
       const panoViewRel = pickPanoView(d.as.camera, d.board?.panoViews)
       if (panoViewRel) {
         try {
-          await rt.image.generate(
-            buildPanoEditPrompt(look, plateHint, dMasked, sizeCue, 'start'),
-            firstAbs,
-            {
-              workflowName: 'qwen2511_i2i_two',
-              referenceImagePaths: [path.join(rt.baseDir, panoViewRel), faceAbs],
-              strictWorkflow: true,
-              shouldAbort: abort
-            }
-          )
+          await rt.image.generate(buildPanoEditPrompt(look, plateHint, dMasked, sizeCue, 'start'), firstAbs, {
+            workflowName: 'qwen2511_i2i_two',
+            referenceImagePaths: [path.join(rt.baseDir, panoViewRel), faceAbs],
+            strictWorkflow: true,
+            shouldAbort: abort,
+          })
           d.firstFramePath = firstRel
         } catch (e2) {
           if (e2 instanceof ImageGenerateCancelled) throw e2
-          rt.log(projectId, 'scenes', 'warn',
-            `第${d.index}镜全景双图融合失败（${e2 instanceof Error ? e2.message : String(e2)}），回退文生`)
+          rt.log(
+            projectId,
+            'scenes',
+            'warn',
+            `第${d.index}镜全景双图融合失败（${e2 instanceof Error ? e2.message : String(e2)}），回退文生`,
+          )
         }
       }
     }
@@ -134,16 +140,16 @@ export async function generateShotFirstFrame(
           scene: plateHint,
           action: frameAction,
           shotSizeCue: sizeCue,
-          emotion: dMasked.as.emotion || undefined,
-          camera: dMasked.as.camera || undefined,
-          lighting: dMasked.as.lighting,
-          facing: dMasked.as.facing,
           continuity: dMasked.as.continuity,
           characterCount: d.characterIds.length || 1,
-          props: d.as.props
+          ...(dMasked.as.emotion ? { emotion: dMasked.as.emotion } : {}),
+          ...(dMasked.as.camera ? { camera: dMasked.as.camera } : {}),
+          ...(dMasked.as.lighting !== undefined ? { lighting: dMasked.as.lighting } : {}),
+          ...(dMasked.as.facing !== undefined ? { facing: dMasked.as.facing } : {}),
+          ...(d.as.props !== undefined ? { props: d.as.props } : {}),
         }),
         firstAbs,
-        { width: sc.frameWidth, height: sc.frameHeight, shouldAbort: abort, workflowName: 'klein_t2i_clean' }
+        { width: sc.frameWidth, height: sc.frameHeight, shouldAbort: abort, workflowName: 'klein_t2i_clean' },
       )
       d.firstFramePath = firstRel
     } catch (e) {
@@ -152,7 +158,9 @@ export async function generateShotFirstFrame(
         try {
           await fs.copyFile(faceAbs, firstAbs)
           d.firstFramePath = firstRel
-        } catch { /* 三级都失败：留空，渲染时 resolveRefImageRel 回退定妆图 */ }
+        } catch {
+          /* 三级都失败：留空，渲染时 resolveRefImageRel 回退定妆图 */
+        }
       }
     }
   }
@@ -165,14 +173,14 @@ export async function generateShotFirstFrame(
 export async function rebuildShotFirstFrames(
   rt: DirectorStageRuntime,
   projectId: string,
-  shotIndexes: number[]
+  shotIndexes: number[],
 ): Promise<{ ok: boolean; text: string }> {
   const project = await rt.store.get(projectId)
   const boardByKey = new Map<string, SceneBoard>()
   for (const b of project.sceneBoards || []) boardByKey.set(b.key, b)
   const sc = resolveCreation(await rt.settings.get()).scene
   const abort = (): boolean => rt.isCancelled(projectId)
-  const targets = project.shots.filter(s => shotIndexes.includes(s.index) && s.type === 'i2v')
+  const targets = project.shots.filter((s) => shotIndexes.includes(s.index) && s.type === 'i2v')
   if (!targets.length) return { ok: false, text: `未找到可重建首帧的 i2v 镜头：${shotIndexes.join('、')}` }
   // 该阶段可能耗时数分钟（每镜一次图生）：驱动阶段行进度条 + 日志，不能隐藏跑
   const shadow = rt.ensureShadowState(projectId)
@@ -193,7 +201,7 @@ export async function rebuildShotFirstFrames(
     rt.log(projectId, 'render', 'info', `镜${shot.index} 重建首帧中（${cursor}/${total}）…`)
     const as = {
       type: 'i2v' as const,
-      characterName: project.characters.find(c => c.id === shot.characterIds[0])?.name || '',
+      characterName: project.characters.find((c) => c.id === shot.characterIds[0])?.name || '',
       scene: shot.scene,
       sceneEn: (shot as unknown as { sceneEn?: string }).sceneEn,
       shotSize: shot.shotSize,
@@ -205,15 +213,15 @@ export async function rebuildShotFirstFrames(
       props: shot.props,
       action: shot.action,
       firstFrameEn: shot.firstFrameEn,
-      lastFrameEn: shot.lastFrameEn
+      lastFrameEn: shot.lastFrameEn,
     } as AnalyzeResult['shots'][number]
     const d: {
       id: string
       index: number
       as: AnalyzeResult['shots'][number]
-      board?: SceneBoard
+      board?: SceneBoard | undefined
       characterIds: string[]
-      character?: Character
+      character?: Character | undefined
       firstFramePath?: string
     } = {
       id: shot.id,
@@ -221,10 +229,17 @@ export async function rebuildShotFirstFrames(
       as,
       board: shot.sceneBoardId ? boardByKey.get(normalizeSceneKey(shot.scene)) : undefined,
       characterIds: shot.characterIds,
-      character: project.characters.find(c => c.id === shot.characterIds[0])
+      character: project.characters.find((c) => c.id === shot.characterIds[0]),
     }
     try {
-      await generateShotFirstFrame(rt, projectId, d, sc, abort, project.characters.map(c => c.name))
+      await generateShotFirstFrame(
+        rt,
+        projectId,
+        d,
+        sc,
+        abort,
+        project.characters.map((c) => c.name),
+      )
       if (d.firstFramePath) {
         shot.firstFramePath = d.firstFramePath
         // 分镜图已更换，旧审核结论作废：不清则 reviewGate 门禁被旧标志放行（S5）
@@ -243,8 +258,12 @@ export async function rebuildShotFirstFrames(
     pushStage(cursor, `重建首帧 ${cursor}/${total}`)
   }
   pushStage(total, `首帧重建完成 ${okCount}/${total}，渲染队列启动中…`)
-  rt.log(projectId, 'render', okCount === targets.length ? 'success' : 'warn',
-    `首帧重建完成 ${okCount}/${targets.length}，开始入队渲染视频`)
+  rt.log(
+    projectId,
+    'render',
+    okCount === targets.length ? 'success' : 'warn',
+    `首帧重建完成 ${okCount}/${targets.length}，开始入队渲染视频`,
+  )
   await rt.store.save(project)
   rt.notifyProjectUpdated(projectId)
   const text = failDetail.length
@@ -261,11 +280,11 @@ export async function rebuildShotFirstFrames(
 export async function regenerateScenePano(
   rt: DirectorStageRuntime,
   projectId: string,
-  boardId: string
+  boardId: string,
 ): Promise<{ ok: boolean; text: string }> {
   try {
     const project = await rt.store.get(projectId)
-    const board = (project.sceneBoards || []).find(b => b.id === boardId)
+    const board = (project.sceneBoards || []).find((b) => b.id === boardId)
     if (!board) return { ok: false, text: '场景板不存在' }
     const sc = resolveCreation(await rt.settings.get()).scene
     const panoViewsCount = Math.max(2, Math.min(6, sc.panoViewsCount || 4))
@@ -277,35 +296,49 @@ export async function regenerateScenePano(
     await rt.image.generate(
       panoramaScenePrompt(board.description || board.name, undefined, { weatherHint: sc.weatherHint }),
       panoAbs,
-      { width: 1536, height: 768, seed, negative: emptySceneNegativeFor('standard', board.description || board.name), workflowName: 'klein_t2i_clean' }
+      {
+        width: 1536,
+        height: 768,
+        seed,
+        negative: emptySceneNegativeFor('standard', board.description || board.name),
+        workflowName: 'klein_t2i_clean',
+      },
     )
     const viewsAbs = await rt.ffmpeg.cropPanoramaViews(panoAbs, scenesDir, {
       count: panoViewsCount,
       outW: 480,
       outH: 864,
-      prefix: board.id
+      prefix: board.id,
     })
-    const viewsRel = viewsAbs.map(v => `projects/${projectId}/scenes/${path.basename(v)}`)
+    const viewsRel = viewsAbs.map((v) => `projects/${projectId}/scenes/${path.basename(v)}`)
     // 宫格看板失败不阻断（仅方位图仍可用）
     let gridRel: string | undefined
     try {
       gridRel = `projects/${projectId}/scenes/${board.id}_pano_grid.png`
       await rt.ffmpeg.tileImages(viewsAbs, path.join(rt.baseDir, gridRel), {
-        cols: 2, cellW: 384, cellH: 691
+        cols: 2,
+        cellW: 384,
+        cellH: 691,
       })
     } catch (e) {
-      rt.log(projectId, 'scenes', 'warn',
-        `场景「${board.name}」宫格看板拼接失败：${e instanceof Error ? e.message : String(e)}`)
+      rt.log(
+        projectId,
+        'scenes',
+        'warn',
+        `场景「${board.name}」宫格看板拼接失败：${e instanceof Error ? e.message : String(e)}`,
+      )
     }
     await rt.store.update(projectId, (p) => {
-      const b = (p.sceneBoards || []).find(x => x.id === boardId)
+      const b = (p.sceneBoards || []).find((x) => x.id === boardId)
       if (!b) return
       b.panoPath = panoRel
       b.panoViews = viewsRel
-      b.panoGrid = gridRel
-      b.emptyPlatePath = viewsRel[0]
+      if (gridRel !== undefined) b.panoGrid = gridRel
+      else delete b.panoGrid
+      const firstView = viewsRel[0] ?? ''
+      b.emptyPlatePath = firstView
       for (const s of p.shots || []) {
-        if (s.sceneBoardId === boardId && s.type === 't2v') s.sceneImagePath = viewsRel[0]
+        if (s.sceneBoardId === boardId && s.type === 't2v') s.sceneImagePath = firstView
       }
     })
     rt.notifyProjectUpdated(projectId)
@@ -325,7 +358,7 @@ export async function buildShots(
   rt: DirectorStageRuntime,
   projectId: string,
   analysis: AnalyzeResult,
-  characterMap: Map<string, Character>
+  characterMap: Map<string, Character>,
 ): Promise<void> {
   const lookOf = (shot: AnalyzeResult['shots'][number]): string =>
     characterMap.get(shot.characterName || '')?.appearanceLock || ''
@@ -336,19 +369,38 @@ export async function buildShots(
   const total = analysis.shots.length
   let frameFailed = 0
 
+  // STAGE-01：重跑分镜阶段时读取现有镜头，内容未变的镜沿用旧 id/产物，
+  // 避免人工编辑、reviewed 与已生成首尾帧全部丢失。
+  let prevShots: Shot[] = []
+  try {
+    prevShots = (await rt.store.get(projectId)).shots || []
+  } catch {
+    /* 项目尚不存在（首次建档）：无历史镜头 */
+  }
+  const prevByIndex = new Map(prevShots.map((p) => [p.index, p]))
+  const fileExists = async (rel?: string): Promise<boolean> => {
+    if (!rel) return false
+    try {
+      return (await fs.stat(path.join(rt.baseDir, rel))).isFile()
+    } catch {
+      return false
+    }
+  }
+
   await fs.mkdir(path.join(rt.baseDir, 'projects', projectId, 'scenes'), { recursive: true })
 
   // —— 1) 场景板库：按场景键去重生成无人空场景 ——
   const boardByKey = new Map<string, SceneBoard>()
-  const uniqueScenes: Array<{ key: string; name: string; sceneEn?: string; emotion?: string }> = []
+  const uniqueScenes: Array<{ key: string; name: string; sceneEn?: string | undefined; emotion?: string | undefined }> =
+    []
   for (const as of analysis.shots) {
     const key = normalizeSceneKey(as.scene || 'unnamed')
-    if (boardByKey.has(key) || uniqueScenes.some(u => u.key === key)) continue
+    if (boardByKey.has(key) || uniqueScenes.some((u) => u.key === key)) continue
     uniqueScenes.push({
       key,
       name: as.scene || 'unnamed',
       sceneEn: as.sceneEn,
-      emotion: as.emotion
+      emotion: as.emotion,
     })
   }
 
@@ -358,121 +410,159 @@ export async function buildShots(
   const plateCount = Math.max(1, Math.min(4, sc.candidates || 1))
   const plateOpts = {
     weatherHint: sc.weatherHint,
-    emptyStrict: sc.emptyStrict
+    emptyStrict: sc.emptyStrict,
   }
   // 全景固定场景：同一场景所有镜头从同一张 2:1 全景裁出的方位图取景（场景不漂移）
   const panoOn = sc.panorama !== false
   const panoViewsCount = Math.max(2, Math.min(6, sc.panoViewsCount || 4))
   const abort = (): boolean => rt.isCancelled(projectId)
   let platesDone = 0
-  rt.setStage(projectId, 'scenes', 'running',
-    `并发生成${panoOn ? `全景场景板（裁${panoViewsCount}方位）` : '场景板'} 0/${uniqueScenes.length}（并发 ${concurrency}${panoOn ? '' : `，抽卡×${plateCount}`}）...`, 5)
+  rt.setStage(
+    projectId,
+    'scenes',
+    'running',
+    `并发生成${panoOn ? `全景场景板（裁${panoViewsCount}方位）` : '场景板'} 0/${uniqueScenes.length}（并发 ${concurrency}${panoOn ? '' : `，抽卡×${plateCount}`}）...`,
+    5,
+  )
 
-  await mapPool(uniqueScenes, concurrency, async (u, bi) => {
-    if (abort()) throw new ImageGenerateCancelled()
-    const boardId = `scene_${Date.now()}_${bi}_${Math.random().toString(36).slice(2, 6)}`
-    const plateRel = `projects/${projectId}/scenes/${boardId}_plate.png`
-    const board: SceneBoard = {
-      id: boardId,
-      key: u.key,
-      name: u.name,
-      // 英文环境短语落进场景板（重出全景/空景时复用，避免只剩中文场景名导致场景跑偏）
-      description: u.sceneEn || u.name,
-      emptyPlatePath: ''
-    }
-    try {
-      if (panoOn) {
-        // —— 全景分支：生成 2:1 全景 → 裁 N 张竖版方位图 ——
-        const scenesDir = path.join(rt.baseDir, 'projects', projectId, 'scenes')
-        const panoRel = `projects/${projectId}/scenes/${boardId}_pano.png`
-        const panoAbs = path.join(rt.baseDir, panoRel)
-        const seed = Math.floor(Math.random() * 0xffffffff)
-        await rt.image.generate(
-          panoramaScenePrompt(u.sceneEn || u.name, u.emotion || undefined, { weatherHint: sc.weatherHint }),
-          panoAbs,
-          { width: 1536, height: 768, seed, negative: emptySceneNegativeFor('standard', u.sceneEn || u.name), shouldAbort: abort, workflowName: 'klein_t2i_clean' }
-        )
-        const viewsAbs = await rt.ffmpeg.cropPanoramaViews(panoAbs, scenesDir, {
-          count: panoViewsCount,
-          outW: 480,
-          outH: 864,
-          prefix: boardId
-        })
-        board.panoPath = panoRel
-        board.panoViews = viewsAbs.map(v => `projects/${projectId}/scenes/${path.basename(v)}`)
-        // 方位图拼宫格看板（导演台可视化：一眼看全场景各方位，检查一致性）
-        try {
-          const gridRel = `projects/${projectId}/scenes/${boardId}_pano_grid.png`
-          await rt.ffmpeg.tileImages(viewsAbs, path.join(rt.baseDir, gridRel), {
-            cols: 2, cellW: 384, cellH: 691
-          })
-          board.panoGrid = gridRel
-        } catch (e) {
-          rt.log(projectId, 'scenes', 'warn',
-            `场景「${u.name}」宫格看板拼接失败：${e instanceof Error ? e.message : String(e)}`)
-        }
-        // emptyPlatePath 兼容：旧逻辑/UI 读取它，取前视方位图
-        board.emptyPlatePath = board.panoViews[0]
-        rt.log(projectId, 'scenes', 'info',
-          `场景「${u.name}」全景图生成 + 裁 ${board.panoViews.length} 方位（0°起逆时针）`)
-      } else {
-        // —— 旧版：单张竖版空场景板 + 抽卡 ——
-        const candRels: Array<{ rel: string; seed: number }> = []
-        for (let ci = 0; ci < plateCount; ci++) {
-          if (abort()) throw new ImageGenerateCancelled()
-          const seed = Math.floor(Math.random() * 0xffffffff)
-          const rel = plateCount === 1
-            ? plateRel
-            : `projects/${projectId}/scenes/${boardId}_plate_c${ci}.png`
-          await rt.image.generate(
-            scenePlatePrompt(u.sceneEn || u.name, u.emotion || undefined, plateOpts),
-            path.join(rt.baseDir, rel),
-            { width: sc.plateWidth, height: sc.plateHeight, seed, negative: emptySceneNegativeFor('standard', u.sceneEn || u.name), shouldAbort: abort, workflowName: 'klein_t2i_clean' }
-          )
-          candRels.push({ rel, seed })
-        }
-        if (candRels.length === 1) {
-          board.emptyPlatePath = candRels[0].rel
-        } else {
-          const items = await Promise.all(candRels.map(async (c, i) => {
-            let score = 0.5
-            let note = sc.emptyStrict ? '期望无人空镜' : '场景板'
-            try {
-              const st = await fs.stat(path.join(rt.baseDir, c.rel))
-              score = Math.min(0.95, 0.4 + Math.log10(Math.max(1000, st.size)) / 10)
-              note += `；file=${Math.round(st.size / 1024)}KB`
-            } catch { /* ignore */ }
-            return { id: `s${i}`, relativePath: c.rel, seed: c.seed, score, note }
-          }))
-          const picked = await rt.picker.pick({
-            kind: 'scene',
-            brief: `场景「${u.name}」空场景板，英文：${u.sceneEn || u.name}，情绪：${u.emotion || 'n/a'}，天气：${sc.weatherHint}`,
-            candidates: items,
-            llmPick: sc.llmPick
-          })
-          await rt.picker.promoteWinner({
-            baseDir: rt.baseDir,
-            winnerRel: picked.winner.relativePath,
-            finalRel: plateRel,
-            rejectedRels: picked.rejected.map(r => r.relativePath),
-            keepRejected: true
-          })
-          board.emptyPlatePath = plateRel
-          rt.log(projectId, 'scenes', 'info',
-            `场景「${u.name}」抽卡 ${candRels.length}→1：${picked.reason}`)
-        }
+  await mapPool(
+    uniqueScenes,
+    concurrency,
+    async (u, bi) => {
+      if (abort()) throw new ImageGenerateCancelled()
+      const boardId = `scene_${Date.now()}_${bi}_${Math.random().toString(36).slice(2, 6)}`
+      const plateRel = `projects/${projectId}/scenes/${boardId}_plate.png`
+      const board: SceneBoard = {
+        id: boardId,
+        key: u.key,
+        name: u.name,
+        // 英文环境短语落进场景板（重出全景/空景时复用，避免只剩中文场景名导致场景跑偏）
+        description: u.sceneEn || u.name,
+        emptyPlatePath: '',
       }
-    } catch (e) {
-      if (e instanceof ImageGenerateCancelled) throw e
-      rt.log(projectId, 'scenes', 'warn',
-        `场景板「${u.name}」失败：${e instanceof Error ? e.message : String(e)}`)
-    }
-    boardByKey.set(u.key, board)
-    platesDone++
-    rt.setStage(projectId, 'scenes', 'running',
-      `并发生成场景板 ${platesDone}/${uniqueScenes.length}...`,
-      Math.round(5 + (platesDone / Math.max(1, uniqueScenes.length)) * 25))
-  }, { shouldAbort: abort })
+      try {
+        if (panoOn) {
+          // —— 全景分支：生成 2:1 全景 → 裁 N 张竖版方位图 ——
+          const scenesDir = path.join(rt.baseDir, 'projects', projectId, 'scenes')
+          const panoRel = `projects/${projectId}/scenes/${boardId}_pano.png`
+          const panoAbs = path.join(rt.baseDir, panoRel)
+          const seed = Math.floor(Math.random() * 0xffffffff)
+          await rt.image.generate(
+            panoramaScenePrompt(u.sceneEn || u.name, u.emotion || undefined, { weatherHint: sc.weatherHint }),
+            panoAbs,
+            {
+              width: 1536,
+              height: 768,
+              seed,
+              negative: emptySceneNegativeFor('standard', u.sceneEn || u.name),
+              shouldAbort: abort,
+              workflowName: 'klein_t2i_clean',
+            },
+          )
+          const viewsAbs = await rt.ffmpeg.cropPanoramaViews(panoAbs, scenesDir, {
+            count: panoViewsCount,
+            outW: 480,
+            outH: 864,
+            prefix: boardId,
+          })
+          board.panoPath = panoRel
+          board.panoViews = viewsAbs.map((v) => `projects/${projectId}/scenes/${path.basename(v)}`)
+          // 方位图拼宫格看板（导演台可视化：一眼看全场景各方位，检查一致性）
+          try {
+            const gridRel = `projects/${projectId}/scenes/${boardId}_pano_grid.png`
+            await rt.ffmpeg.tileImages(viewsAbs, path.join(rt.baseDir, gridRel), {
+              cols: 2,
+              cellW: 384,
+              cellH: 691,
+            })
+            board.panoGrid = gridRel
+          } catch (e) {
+            rt.log(
+              projectId,
+              'scenes',
+              'warn',
+              `场景「${u.name}」宫格看板拼接失败：${e instanceof Error ? e.message : String(e)}`,
+            )
+          }
+          // emptyPlatePath 兼容：旧逻辑/UI 读取它，取前视方位图
+          board.emptyPlatePath = board.panoViews[0] ?? ''
+          rt.log(
+            projectId,
+            'scenes',
+            'info',
+            `场景「${u.name}」全景图生成 + 裁 ${board.panoViews.length} 方位（0°起逆时针）`,
+          )
+        } else {
+          // —— 旧版：单张竖版空场景板 + 抽卡 ——
+          const candRels: Array<{ rel: string; seed: number }> = []
+          for (let ci = 0; ci < plateCount; ci++) {
+            if (abort()) throw new ImageGenerateCancelled()
+            const seed = Math.floor(Math.random() * 0xffffffff)
+            const rel = plateCount === 1 ? plateRel : `projects/${projectId}/scenes/${boardId}_plate_c${ci}.png`
+            await rt.image.generate(
+              scenePlatePrompt(u.sceneEn || u.name, u.emotion || undefined, plateOpts),
+              path.join(rt.baseDir, rel),
+              {
+                width: sc.plateWidth,
+                height: sc.plateHeight,
+                seed,
+                negative: emptySceneNegativeFor('standard', u.sceneEn || u.name),
+                shouldAbort: abort,
+                workflowName: 'klein_t2i_clean',
+              },
+            )
+            candRels.push({ rel, seed })
+          }
+          if (candRels.length === 1) {
+            board.emptyPlatePath = candRels[0]?.rel ?? plateRel
+          } else {
+            const items = await Promise.all(
+              candRels.map(async (c, i) => {
+                let score = 0.5
+                let note = sc.emptyStrict ? '期望无人空镜' : '场景板'
+                try {
+                  const st = await fs.stat(path.join(rt.baseDir, c.rel))
+                  score = Math.min(0.95, 0.4 + Math.log10(Math.max(1000, st.size)) / 10)
+                  note += `；file=${Math.round(st.size / 1024)}KB`
+                } catch {
+                  /* ignore */
+                }
+                return { id: `s${i}`, relativePath: c.rel, seed: c.seed, score, note }
+              }),
+            )
+            const picked = await rt.picker.pick({
+              kind: 'scene',
+              brief: `场景「${u.name}」空场景板，英文：${u.sceneEn || u.name}，情绪：${u.emotion || 'n/a'}，天气：${sc.weatherHint}`,
+              candidates: items,
+              llmPick: sc.llmPick,
+            })
+            await rt.picker.promoteWinner({
+              baseDir: rt.baseDir,
+              winnerRel: picked.winner.relativePath,
+              finalRel: plateRel,
+              rejectedRels: picked.rejected.map((r) => r.relativePath),
+              keepRejected: true,
+            })
+            board.emptyPlatePath = plateRel
+            rt.log(projectId, 'scenes', 'info', `场景「${u.name}」抽卡 ${candRels.length}→1：${picked.reason}`)
+          }
+        }
+      } catch (e) {
+        if (e instanceof ImageGenerateCancelled) throw e
+        rt.log(projectId, 'scenes', 'warn', `场景板「${u.name}」失败：${e instanceof Error ? e.message : String(e)}`)
+      }
+      boardByKey.set(u.key, board)
+      platesDone++
+      rt.setStage(
+        projectId,
+        'scenes',
+        'running',
+        `并发生成场景板 ${platesDone}/${uniqueScenes.length}...`,
+        Math.round(5 + (platesDone / Math.max(1, uniqueScenes.length)) * 25),
+      )
+    },
+    { shouldAbort: abort },
+  )
 
   try {
     const project = await rt.store.get(projectId)
@@ -490,64 +580,91 @@ export async function buildShots(
     id: string
     index: number
     as: AnalyzeResult['shots'][number]
-    board?: SceneBoard
+    board?: SceneBoard | undefined
     characterIds: string[]
-    character?: Character
-    sceneImagePath?: string
-    firstFramePath?: string
-    lastFramePath?: string
+    character?: Character | undefined
+    sceneImagePath?: string | undefined
+    firstFramePath?: string | undefined
+    lastFramePath?: string | undefined
+    /** STAGE-01：内容一致的历史镜头（决定是否复用产物与运行态） */
+    prev?: Shot | undefined
   }
 
   const drafts: Draft[] = analysis.shots.map((as, i) => {
-    const id = `shot_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 6)}`
+    const dialogue = stripDialogueDirections(as.dialogue)
+    const prev = prevByIndex.get(i + 1)
+    const same = prev ? shotContentEqual(prev, { scene: as.scene, action: as.action, dialogue }) : false
+    const id = same && prev ? prev.id : `shot_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 6)}`
     const sceneKey = normalizeSceneKey(as.scene || 'unnamed')
     const board = boardByKey.get(sceneKey)
     let characterIds: string[] = []
     let character: Character | undefined
     if (as.type === 'i2v') {
-      const names = (as.characters && as.characters.length ? as.characters : (as.characterName ? [as.characterName] : []))
-        .map(n => n.trim()).filter(Boolean).slice(0, 1)
-      characterIds = names.map(n => characterMap.get(n)?.id).filter((id): id is string => Boolean(id))
-      character = characterIds[0] ? characterMap.get(names[0]) : undefined
+      const names = (as.characters && as.characters.length ? as.characters : as.characterName ? [as.characterName] : [])
+        .map((n) => n.trim())
+        .filter(Boolean)
+        .slice(0, 1)
+      const leadName = names[0]
+      characterIds = names.map((n) => characterMap.get(n)?.id).filter((id): id is string => Boolean(id))
+      character = characterIds.length > 0 && leadName ? characterMap.get(leadName) : undefined
     }
-    return { id, index: i + 1, as, board, characterIds, character }
+    return {
+      id,
+      index: i + 1,
+      as,
+      board,
+      characterIds,
+      character,
+      // 仅内容一致时预填旧产物路径（供后续跳过重复生成）；文件缺失会在生成前复查
+      sceneImagePath: same ? prev?.sceneImagePath : undefined,
+      firstFramePath: same ? prev?.firstFramePath : undefined,
+      lastFramePath: same ? prev?.lastFramePath : undefined,
+      prev: same ? prev : undefined,
+    }
   })
 
   // —— 2a) 首帧 / 空镜参考：有限并发 ——
   let framesDone = 0
-  rt.setStage(projectId, 'scenes', 'running',
-    `并发生成镜头首帧 0/${total}...`, 30)
+  rt.setStage(projectId, 'scenes', 'running', `并发生成镜头首帧 0/${total}...`, 30)
 
-  await mapPool(drafts, concurrency, async (d) => {
-    if (abort()) throw new ImageGenerateCancelled()
-    try {
-      if (d.as.type === 't2v') {
-        if (d.board?.emptyPlatePath) {
-          d.sceneImagePath = d.board.emptyPlatePath
-        } else {
-          const frameRel = `projects/${projectId}/shots/${d.id}_scene.png`
-          await rt.image.generate(
-            scenePlatePrompt(d.as.sceneEn || d.as.scene, d.as.emotion || undefined, plateOpts),
-            path.join(rt.baseDir, frameRel),
-            { width: sc.plateWidth, height: sc.plateHeight, shouldAbort: abort }
-          )
-          d.sceneImagePath = frameRel
+  await mapPool(
+    drafts,
+    concurrency,
+    async (d) => {
+      if (abort()) throw new ImageGenerateCancelled()
+      try {
+        if (d.as.type === 't2v') {
+          if (d.board?.emptyPlatePath) {
+            d.sceneImagePath = d.board.emptyPlatePath
+          } else if (!(await fileExists(d.sceneImagePath))) {
+            const frameRel = `projects/${projectId}/shots/${d.id}_scene.png`
+            await rt.image.generate(
+              scenePlatePrompt(d.as.sceneEn || d.as.scene, d.as.emotion || undefined, plateOpts),
+              path.join(rt.baseDir, frameRel),
+              { width: sc.plateWidth, height: sc.plateHeight, shouldAbort: abort },
+            )
+            d.sceneImagePath = frameRel
+          }
+        } else if (!(await fileExists(d.firstFramePath))) {
+          // STAGE-01：同内容镜头已有首帧则跳过（复用旧产物）；否则重新生成
+          await generateShotFirstFrame(rt, projectId, d, sc, abort, [...characterMap.keys()])
         }
-      } else {
-        // 人物镜首帧：统一走 generateShotFirstFrame（单图定妆融合优先 → 双图备选 → 文生/复制兜底）
-        await generateShotFirstFrame(rt, projectId, d, sc, abort, [...characterMap.keys()])
+      } catch (e) {
+        if (e instanceof ImageGenerateCancelled) throw e
+        frameFailed++
+        rt.log(projectId, 'scenes', 'warn', `第${d.index}镜首帧失败：${e instanceof Error ? e.message : String(e)}`)
       }
-    } catch (e) {
-      if (e instanceof ImageGenerateCancelled) throw e
-      frameFailed++
-      rt.log(projectId, 'scenes', 'warn',
-        `第${d.index}镜首帧失败：${e instanceof Error ? e.message : String(e)}`)
-    }
-    framesDone++
-    rt.setStage(projectId, 'scenes', 'running',
-      `并发生成镜头首帧 ${framesDone}/${total}...`,
-      Math.round(30 + (framesDone / Math.max(1, total)) * 40))
-  }, { shouldAbort: abort })
+      framesDone++
+      rt.setStage(
+        projectId,
+        'scenes',
+        'running',
+        `并发生成镜头首帧 ${framesDone}/${total}...`,
+        Math.round(30 + (framesDone / Math.max(1, total)) * 40),
+      )
+    },
+    { shouldAbort: abort },
+  )
 
   // —— 2b) 尾帧串行：按镜序承接同角色连续性 ——
   rt.setStage(projectId, 'scenes', 'running', '生成连镜尾帧...', 75)
@@ -565,47 +682,47 @@ export async function buildShots(
     if (!d.as.lastFrameEn?.trim()) continue
     try {
       const look = d.character?.appearanceLock || 'chinese person, natural everyday appearance'
-      const sizeCue = SHOT_SIZE_CUE[d.as.shotSize || 'medium']
+      const sizeCue = SHOT_SIZE_CUE[d.as.shotSize || 'medium'] ?? SHOT_SIZE_CUE.medium
       const env = d.as.sceneEn || d.as.scene
-      const plateHint = d.board?.emptyPlatePath
-        ? `matching the empty location plate mood of ${env}`
-        : env
-      const continuityCue = d.character && prevLastByChar.has(d.character.id)
-        ? 'strict visual continuity from previous shot end pose of the SAME person, identical face wardrobe hair'
-        : ''
+      const plateHint = d.board?.emptyPlatePath ? `matching the empty location plate mood of ${env}` : env
+      const continuityCue =
+        d.character && prevLastByChar.has(d.character.id)
+          ? 'strict visual continuity from previous shot end pose of the SAME person, identical face wardrobe hair'
+          : ''
       const lastRel = `projects/${projectId}/shots/${d.id}_last.png`
       // 分镜级尾帧提示词优先（动作完成态/离开方向）；无则回退模板推断 + 上镜尾帧承接
       const lastCue = d.as.lastFrameEn?.trim() || d.as.action
-      await rt.image.generate(
-        shotFramePrompt({
-          phase: 'end',
-          lookEn: look,
-          scene: plateHint,
-          action: lastCue,
-          shotSizeCue: sizeCue,
-          emotion: d.as.emotion || undefined,
-          continuity: continuityCue || d.as.continuity || undefined,
-          camera: d.as.camera || undefined,
-          lighting: d.as.lighting,
-          facing: d.as.facing,
-          characterCount: d.characterIds.length || 1,
-          props: d.as.props
-        }),
-        path.join(rt.baseDir, lastRel),
-        { width: sc.frameWidth, height: sc.frameHeight, shouldAbort: abort, workflowName: 'klein_t2i_clean' }
-      )
-      d.lastFramePath = lastRel
-      if (d.character) prevLastByChar.set(d.character.id, lastRel)
+      if (!(await fileExists(d.lastFramePath))) {
+        await rt.image.generate(
+          shotFramePrompt({
+            phase: 'end',
+            lookEn: look,
+            scene: plateHint,
+            action: lastCue,
+            shotSizeCue: sizeCue,
+            characterCount: d.characterIds.length || 1,
+            ...(d.as.emotion ? { emotion: d.as.emotion } : {}),
+            ...(continuityCue || d.as.continuity ? { continuity: continuityCue || d.as.continuity } : {}),
+            ...(d.as.camera ? { camera: d.as.camera } : {}),
+            ...(d.as.lighting !== undefined ? { lighting: d.as.lighting } : {}),
+            ...(d.as.facing !== undefined ? { facing: d.as.facing } : {}),
+            ...(d.as.props !== undefined ? { props: d.as.props } : {}),
+          }),
+          path.join(rt.baseDir, lastRel),
+          { width: sc.frameWidth, height: sc.frameHeight, shouldAbort: abort, workflowName: 'klein_t2i_clean' },
+        )
+        d.lastFramePath = lastRel
+      }
+      if (d.character && d.lastFramePath) prevLastByChar.set(d.character.id, d.lastFramePath)
     } catch (e) {
       if (e instanceof ImageGenerateCancelled) throw e
       frameFailed++
-      rt.log(projectId, 'scenes', 'warn',
-        `第${d.index}镜尾帧失败：${e instanceof Error ? e.message : String(e)}`)
+      rt.log(projectId, 'scenes', 'warn', `第${d.index}镜尾帧失败：${e instanceof Error ? e.message : String(e)}`)
     }
   }
 
   for (const d of drafts) {
-    shots.push({
+    let rebuilt: Shot = {
       id: d.id,
       index: d.index,
       scene: d.as.scene,
@@ -617,30 +734,43 @@ export async function buildShots(
       height: sc.frameHeight,
       frames: s.render.defaultFrames,
       seed: Math.floor(Math.random() * 0xffffffff),
-      shotSize: d.as.type === 'i2v' ? (d.as.shotSize || 'medium') : undefined,
-      camera: d.as.camera || undefined,
-      transition: d.as.transition === 'hard' || d.as.transition === 'dissolve' || d.as.transition === 'smash'
-        ? d.as.transition
-        : undefined,
-      emotion: d.as.emotion || undefined,
-      lighting: d.as.lighting,
-      facing: d.as.facing,
-      continuity: d.as.continuity || undefined,
-      props: d.as.props,
-      promptEn: d.as.promptEn,
-      negativeEn: d.as.negativeEn,
-      frameSeconds: d.as.frameSeconds,
-      firstFrameEn: d.as.firstFrameEn,
-      midFrameEn: d.as.midFrameEn,
-      lastFrameEn: d.as.lastFrameEn,
-      handoffToNext: d.as.handoffToNext,
-      transitionEn: d.as.transitionEn,
-      sceneBoardId: d.board?.id,
-      sceneImagePath: d.sceneImagePath,
-      firstFramePath: d.firstFramePath,
-      lastFramePath: d.lastFramePath,
-      status: 'pending'
-    })
+      ...(d.as.type === 'i2v' ? { shotSize: d.as.shotSize || 'medium' } : {}),
+      ...(d.as.camera ? { camera: d.as.camera } : {}),
+      ...(d.as.transition === 'hard' || d.as.transition === 'dissolve' || d.as.transition === 'smash'
+        ? { transition: d.as.transition }
+        : {}),
+      ...(d.as.emotion ? { emotion: d.as.emotion } : {}),
+      ...(d.as.lighting ? { lighting: d.as.lighting } : {}),
+      ...(d.as.facing ? { facing: d.as.facing } : {}),
+      ...(d.as.continuity ? { continuity: d.as.continuity } : {}),
+      ...(d.as.props !== undefined ? { props: d.as.props } : {}),
+      ...(d.as.promptEn !== undefined ? { promptEn: d.as.promptEn } : {}),
+      ...(d.as.negativeEn !== undefined ? { negativeEn: d.as.negativeEn } : {}),
+      ...(d.as.frameSeconds !== undefined ? { frameSeconds: d.as.frameSeconds } : {}),
+      ...(d.as.firstFrameEn !== undefined ? { firstFrameEn: d.as.firstFrameEn } : {}),
+      ...(d.as.midFrameEn !== undefined ? { midFrameEn: d.as.midFrameEn } : {}),
+      ...(d.as.lastFrameEn !== undefined ? { lastFrameEn: d.as.lastFrameEn } : {}),
+      ...(d.as.handoffToNext !== undefined ? { handoffToNext: d.as.handoffToNext } : {}),
+      ...(d.as.transitionEn !== undefined ? { transitionEn: d.as.transitionEn } : {}),
+      ...(d.board?.id !== undefined ? { sceneBoardId: d.board.id } : {}),
+      ...(d.sceneImagePath !== undefined ? { sceneImagePath: d.sceneImagePath } : {}),
+      ...(d.firstFramePath !== undefined ? { firstFramePath: d.firstFramePath } : {}),
+      ...(d.lastFramePath !== undefined ? { lastFramePath: d.lastFramePath } : {}),
+      status: 'pending',
+    }
+    if (d.prev) {
+      // STAGE-01：内容未变 → 沿用旧 id、审校标记与已生成产物
+      rebuilt = mergeRebuiltShot(
+        d.prev as unknown as Record<string, unknown>,
+        rebuilt as unknown as Record<string, unknown>,
+      ) as unknown as Shot
+      // 产物路径可能已被外部清理；done 但分段不存在则退回待渲染，避免假完成进成片
+      if (rebuilt.status === 'done' && !(await fileExists(rebuilt.segmentPath))) {
+        rebuilt.status = 'pending'
+        rebuilt.segmentPath = undefined
+      }
+    }
+    shots.push(rebuilt)
   }
 
   const project = await rt.store.get(projectId)
@@ -651,16 +781,19 @@ export async function buildShots(
   const state = rt.states.get(projectId)!
   state.totalShots = shots.length
 
-  const t2vTotal = shots.filter(x => x.type === 't2v').length
-  const t2vFailed = shots.filter(s => s.type === 't2v' && !s.sceneImagePath && !s.sceneBoardId).length
-  const boardsOk = [...boardByKey.values()].filter(b => b.emptyPlatePath).length
+  const t2vTotal = shots.filter((x) => x.type === 't2v').length
+  const t2vFailed = shots.filter((s) => s.type === 't2v' && !s.sceneImagePath && !s.sceneBoardId).length
+  const boardsOk = [...boardByKey.values()].filter((b) => b.emptyPlatePath).length
   const t2vFatal = t2vTotal > 0 && t2vFailed === t2vTotal && boardsOk === 0
-  rt.setStage(projectId, 'scenes',
+  rt.setStage(
+    projectId,
+    'scenes',
     t2vFatal ? 'error' : 'done',
     t2vFatal
       ? `场景板与首尾帧生成失败`
       : frameFailed
         ? `场景板 ${boardsOk}/${boardByKey.size}，分镜 ${shots.length}，${frameFailed} 镜帧失败已回退`
         : `场景板 ${boardsOk} 张，分镜 ${shots.length} 个（含首尾帧）`,
-    100)
+    100,
+  )
 }

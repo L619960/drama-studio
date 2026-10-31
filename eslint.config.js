@@ -87,13 +87,13 @@ export default tseslint.config(
 
   // 设置/面板类组件以 `:settings="settings"` 传入响应式对象，子组件就地编辑其属性
   // （Element Plus v-model 双向绑定的既有约定）。这是项目已接受的模式，逐处改 emit
-  // 会重写业务逻辑，故对这些组件关闭该规则；其余 .vue 仍保持 warn。
+  // 会重写业务逻辑，故对这些组件关闭该规则；其余 .vue 仍保持 error。
+  // ShotReviewDialog 已改为事件回传（P2-10），不再列入豁免。
   {
     files: [
       'src/renderer/src/components/settings/**/*.vue',
       'src/renderer/src/components/console/MemoryPanel.vue',
-      'src/renderer/src/components/console/SkillsPanel.vue',
-      'src/renderer/src/components/storyboard/ShotReviewDialog.vue'
+      'src/renderer/src/components/console/SkillsPanel.vue'
     ],
     rules: {
       'vue/no-mutating-props': 'off'

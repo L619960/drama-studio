@@ -8,7 +8,16 @@
  */
 import fs from 'node:fs'
 import path from 'node:path'
-import type { AppSettings, GeneratedShot, GenreTemplate, AnalyzeResult, AnalyzeScene, AnalyzedCharacter, AnalyzedShot, PropAsset } from '../../shared/ipcTypes'
+import type {
+  AppSettings,
+  GeneratedShot,
+  GenreTemplate,
+  AnalyzeResult,
+  AnalyzeScene,
+  AnalyzedCharacter,
+  AnalyzedShot,
+  PropAsset,
+} from '../../shared/ipcTypes'
 import { resolveCreation } from '../../shared/creationSettings'
 import { validateNarrativeContinuity } from '../../shared/narrativeBeats'
 import type { FieldFillGuide } from '../../shared/promptAudit'
@@ -26,25 +35,25 @@ export interface FillPromptContext {
   /** 当前字段已有文本（可能为空） */
   currentText: string
   /** 本镜中文场景名 */
-  scene?: string
+  scene?: string | undefined
   /** 本镜已锁环境短语（sceneEn，同场景多镜物理地点与光源锁定） */
-  sceneEn?: string
+  sceneEn?: string | undefined
   /** 本镜动作（必须逐字呼应动词与道具名） */
-  action?: string
+  action?: string | undefined
   /** 景别：closeup / medium / wide */
-  shotSize?: string
+  shotSize?: string | undefined
   /** 镜头类型：i2v / t2v */
-  type?: string
+  type?: string | undefined
   /** 出场角色名 */
-  characterName?: string
+  characterName?: string | undefined
   /** 角色定妆外观锁（英文身份锚，promptEn 必须复用） */
-  characterLocks?: string
+  characterLocks?: string | undefined
   /** 本镜道具（逗号分隔） */
-  props?: string
+  props?: string | undefined
   /** 时代：如 古装 / 现代 */
-  era?: string
+  era?: string | undefined
   /** 触发本次补写的体检问题描述 */
-  issue?: string
+  issue?: string | undefined
 }
 
 /** 清洗 LLM 输出：去代码块/引号/Markdown/解释性首尾/换行，保留单行逗号分隔短语。
@@ -63,9 +72,7 @@ export function cleanLlmOutput(raw: string, guide: FieldFillGuide): string {
   s = s.replace(/^(Sure[,，]?\s*|OK[,，]?\s*|当然[,，]?\s*|好的[,，]?\s*|Here is the prompt[:：]?\s*)/i, '')
   if (!s) throw new Error('LLM 返回为空')
   // 字数硬校验：英文按词计，中文按汉字计
-  const wc = guide.lang === 'zh'
-    ? (s.match(/[一-龥]/g) || []).length
-    : (s.match(/[a-zA-Z'-]+/g) || []).length
+  const wc = guide.lang === 'zh' ? (s.match(/[一-龥]/g) || []).length : (s.match(/[a-zA-Z'-]+/g) || []).length
   const [minW, maxW] = guide.range
   if (wc < minW || (maxW > 0 && wc > maxW)) {
     throw new Error(`LLM 输出 ${wc} 词，超出区间 [${minW}, ${maxW || '∞'}]`)
@@ -83,25 +90,18 @@ export async function pickCandidateOp(
     kind: 'character' | 'scene' | 'render'
     brief: string
     candidates: Array<{ index: number; seed: number; score?: number; note: string }>
-  }
+  },
 ): Promise<{ index: number; reason: string }> {
-  const kindLabel =
-    input.kind === 'character' ? '人物定妆' : input.kind === 'scene' ? '场景板' : '镜头成片'
+  const kindLabel = input.kind === 'character' ? '人物定妆' : input.kind === 'scene' ? '场景板' : '镜头成片'
   const system = [
     `你是短剧 AI 生产线的「抽卡导演」，从多份${kindLabel}候选中挑出最适合成片的一张/一条。`,
     '优先：人脸清晰且符合设定、空场景无人、动作与台词匹配、分数高且 note 无严重缺陷。',
-    '只输出 JSON：{"index":候选序号,"reason":"一句话理由"}，禁止 markdown。'
+    '只输出 JSON：{"index":候选序号,"reason":"一句话理由"}，禁止 markdown。',
   ].join('\n')
   const listing = input.candidates
-    .map(c => `#${c.index} seed=${c.seed} score=${c.score ?? 'n/a'} note=${c.note || '（无）'}`)
+    .map((c) => `#${c.index} seed=${c.seed} score=${c.score ?? 'n/a'} note=${c.note || '（无）'}`)
     .join('\n')
-  const raw = await httpChat(
-    getSettings,
-    system,
-    `创作简报：${input.brief}\n\n候选列表：\n${listing}`,
-    0.2,
-    60000
-  )
+  const raw = await httpChat(getSettings, system, `创作简报：${input.brief}\n\n候选列表：\n${listing}`, 0.2, 60000)
   const cleaned = raw.replace(/```(?:json)?/g, '').trim()
   const start = cleaned.indexOf('{')
   const end = cleaned.lastIndexOf('}')
@@ -121,9 +121,9 @@ export async function pickCandidateOp(
 export async function translatePromptOp(
   getSettings: () => Promise<AppSettings>,
   genreTemplates: GenreTemplate[],
-  input: { scene: string; action: string; dialogue: string; genre: string }
+  input: { scene: string; action: string; dialogue: string; genre: string },
 ): Promise<string> {
-  const tpl = genreTemplates.find(t => t.key === input.genre)
+  const tpl = genreTemplates.find((t) => t.key === input.genre)
   const system = [
     'You are a professional cinematic prompt writer for AI video generation (image-to-video).',
     'Translate the Chinese shot description into ONE line of English prompt.',
@@ -131,14 +131,18 @@ export async function translatePromptOp(
     '- Describe ONLY actions, camera movement, lighting and atmosphere. Never describe character appearance/clothing (the reference image controls appearance).',
     '- Use slow, gentle motion verbs (slowly, gently, slightly) to avoid motion artifacts.',
     '- Comma-separated phrases, no sentences, no quotes, no explanations, 15~40 words.',
-    tpl ? `- Style prefix to weave in: ${tpl.promptStyle}` : ''
-  ].filter(Boolean).join('\n')
+    tpl ? `- Style prefix to weave in: ${tpl.promptStyle}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n')
 
   const user = [
     `场景: ${input.scene || '未指定'}`,
     `动作: ${input.action}`,
-    input.dialogue ? `台词情绪参考: ${input.dialogue}` : ''
-  ].filter(Boolean).join('\n')
+    input.dialogue ? `台词情绪参考: ${input.dialogue}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n')
 
   return httpChat(getSettings, system, user, 0.5)
 }
@@ -148,19 +152,20 @@ export async function translatePromptOp(
 export async function optimizePromptOp(
   getSettings: () => Promise<AppSettings>,
   text: string,
-  kind: 'positive' | 'negative' = 'positive'
+  kind: 'positive' | 'negative' = 'positive',
 ): Promise<string> {
-  const system = kind === 'negative'
-    ? [
-        'You are a professional prompt engineer for AI image/video generation.',
-        'Rewrite the user\'s negative prompt into a professional, comma-separated list of artifacts/qualities to suppress.',
-        'Rules: output ONLY the negative prompt itself, English, comma-separated short phrases, no sentences, no quotes, no explanations, keep the user\'s original intent, 5~20 phrases.'
-      ].join('\n')
-    : [
-        'You are a professional cinematic prompt engineer for AI image/video generation.',
-        'Rewrite the user\'s rough description into a professional visual prompt with precise terminology (camera, lens, lighting, composition, texture, mood).',
-        'Rules: output ONLY the prompt itself, English, comma-separated phrases, no sentences, no quotes, no explanations, preserve the user\'s core content, 20~60 words.'
-      ].join('\n')
+  const system =
+    kind === 'negative'
+      ? [
+          'You are a professional prompt engineer for AI image/video generation.',
+          "Rewrite the user's negative prompt into a professional, comma-separated list of artifacts/qualities to suppress.",
+          "Rules: output ONLY the negative prompt itself, English, comma-separated short phrases, no sentences, no quotes, no explanations, keep the user's original intent, 5~20 phrases.",
+        ].join('\n')
+      : [
+          'You are a professional cinematic prompt engineer for AI image/video generation.',
+          "Rewrite the user's rough description into a professional visual prompt with precise terminology (camera, lens, lighting, composition, texture, mood).",
+          "Rules: output ONLY the prompt itself, English, comma-separated phrases, no sentences, no quotes, no explanations, preserve the user's core content, 20~60 words.",
+        ].join('\n')
   return httpChat(getSettings, system, `原始内容: ${text}`, 0.5)
 }
 
@@ -176,12 +181,12 @@ export async function optimizePromptOp(
 export async function fillPromptFieldOp(
   getSettings: () => Promise<AppSettings>,
   guide: FieldFillGuide,
-  ctx: FillPromptContext
+  ctx: FillPromptContext,
 ): Promise<string> {
   const [minW, maxW] = guide.range
   const rangeText = maxW === 0 ? `≥${minW} 词（无上限）` : `${minW}~${maxW} 词`
   const langText = guide.lang === 'zh' ? '中文' : '英文'
-  const avoidText = guide.mustAvoid?.length ? guide.mustAvoid.map(s => `- ${s}`).join('\n') : ''
+  const avoidText = guide.mustAvoid?.length ? guide.mustAvoid.map((s) => `- ${s}`).join('\n') : ''
 
   const system = [
     '你是资深 AI 短剧提示词工程师，精通电影分镜语言与 AI 出图/视频铁律。',
@@ -196,8 +201,10 @@ export async function fillPromptFieldOp(
     avoidText ? `【禁止项】\n${avoidText}` : '',
     '【输出硬约束】',
     `- 输出长度必须严格落在「${rangeText}」内（英文按空格分词计；中文按汉字计），绝不超界`,
-    '- 只输出纯文本本身，不要前后缀、不要代码块、不要"Here is"之类的话'
-  ].filter(Boolean).join('\n')
+    '- 只输出纯文本本身，不要前后缀、不要代码块、不要"Here is"之类的话',
+  ]
+    .filter(Boolean)
+    .join('\n')
 
   const ctxLines: string[] = ['【本镜上下文（仅供参考，必须严格基于此，不得编造）】']
   if (ctx.scene) ctxLines.push(`- 场景：${ctx.scene}`)
@@ -227,7 +234,7 @@ export async function fillPromptFieldOp(
       user,
       `【上一次输出不达标】${msg}`,
       `【硬性重写要求】请重新输出，严格控制在 ${minW}~${maxW === 0 ? '∞' : maxW} 词，目标约 ${target} 词。`,
-      `上一次输出（参考，不可直接复用，必须重写到目标词数）：${raw}`
+      `上一次输出（参考，不可直接复用，必须重写到目标词数）：${raw}`,
     ].join('\n')
     raw = await httpChat(getSettings, system, retryUser, 0.6, 90000, 2048)
     return cleanLlmOutput(raw, guide)
@@ -239,7 +246,7 @@ export async function translateTextOp(getSettings: () => Promise<AppSettings>, t
   const system = [
     'You are a professional translator for AI image/video generation prompts.',
     'Detect the input language: if Chinese, translate to English; if English, translate to Chinese.',
-    'Rules: output ONLY the translation, preserve comma-separated prompt structure and professional terms (e.g. depth of field, golden hour), no quotes, no explanations.'
+    'Rules: output ONLY the translation, preserve comma-separated prompt structure and professional terms (e.g. depth of field, golden hour), no quotes, no explanations.',
   ].join('\n')
   return httpChat(getSettings, system, text, 0.3)
 }
@@ -253,9 +260,9 @@ export async function writeScriptOp(
   genreTemplates: GenreTemplate[],
   idea: string,
   genre: string,
-  title?: string
+  title?: string,
 ): Promise<string> {
-  const tpl = genreTemplates.find(t => t.key === genre)
+  const tpl = genreTemplates.find((t) => t.key === genre)
   const system = [
     '你是一名资深中文短剧编剧，要把创作者的想法扩写成一部可直接用于 AI 短剧生产线的完整分场剧本。',
     '输出要求：',
@@ -264,13 +271,17 @@ export async function writeScriptOp(
     '- 3~6 场，1 个主角 + 1~2 个关键配角 + 可容纳群演；总台词 8~20 句，每句不超过 30 字',
     '- 必须包含：明确的场景/动作/道具细节（供分镜与资产生成使用）、关键道具重复出现（如片名意象）、有起承转合的完整小剧情',
     '- 禁止：网络小说式大段心理描写、无动作的纯对话、超过 4 个有名有姓的角色',
-    tpl ? `- 题材风格：${tpl.promptStyle}，开篇 20 字内要有钩子` : ''
-  ].filter(Boolean).join('\n')
+    tpl ? `- 题材风格：${tpl.promptStyle}，开篇 20 字内要有钩子` : '',
+  ]
+    .filter(Boolean)
+    .join('\n')
   const user = [
     title ? `片名：《${title}》（剧情与关键道具要呼应片名意象）` : '',
     `创作想法：\n${idea}`,
-    genre ? `题材：${tpl?.label || genre}` : ''
-  ].filter(Boolean).join('\n')
+    genre ? `题材：${tpl?.label || genre}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n')
   return httpChat(getSettings, system, user, 0.8, 300000)
 }
 
@@ -282,22 +293,24 @@ export async function writeScriptFromFramesOp(
   getSettings: () => Promise<AppSettings>,
   genreTemplates: GenreTemplate[],
   framePaths: string[],
-  genre: string
+  genre: string,
 ): Promise<string> {
   const { readFile } = await import('node:fs/promises')
-  const images = await Promise.all(framePaths.map(async (p) => {
-    try {
-      const buf = await readFile(p)
-      const ext = p.toLowerCase().match(/\.(\w+)$/)?.[1] || 'png'
-      const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : `image/${ext}`
-      return { type: 'image_url' as const, image_url: { url: `data:${mime};base64,${buf.toString('base64')}` } }
-    } catch {
-      return null
-    }
-  }))
+  const images = await Promise.all(
+    framePaths.map(async (p) => {
+      try {
+        const buf = await readFile(p)
+        const ext = p.toLowerCase().match(/\.(\w+)$/)?.[1] || 'png'
+        const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : `image/${ext}`
+        return { type: 'image_url' as const, image_url: { url: `data:${mime};base64,${buf.toString('base64')}` } }
+      } catch {
+        return null
+      }
+    }),
+  )
   const valid = images.filter(Boolean)
   if (valid.length === 0) throw new Error('视频抽帧读取失败，无法分析画面')
-  const tpl = genreTemplates.find(t => t.key === genre)
+  const tpl = genreTemplates.find((t) => t.key === genre)
   const system = [
     '你是一名资深中文短剧编剧与拆解导演。下面给你一支视频的关键帧画面（按时间顺序），请根据画面内容反推并扩写为一部完整的 AI 短剧分场剧本。',
     '规则：',
@@ -305,8 +318,10 @@ export async function writeScriptFromFramesOp(
     '- 每场格式：第一行「【第N场 · 场景名】」，随后括号内写环境与动作（人物动作、道具、光线），再写对白「角色：台词」',
     '- 3~6 场，总台词 8~20 句，每句不超过 30 字，关键道具重复出现',
     '- 纯文本剧本，不要 JSON、不要 markdown 标题符号、不要解释性文字',
-    tpl ? `- 题材风格：${tpl.promptStyle}` : ''
-  ].filter(Boolean).join('\n')
+    tpl ? `- 题材风格：${tpl.promptStyle}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n')
   const body: Record<string, unknown> = {
     model: (await getSettings()).llm.model,
     messages: [
@@ -315,14 +330,14 @@ export async function writeScriptFromFramesOp(
         role: 'user',
         content: [
           { type: 'text', text: `这是视频按时间顺序抽取的 ${valid.length} 帧关键画面，请据此写一部短剧剧本：` },
-          ...valid
-        ]
-      }
+          ...valid,
+        ],
+      },
     ],
     temperature: 0.7,
     // 多模态推理模型低推理档 + 大配额保证正文落地
     effort: 'low',
-    max_tokens: 3000
+    max_tokens: 3000,
   }
   return httpChatRaw(getSettings, body, 180000)
 }
@@ -337,12 +352,12 @@ export async function reviewScriptOp(
   genreTemplates: GenreTemplate[],
   script: string,
   genre: string,
-  title?: string
+  title?: string,
 ): Promise<{
   issues: Array<{ severity: 'block' | 'warn'; scene: string; problem: string; suggestion: string }>
   revisedScript: string
 }> {
-  const tpl = genreTemplates.find(t => t.key === genre)
+  const tpl = genreTemplates.find((t) => t.key === genre)
   const system = [
     '你是一位从业三十年的短剧剧本医生/资深编剧顾问，专治 AI 短剧剧本的逻辑病。',
     '审查范围（逐项过）：',
@@ -359,8 +374,10 @@ export async function reviewScriptOp(
     '- block=会穿帮/明显违背逻辑必须修；warn=建议优化',
     '- revisedScript 必须是完整剧本（不是只列修改），AI 短剧生产线直接可用的分场格式',
     tpl ? `- 题材风格基调：${tpl.promptStyle}` : '',
-    title ? `- 片名：《${title}》，意象需呼应` : ''
-  ].filter(Boolean).join('\n')
+    title ? `- 片名：《${title}》，意象需呼应` : '',
+  ]
+    .filter(Boolean)
+    .join('\n')
   // 剧本医生要求输出完整改后剧本（长输出 + 推理模型思维链），180s 实测超时
   // （llm-error.log: timeout of 180000ms exceeded），放宽到 300s
   const raw = await httpChat(getSettings, system, script, 0.4, 300000)
@@ -369,27 +386,45 @@ export async function reviewScriptOp(
   const end = cleaned.lastIndexOf('}')
   if (start === -1 || end === -1) {
     // 落盘原始返回片段，便于定位「非 JSON / 思维链未收敛 / 被 max_tokens 截断」
-    logLlmError('reviewScript.parse', new Error(`剧本医生返回格式异常，无法解析；原始返回前500字: ${cleaned.slice(0, 500)}`))
+    logLlmError(
+      'reviewScript.parse',
+      new Error(`剧本医生返回格式异常，无法解析；原始返回前500字: ${cleaned.slice(0, 500)}`),
+    )
     throw new Error(`剧本医生返回格式异常，无法解析（返回前120字：${cleaned.slice(0, 120)}）`)
   }
   let parsed: { issues?: unknown; revisedScript?: unknown }
   try {
     parsed = JSON.parse(cleaned.slice(start, end + 1))
   } catch (e) {
-    logLlmError('reviewScript.jsonParse', new Error(`JSON.parse 失败：${e instanceof Error ? e.message : String(e)}；片段: ${cleaned.slice(start, end + 1).slice(0, 500)}`))
+    logLlmError(
+      'reviewScript.jsonParse',
+      new Error(
+        `JSON.parse 失败：${e instanceof Error ? e.message : String(e)}；片段: ${cleaned.slice(start, end + 1).slice(0, 500)}`,
+      ),
+    )
     throw new Error(`剧本医生 JSON 解析失败：${e instanceof Error ? e.message : String(e)}`, { cause: e })
   }
-  const issues = ((Array.isArray(parsed.issues) ? parsed.issues : []) as Array<{ severity?: string; scene?: string; problem?: string; suggestion?: string }>)
-    .filter(i => i && (i.problem || i.suggestion))
-    .map(i => ({
-      severity: i.severity === 'block' ? 'block' as const : 'warn' as const,
+  const issues = (
+    (Array.isArray(parsed.issues) ? parsed.issues : []) as Array<{
+      severity?: string
+      scene?: string
+      problem?: string
+      suggestion?: string
+    }>
+  )
+    .filter((i) => i && (i.problem || i.suggestion))
+    .map((i) => ({
+      severity: i.severity === 'block' ? ('block' as const) : ('warn' as const),
       scene: String(i.scene || '').trim(),
       problem: String(i.problem || '').trim(),
-      suggestion: String(i.suggestion || '').trim()
+      suggestion: String(i.suggestion || '').trim(),
     }))
   const revisedScript = String(parsed.revisedScript || '').trim()
   if (!revisedScript) {
-    logLlmError('reviewScript.emptyRevised', new Error('剧本医生未返回修改后的剧本；原始返回前500字: ' + cleaned.slice(0, 500)))
+    logLlmError(
+      'reviewScript.emptyRevised',
+      new Error('剧本医生未返回修改后的剧本；原始返回前500字: ' + cleaned.slice(0, 500)),
+    )
     throw new Error('剧本医生未返回修改后的剧本')
   }
   return { issues, revisedScript }
@@ -403,9 +438,9 @@ export async function splitScriptOp(
   getSettings: () => Promise<AppSettings>,
   genreTemplates: GenreTemplate[],
   script: string,
-  genre: string
+  genre: string,
 ): Promise<GeneratedShot[]> {
-  const tpl = genreTemplates.find(t => t.key === genre)
+  const tpl = genreTemplates.find((t) => t.key === genre)
   const system = [
     'You are a short-drama director. Split the script into shots for AI video generation.',
     'Output ONLY a JSON array, no markdown fences, no explanations.',
@@ -415,30 +450,76 @@ export async function splitScriptOp(
     '- 单镜节奏 3~6 秒，长句台词拆成两句或两镜；action 只写动作/镜头/光影，严禁 identical face/appearance/outfit 等外貌锁定措辞',
     '- camera/emotion 为必填英文短语',
     tpl ? `- 题材风格: ${tpl.promptStyle}` : '',
-    '- 8~20 个镜头，按剧情顺序排列'
-  ].filter(Boolean).join('\n')
+    '- 8~20 个镜头，按剧情顺序排列',
+  ]
+    .filter(Boolean)
+    .join('\n')
 
   const raw = await httpChat(getSettings, system, script, 0.7, 120000)
-  const cleaned = raw.replace(/```(?:json)?/g, '').trim()
-  const start = cleaned.indexOf('[')
-  const end = cleaned.lastIndexOf(']')
+  // CORE-08：与 analyze 同款解析兜底——LLM 在 action/dialogue 里写裸换行会让 JSON.parse 直接抛，
+  // 一次不合法就整段失败。这里先清控制字符重试，仍失败再带修复指令重新请求一次，
+  // 并把原始输出落盘 tmp/split-raw-dump.json 便于排查。
+  let cleaned = raw.replace(/```(?:json)?/g, '').trim()
+  let start = cleaned.indexOf('[')
+  let end = cleaned.lastIndexOf(']')
   if (start === -1 || end === -1 || end <= start) {
     throw new Error('LLM 返回格式异常，无法解析分镜列表')
   }
-  const parsed = JSON.parse(cleaned.slice(start, end + 1)) as GeneratedShot[]
+  let jsonText = cleaned.slice(start, end + 1)
+  let parsed!: GeneratedShot[]
+  for (let attempt = 0; ; attempt++) {
+    try {
+      parsed = JSON.parse(jsonText) as GeneratedShot[]
+      break
+    } catch (firstErr) {
+      if (attempt >= 1) {
+        try {
+          fs.mkdirSync(LLM_DUMP_DIR, { recursive: true })
+          fs.writeFileSync(path.join(LLM_DUMP_DIR, 'split-raw-dump.json'), jsonText, 'utf-8')
+        } catch {
+          /* 诊断落盘失败不阻断主流程 */
+        }
+        throw new Error(
+          `拆分镜输出 JSON 两次解析失败（${(firstErr as Error).message.slice(0, 80)}），原始输出已存 tmp/split-raw-dump.json 便于排查`,
+          { cause: firstErr },
+        )
+      }
+      // 第一次失败：剥离控制字符（裸换行→空格）后重试
+      // eslint-disable-next-line no-control-regex -- 有意清洗 LLM 输出中的裸控制字符（\x00-\x1f），修复 JSON 解析
+      const sanitized = jsonText.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, ' ')
+      if (sanitized === jsonText) {
+        const retryRaw = await httpChat(
+          getSettings,
+          `${system}\n\n# 上次输出的 JSON 数组解析失败（${(firstErr as Error).message.slice(0, 100)}）。请重新输出：action/dialogue 等所有字符串值必须是单行纯文本，不含换行、不含未转义双引号、不含 markdown 代码围栏；只输出一个合法 JSON 数组。`,
+          script,
+          0.7,
+          120000,
+        )
+        cleaned = retryRaw.replace(/```(?:json)?/g, '').trim()
+        start = cleaned.indexOf('[')
+        end = cleaned.lastIndexOf(']')
+        if (start === -1 || end === -1 || end <= start) {
+          throw new Error('LLM 修复输出仍非 JSON 数组，无法解析分镜列表', { cause: firstErr })
+        }
+        jsonText = cleaned.slice(start, end + 1)
+      } else {
+        jsonText = sanitized
+      }
+    }
+  }
   if (!Array.isArray(parsed) || parsed.length === 0) {
     throw new Error('LLM 未拆分出任何分镜')
   }
   // 字段兜底清洗
   return parsed
-    .filter(s => s && typeof s.action === 'string' && s.action.trim())
-    .map(s => ({
+    .filter((s) => s && typeof s.action === 'string' && s.action.trim())
+    .map((s) => ({
       scene: String(s.scene || '').trim(),
       action: String(s.action).trim(),
       dialogue: String(s.dialogue || '').trim(),
       type: s.type === 't2v' ? 't2v' : 'i2v',
       camera: typeof s.camera === 'string' ? String(s.camera).trim() : undefined,
-      emotion: typeof s.emotion === 'string' ? String(s.emotion).trim() : undefined
+      emotion: typeof s.emotion === 'string' ? String(s.emotion).trim() : undefined,
     }))
 }
 
@@ -452,9 +533,9 @@ export async function analyzeOp(
   genreTemplates: GenreTemplate[],
   script: string,
   genre: string,
-  opts?: { title?: string; extraRules?: string[]; signal?: AbortSignal }
+  opts?: { title?: string; extraRules?: string[]; signal?: AbortSignal },
 ): Promise<AnalyzeResult> {
-  const tpl = genreTemplates.find(t => t.key === genre)
+  const tpl = genreTemplates.find((t) => t.key === genre)
   // title 韧性兜底：历史/外部数据可能把 title 存成非字符串（对象/数组），直接 .trim 会崩
   const titleHint = typeof opts?.title === 'string' ? opts.title.trim() : ''
   const creation = resolveCreation(await getSettings())
@@ -487,19 +568,22 @@ export async function analyzeOp(
       try {
         fs.mkdirSync(dumpDir, { recursive: true })
         fs.writeFileSync(path.join(dumpDir, 'analyze-last-ok.json'), jsonText, 'utf-8')
-      } catch { /* 诊断落盘失败不阻断主流程 */ }
+      } catch {
+        /* 诊断落盘失败不阻断主流程 */
+      }
       break
     } catch (firstErr) {
       if (attempt >= 1) {
         try {
           fs.mkdirSync(dumpDir, { recursive: true })
-          fs.writeFileSync(
-            path.join(dumpDir, 'analyze-raw-dump.json'),
-            jsonText,
-            'utf-8'
-          )
-        } catch { /* 诊断落盘失败不阻断主流程 */ }
-        throw new Error(`LLM 分析输出 JSON 两次解析失败（${(firstErr as Error).message.slice(0, 80)}），原始输出已存 tmp/analyze-raw-dump.json 便于排查`, { cause: firstErr })
+          fs.writeFileSync(path.join(dumpDir, 'analyze-raw-dump.json'), jsonText, 'utf-8')
+        } catch {
+          /* 诊断落盘失败不阻断主流程 */
+        }
+        throw new Error(
+          `LLM 分析输出 JSON 两次解析失败（${(firstErr as Error).message.slice(0, 80)}），原始输出已存 tmp/analyze-raw-dump.json 便于排查`,
+          { cause: firstErr },
+        )
       }
       // 第一次失败：剥离控制字符后重试（裸换行→空格）
       // eslint-disable-next-line no-control-regex -- 有意清洗 LLM 输出中的裸控制字符（\x00-\x1f），修复 JSON 解析
@@ -509,11 +593,17 @@ export async function analyzeOp(
         const retryRaw = await httpChat(
           getSettings,
           `${system}\n\n# 上次输出的 JSON 解析失败（${(firstErr as Error).message.slice(0, 100)}）。请重新输出，要求：promptEn/negativeEn 等所有字符串值必须是单行纯文本，不含换行、不含未转义双引号、不含 markdown 代码围栏；只输出一个合法 JSON 对象。`,
-          script, sb.temperature, 1200000, 32768, opts?.signal)
+          script,
+          sb.temperature,
+          1200000,
+          32768,
+          opts?.signal,
+        )
         cleaned = retryRaw.replace(/```(?:json)?/g, '').trim()
         start = cleaned.indexOf('{')
         end = cleaned.lastIndexOf('}')
-        if (start === -1 || end === -1 || end <= start) throw new Error('LLM 修复输出仍非 JSON，无法解析分析结果', { cause: firstErr })
+        if (start === -1 || end === -1 || end <= start)
+          throw new Error('LLM 修复输出仍非 JSON，无法解析分析结果', { cause: firstErr })
         jsonText = cleaned.slice(start, end + 1)
       } else {
         jsonText = sanitized
@@ -523,21 +613,19 @@ export async function analyzeOp(
 
   const characters: AnalyzedCharacter[] = Array.isArray(parsed.characters)
     ? parsed.characters
-        .filter((c): c is Record<string, unknown> =>
-          Boolean(c) && typeof (c as Record<string, unknown>).name === 'string'
+        .filter(
+          (c): c is Record<string, unknown> => Boolean(c) && typeof (c as Record<string, unknown>).name === 'string',
         )
-        .map(c => ({
+        .map((c) => ({
           name: String(c.name).trim(),
           gender: c.gender === 'male' ? 'male' : 'female',
           age: c.age ? String(c.age) : undefined,
           appearance: String(c.appearance || '').trim(),
           lookEn: String(c.lookEn || '').trim() || 'attractive person',
-          aliases: Array.isArray(c.aliases)
-            ? c.aliases.map(a => String(a).trim()).filter(Boolean)
-            : undefined,
+          aliases: Array.isArray(c.aliases) ? c.aliases.map((a) => String(a).trim()).filter(Boolean) : undefined,
           confidence: ['high', 'medium', 'low'].includes(c.confidence as string)
             ? (c.confidence as 'high' | 'medium' | 'low')
-            : undefined
+            : undefined,
         }))
     : []
 
@@ -545,16 +633,16 @@ export async function analyzeOp(
 
   const shots: AnalyzedShot[] = Array.isArray(parsed.shots)
     ? parsed.shots
-        .filter((s): s is Record<string, unknown> =>
-          Boolean(s) && typeof (s as Record<string, unknown>).action === 'string'
+        .filter(
+          (s): s is Record<string, unknown> => Boolean(s) && typeof (s as Record<string, unknown>).action === 'string',
         )
-        .map(s => {
+        .map((s) => {
           const type = s.type === 't2v' ? 't2v' : 'i2v'
           const characterName =
-            type === 'i2v' && typeof s.characterName === 'string'
-              ? String(s.characterName).trim()
-              : undefined
-          const shotSizeRaw = String(s.shotSize || '').trim().toLowerCase()
+            type === 'i2v' && typeof s.characterName === 'string' ? String(s.characterName).trim() : undefined
+          const shotSizeRaw = String(s.shotSize || '')
+            .trim()
+            .toLowerCase()
           // 电影工业景别 9 档 → 本系统三档（closeup/medium/wide），未知值归一 medium
           const shotSize =
             shotSizeRaw === 'closeup' || shotSizeRaw === 'wide'
@@ -574,9 +662,7 @@ export async function analyzeOp(
             type,
             characterName,
             characters: characterName ? [characterName] : undefined,
-            props: Array.isArray(s.props)
-              ? s.props.map(p => String(p).trim()).filter(Boolean)
-              : undefined,
+            props: Array.isArray(s.props) ? s.props.map((p) => String(p).trim()).filter(Boolean) : undefined,
             shotSize: type === 'i2v' ? shotSize : undefined,
             camera: typeof s.camera === 'string' ? String(s.camera).trim() : undefined,
             transition: ['hard', 'dissolve', 'smash'].includes(String(s.transition || ''))
@@ -588,12 +674,15 @@ export async function analyzeOp(
             continuity: typeof s.continuity === 'string' ? String(s.continuity).trim() : undefined,
             promptEn: typeof s.promptEn === 'string' ? String(s.promptEn).trim() : undefined,
             negativeEn: typeof s.negativeEn === 'string' ? String(s.negativeEn).trim() : undefined,
-            frameSeconds: typeof s.frameSeconds === 'number' && s.frameSeconds > 0 ? Math.min(6, Math.max(3, Math.round(s.frameSeconds))) : undefined,
+            frameSeconds:
+              typeof s.frameSeconds === 'number' && s.frameSeconds > 0
+                ? Math.min(6, Math.max(3, Math.round(s.frameSeconds)))
+                : undefined,
             firstFrameEn: typeof s.firstFrameEn === 'string' ? String(s.firstFrameEn).trim() : undefined,
             midFrameEn: typeof s.midFrameEn === 'string' ? String(s.midFrameEn).trim() : undefined,
             lastFrameEn: typeof s.lastFrameEn === 'string' ? String(s.lastFrameEn).trim() : undefined,
             handoffToNext: typeof s.handoffToNext === 'string' ? String(s.handoffToNext).trim() : undefined,
-            transitionEn: typeof s.transitionEn === 'string' ? String(s.transitionEn).trim() : undefined
+            transitionEn: typeof s.transitionEn === 'string' ? String(s.transitionEn).trim() : undefined,
           }
         })
     : []
@@ -603,27 +692,29 @@ export async function analyzeOp(
   // 解析全剧关键道具清单（propList）→ PropAsset[]
   const props: PropAsset[] = Array.isArray(parsed.props)
     ? parsed.props
-        .filter((p): p is Record<string, unknown> => Boolean(p) && typeof (p as Record<string, unknown>).zh === 'string')
+        .filter(
+          (p): p is Record<string, unknown> => Boolean(p) && typeof (p as Record<string, unknown>).zh === 'string',
+        )
         .map((p, i) => ({
           id: `prop_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 6)}`,
           zh: String(p.zh).trim(),
           en: typeof p.en === 'string' ? String(p.en).trim() : String(p.zh).trim(),
-          description: typeof p.description === 'string' ? String(p.description).trim() : undefined
+          description: typeof p.description === 'string' ? String(p.description).trim() : undefined,
         }))
-        .filter(p => p.zh)
+        .filter((p) => p.zh)
     : []
 
   // 解析场景清单（scenes）→ 场景板提示词
   const scenes: AnalyzeScene[] = Array.isArray(parsed.scenes)
     ? parsed.scenes
-        .filter((s): s is Record<string, unknown> =>
-          Boolean(s) && typeof (s as Record<string, unknown>).name === 'string'
+        .filter(
+          (s): s is Record<string, unknown> => Boolean(s) && typeof (s as Record<string, unknown>).name === 'string',
         )
-        .map(s => ({
+        .map((s) => ({
           name: String(s.name).trim(),
-          en: typeof s.en === 'string' ? String(s.en).trim() : undefined
+          en: typeof s.en === 'string' ? String(s.en).trim() : undefined,
         }))
-        .filter(s => s.name)
+        .filter((s) => s.name)
     : []
 
   // 提示词字数硬校验 + 整改：LLM 分镜输出字数常打折（promptEn/negativeEn/首尾帧/场景 en/角色 lookEn），
@@ -636,7 +727,7 @@ export async function analyzeOp(
     characters: lengthFixed.characters,
     shots: lengthFixed.shots,
     props: props.length ? props : undefined,
-    scenes: lengthFixed.scenes.length ? lengthFixed.scenes : undefined
+    scenes: lengthFixed.scenes.length ? lengthFixed.scenes : undefined,
   }
   // 本地兜底：别名归一 + 无法匹配的绑定记录为 warnings
   // 2026-10-23 总实证修复：切到 llmParsers.normalizeBindings（含 claimPerformer + alignStoryboardPrompts
@@ -652,16 +743,16 @@ export async function analyzeOp(
     genre,
     lookOf: (s) => {
       const name = (s.characterName || '').trim()
-      const c = normalized.characters.find(ch => ch.name === name || (ch.aliases || []).includes(name))
+      const c = normalized.characters.find((ch) => ch.name === name || (ch.aliases || []).includes(name))
       return c?.lookEn || ''
-    }
+    },
   })
   normalized.shots = schemaFixed.shots
   if (schemaFixed.notes.length > 0) {
     // 明细过多，只汇总一条进 warnings（逐字段明细由审计页展示），避免淹没真正的叙事告警
     normalized.warnings = [
       ...(normalized.warnings || []),
-      `提示词规范化：${schemaFixed.notes.length} 类字段已按标准英文补齐/同场景对齐`
+      `提示词规范化：${schemaFixed.notes.length} 类字段已按标准英文补齐/同场景对齐`,
     ]
   }
   const narrative = validateNarrativeContinuity(
@@ -675,13 +766,13 @@ export async function analyzeOp(
       dialogue: s.dialogue,
       type: s.type,
       characterName: s.characterName,
-      shotSize: s.shotSize
+      shotSize: s.shotSize,
     })),
     {
       enforcePropLock: sb.enforcePropLock,
       enforceReactionBeats: sb.enforceReactionBeats,
-      enforceBoardingChain: sb.enforceBoardingChain
-    }
+      enforceBoardingChain: sb.enforceBoardingChain,
+    },
   )
   if (narrative.length > 0) {
     normalized.warnings = [...(normalized.warnings || []), ...narrative]

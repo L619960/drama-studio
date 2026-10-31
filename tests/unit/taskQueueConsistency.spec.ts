@@ -12,10 +12,10 @@
 import { describe, it, expect, vi } from 'vitest'
 
 vi.mock('../../src/main/core/ffmpegService', () => ({
-  FFmpegService: class {}
+  FFmpegService: class {},
 }))
 vi.mock('../../src/main/core/projectStore', () => ({
-  ProjectStore: class {}
+  ProjectStore: class {},
 }))
 vi.mock('../../src/main/core/consistencyService', async (importOriginal) => {
   const actual = await (importOriginal as () => Promise<Record<string, unknown>>)()
@@ -35,19 +35,22 @@ vi.mock('../../src/main/core/roleBinding', () => ({
     const margin = opts.margin ?? 0.05
     if (best.score > self + margin) {
       return {
-        confused: true, withCharacter: best.characterId, withName: best.name,
-        selfScore: self, bestOther: best.score
+        confused: true,
+        withCharacter: best.characterId,
+        withName: best.name,
+        selfScore: self,
+        bestOther: best.score,
       }
     }
     return { confused: false, selfScore: self, bestOther: best.score }
-  }
+  },
 }))
 
 import {
   runConsistencyCheck,
   recheckProjectConsistency,
   computeShotRoleConfusion,
-  recheckProjectRoleConfusion
+  recheckProjectRoleConfusion,
 } from '../../src/main/core/taskQueueConsistency'
 import type { Project, ProgressEvent, Shot } from '../../src/shared/ipcTypes'
 
@@ -55,21 +58,39 @@ type PE = Omit<ProgressEvent, 'type'>
 
 function makeShot(id: string, over: Partial<Shot> = {}): Shot {
   return {
-    id, index: 1, type: 'i2v', status: 'done',
-    scene: '街景', action: '站立微动', dialogue: '', emotion: 'calm',
-    camera: '中景', frames: 49, characterIds: ['c1'],
+    id,
+    index: 1,
+    type: 'i2v',
+    status: 'done',
+    scene: '街景',
+    action: '站立微动',
+    dialogue: '',
+    emotion: 'calm',
+    camera: '中景',
+    frames: 49,
+    characterIds: ['c1'],
     firstFramePath: `projects/p1/first_${id}.png`,
     segmentPath: `projects/p1/segments/${id}.mp4`,
     workflow: 'wan22_i2v',
-    ...over
+    ...over,
   } as unknown as Shot
 }
 
-function makeProject(shots: Shot[], characters: Array<Record<string, unknown>> = [], over: Partial<Project> = {}): Project {
+function makeProject(
+  shots: Shot[],
+  characters: Array<Record<string, unknown>> = [],
+  over: Partial<Project> = {},
+): Project {
   return {
-    id: 'p1', title: 't', genre: '都市', status: 'draft',
-    characters, scenes: [], sceneBoards: [], shots,
-    ...over
+    id: 'p1',
+    title: 't',
+    genre: '都市',
+    status: 'draft',
+    characters,
+    scenes: [],
+    sceneBoards: [],
+    shots,
+    ...over,
   } as unknown as Project
 }
 
@@ -93,18 +114,18 @@ function makeRt(cfg: RtCfg = {}) {
     available: service.available ?? (async () => true),
     compareFrames: service.compareFrames ?? (async () => ({ score: 0.8, method: 'full' as const })),
     needsDownload: service.needsDownload ?? false,
-    lastMethodTrace: 'mock-trace'
+    lastMethodTrace: 'mock-trace',
   }
   const rt = {
     ffmpeg: {
-      extractFrameAt: vi.fn(async () => {
+      extractFrameAt: vi.fn(async (_inputPath: string, _outAbs: string, _timeSec: number) => {
         if (cfg.extractFails) throw new Error('extract-fail')
       }),
-      getDuration: vi.fn(async () => cfg.duration ?? 4)
+      getDuration: vi.fn(async (_path: string) => cfg.duration ?? 4),
     },
     store: {
-      get: vi.fn(async () => cfg.project ?? null),
-      save: vi.fn(async () => {})
+      get: vi.fn(async (_id: string) => cfg.project ?? null),
+      save: vi.fn(async (_project: Project) => {}),
     },
     getConsistencyService: () => svc,
     resolveInBase: (p: string) => `B:${p}`,
@@ -112,18 +133,24 @@ function makeRt(cfg: RtCfg = {}) {
       if (cfg.resolveRefThrows) throw new Error('no-ref')
       return cfg.resolveRef ? cfg.resolveRef(shot, project) : `projects/p1/refs/${shot.id}.png`
     },
-    emitProgress: (e: PE) => { progress.push(e) }
+    emitProgress: (e: PE) => {
+      progress.push(e)
+    },
   }
   return { rt: rt as never, obj: rt, progress, svc }
 }
 
-function checkOpts(shot: Shot, over: Partial<Parameters<typeof runConsistencyCheck>[0]['opts']> = {}) {
+function checkOpts(shot: Shot, over: Partial<Parameters<typeof runConsistencyCheck>[1]> = {}) {
   return {
-    projectId: 'p1', shot, refImageRel: 'projects/p1/refs/s1.png',
+    projectId: 'p1',
+    shot,
+    refImageRel: 'projects/p1/refs/s1.png',
     segmentAbsPath: 'B:projects/p1/segments/s1.mp4',
-    consistencyMode: 'warn' as const, renderSeed: 7, engine: 'wan',
+    consistencyMode: 'warn' as const,
+    renderSeed: 7,
+    engine: 'wan',
     reRun: vi.fn(async () => {}),
-    ...over
+    ...over,
   }
 }
 
@@ -152,7 +179,7 @@ describe('runConsistencyCheck', () => {
     const shot = makeShot('s1')
     shot.lowConsistency = true
     const { rt, progress } = makeRt({
-      service: { compareFrames: async () => ({ score: 0.75, method: 'full' }) }
+      service: { compareFrames: async () => ({ score: 0.75, method: 'full' }) },
     })
     const seed = await runConsistencyCheck(rt, checkOpts(shot))
     expect(seed).toBe(7)
@@ -164,35 +191,35 @@ describe('runConsistencyCheck', () => {
 
   it('无首帧时参照回退渲染参考图，三帧抽样按 25/50/90%', async () => {
     const shot = makeShot('s1', { firstFramePath: undefined as never })
-    const cmp = vi.fn(async () => ({ score: 0.8, method: 'full' as const }))
+    const cmp = vi.fn(async (_ref: string, _seg: string, _times: number[]) => ({ score: 0.8, method: 'full' as const }))
     const { rt } = makeRt({ service: { compareFrames: cmp } })
     await runConsistencyCheck(rt, checkOpts(shot))
-    expect(cmp.mock.calls[0][0]).toBe('B:projects/p1/refs/s1.png')
-    expect(cmp.mock.calls[0][2]).toEqual([1, 2, 3.6])
+    expect(cmp.mock.calls[0]?.[0]).toBe('B:projects/p1/refs/s1.png')
+    expect(cmp.mock.calls[0]?.[2]).toEqual([1, 2, 3.6])
   })
 
   it('needsDownload=true 时进度提示首次加载模型', async () => {
     const { rt, progress } = makeRt({ service: { needsDownload: true } })
     await runConsistencyCheck(rt, checkOpts(makeShot('s1')))
-    expect(progress[0].message).toContain('首次加载人物一致性模型')
+    expect(progress[0]?.message).toContain('首次加载人物一致性模型')
   })
 
   it('人脸模式达标（0.55 ≥ 0.5）摘帽', async () => {
     const shot = makeShot('s1')
     shot.lowConsistency = true
     const { rt } = makeRt({
-      service: { compareFrames: async () => ({ score: 0.55, method: 'face' }) }
+      service: { compareFrames: async () => ({ score: 0.55, method: 'face' }) },
     })
     await runConsistencyCheck(rt, checkOpts(shot))
     expect(shot.lowConsistency).toBeUndefined()
   })
 
   it('R2V 镜以视频第 0 帧为锚比对', async () => {
-    const cmp = vi.fn(async () => ({ score: 0.8, method: 'full' as const }))
+    const cmp = vi.fn(async (_ref: string, _seg: string, _times: number[]) => ({ score: 0.8, method: 'full' as const }))
     const { rt, obj } = makeRt({ service: { compareFrames: cmp } })
     await runConsistencyCheck(rt, checkOpts(makeShot('s1', { audioPath: 'projects/p1/audio/s1.wav' as never })))
-    expect(obj.ffmpeg.extractFrameAt.mock.calls[0][2]).toBe(0.06)
-    expect(cmp.mock.calls[0][0]).toBe('B:projects/p1/shots/s1_anchor.png')
+    expect(obj.ffmpeg.extractFrameAt.mock.calls[0]?.[2]).toBe(0.06)
+    expect(cmp.mock.calls[0]?.[0]).toBe('B:projects/p1/shots/s1_anchor.png')
   })
 
   it('R2V 锚抽帧失败：跳过写分且不调用 compareFrames', async () => {
@@ -209,7 +236,11 @@ describe('runConsistencyCheck', () => {
   it('compareFrames 抛错：score 未定义直接返回原 seed', async () => {
     const shot = makeShot('s1')
     const { rt, progress } = makeRt({
-      service: { compareFrames: async () => { throw new Error('boom') } }
+      service: {
+        compareFrames: async () => {
+          throw new Error('boom')
+        },
+      },
     })
     const seed = await runConsistencyCheck(rt, checkOpts(shot))
     expect(seed).toBe(7)
@@ -221,57 +252,58 @@ describe('runConsistencyCheck', () => {
     const shot = makeShot('s1')
     const opts = checkOpts(shot)
     const { rt, progress } = makeRt({
-      service: { compareFrames: async () => ({ score: 0.5, method: 'full' }) }
+      service: { compareFrames: async () => ({ score: 0.5, method: 'full' }) },
     })
     await runConsistencyCheck(rt, opts)
     expect(shot.lowConsistency).toBeUndefined()
     expect(opts.reRun).not.toHaveBeenCalled()
-    expect(progress[1].message).toContain('仅告警，镜头保留进成片')
+    expect(progress[1]?.message).toContain('仅告警，镜头保留进成片')
   })
 
   it('warn+人脸 0.3（<0.4）：标记严重漂移', async () => {
     const shot = makeShot('s1')
     const { rt, progress } = makeRt({
-      service: { compareFrames: async () => ({ score: 0.3, method: 'face' }) }
+      service: { compareFrames: async () => ({ score: 0.3, method: 'face' }) },
     })
     await runConsistencyCheck(rt, checkOpts(shot))
     expect(shot.lowConsistency).toBe(true)
-    expect(progress[1].message).toContain('已标记严重漂移')
+    expect(progress[1]?.message).toContain('已标记严重漂移')
   })
 
   it('warn+全图 0.1（灾难级）：标记但文案走仅告警分支', async () => {
     const shot = makeShot('s1')
     const { rt, progress } = makeRt({
-      service: { compareFrames: async () => ({ score: 0.1, method: 'full' }) }
+      service: { compareFrames: async () => ({ score: 0.1, method: 'full' }) },
     })
     await runConsistencyCheck(rt, checkOpts(shot))
     expect(shot.lowConsistency).toBe(true)
-    expect(progress[1].message).toContain('仅告警')
+    expect(progress[1]?.message).toContain('仅告警')
   })
 
   it('warn+R2V 0.1：R2V 漂移严重文案', async () => {
     const shot = makeShot('s1', { audioPath: 'projects/p1/audio/s1.wav' as never })
     const { rt, progress } = makeRt({
-      service: { compareFrames: async () => ({ score: 0.1, method: 'full' }) }
+      service: { compareFrames: async () => ({ score: 0.1, method: 'full' }) },
     })
     await runConsistencyCheck(rt, checkOpts(shot))
     expect(shot.lowConsistency).toBe(true)
-    expect(progress[1].message).toContain('R2V 漂移严重')
+    expect(progress[1]?.message).toContain('R2V 漂移严重')
   })
 
   it('warn+R2V 0.5：分数仅供参考不标记', async () => {
     const shot = makeShot('s1', { audioPath: 'projects/p1/audio/s1.wav' as never })
     const { rt, progress } = makeRt({
-      service: { compareFrames: async () => ({ score: 0.5, method: 'full' }) }
+      service: { compareFrames: async () => ({ score: 0.5, method: 'full' }) },
     })
     await runConsistencyCheck(rt, checkOpts(shot))
     expect(shot.lowConsistency).toBeUndefined()
-    expect(progress[1].message).toContain('仅供参考，不标记')
+    expect(progress[1]?.message).toContain('仅供参考，不标记')
   })
 
   it('warn+H3 0.1（<0.15 灾难级）：兜底切 Wan 重渲，复评达标摘帽', async () => {
     const shot = makeShot('s1')
-    const cmp = vi.fn()
+    const cmp = vi
+      .fn()
       .mockResolvedValueOnce({ score: 0.1, method: 'full' })
       .mockResolvedValueOnce({ score: 0.8, method: 'full' })
     const { rt, progress } = makeRt({ service: { compareFrames: cmp } })
@@ -282,15 +314,15 @@ describe('runConsistencyCheck', () => {
     expect(opts.reRun).toHaveBeenCalledWith(seed, 'wan')
     expect(shot.lowConsistency).toBeUndefined()
     expect(shot.consistencyScore).toBe(0.8)
-    expect(progress.map(p => `${p.step}:${p.percent}`)).toEqual(['combine:97', 'render:20'])
-    expect(progress[1].message).toContain('自动切换 Wan i2v 重渲')
+    expect(progress.map((p) => `${p.step}:${p.percent}`)).toEqual(['combine:97', 'render:20'])
+    expect(progress[1]?.message).toContain('自动切换 Wan i2v 重渲')
   })
 
   it('warn+H3 0.2（≥0.15 非灾难）：不兜底，走仅告警分支', async () => {
     const shot = makeShot('s1')
     const opts = checkOpts(shot, { engine: 'h3-i2v' })
     const { rt } = makeRt({
-      service: { compareFrames: async () => ({ score: 0.2, method: 'full' }) }
+      service: { compareFrames: async () => ({ score: 0.2, method: 'full' }) },
     })
     await runConsistencyCheck(rt, opts)
     expect(opts.reRun).not.toHaveBeenCalled()
@@ -299,7 +331,8 @@ describe('runConsistencyCheck', () => {
 
   it('rerender+非 H3 0.5：换 seed 重渲，复评仍偏低则标记并发 99 进度', async () => {
     const shot = makeShot('s1')
-    const cmp = vi.fn()
+    const cmp = vi
+      .fn()
       .mockResolvedValueOnce({ score: 0.5, method: 'full' })
       .mockResolvedValueOnce({ score: 0.3, method: 'face' })
     const { rt, progress } = makeRt({ service: { compareFrames: cmp } })
@@ -308,12 +341,13 @@ describe('runConsistencyCheck', () => {
     expect(opts.reRun).toHaveBeenCalledWith(seed)
     expect(shot.lowConsistency).toBe(true)
     expect(progress[2]).toMatchObject({ step: 'combine', percent: 99 })
-    expect(progress[2].message).toContain('重渲后人脸相似度')
+    expect(progress[2]?.message).toContain('重渲后人脸相似度')
   })
 
   it('rerender+H3 0.25（<0.3）：按阈值切 Wan，复评抛错不阻塞', async () => {
     const shot = makeShot('s1')
-    const cmp = vi.fn()
+    const cmp = vi
+      .fn()
       .mockResolvedValueOnce({ score: 0.25, method: 'full' })
       .mockRejectedValueOnce(new Error('recheck-fail'))
     const { rt } = makeRt({ service: { compareFrames: cmp } })
@@ -344,11 +378,14 @@ describe('recheckProjectConsistency', () => {
     r2v.lowConsistency = true
     const boom = makeShot('s4', { index: 4 })
     const project = makeProject([
-      makeShot('x1', { type: 't2v' as never }),          // 非 i2v → skipped
-      makeShot('x2', { status: 'pending' as never }),     // 未完成 → skipped
-      makeShot('x3', { segmentPath: undefined as never }),// 无产物 → skipped
-      makeShot('x4'),                                     // 无参考图 → skipped
-      done, still, r2v, boom
+      makeShot('x1', { type: 't2v' as never }), // 非 i2v → skipped
+      makeShot('x2', { status: 'pending' as never }), // 未完成 → skipped
+      makeShot('x3', { segmentPath: undefined as never }), // 无产物 → skipped
+      makeShot('x4'), // 无参考图 → skipped
+      done,
+      still,
+      r2v,
+      boom,
     ])
     const cmp = vi.fn(async (ref: string) => {
       if (ref.includes('s4')) throw new Error('cmp-fail')
@@ -358,7 +395,7 @@ describe('recheckProjectConsistency', () => {
     const { rt, obj, progress } = makeRt({
       project,
       service: { compareFrames: cmp },
-      resolveRef: (shot) => shot.id === 'x4' ? '' : `projects/p1/refs/${shot.id}.png`
+      resolveRef: (shot) => (shot.id === 'x4' ? '' : `projects/p1/refs/${shot.id}.png`),
     })
     const res = await recheckProjectConsistency(rt, 'p1')
     expect(res).toEqual({ rechecked: 3, cleared: 2, stillLow: 1, skipped: 5 })
@@ -367,28 +404,28 @@ describe('recheckProjectConsistency', () => {
     expect(still.lowConsistency).toBe(true)
     expect(r2v.lowConsistency).toBeUndefined() // R2V 低分也摘帽
     expect(boom.consistencyScore).toBeUndefined()
-    expect(obj.store.save.mock.calls[0][0]).toBe(project)
-    expect(progress.some(p => p.message.includes('第1镜 重跑人物一致性校验'))).toBe(true)
+    expect(obj.store.save.mock.calls[0]?.[0]).toBe(project)
+    expect(progress.some((p) => p.message.includes('第1镜 重跑人物一致性校验'))).toBe(true)
   })
 
   it('R2V 锚抽帧失败保持原参照仍复评', async () => {
     const shot = makeShot('s1', { audioPath: 'projects/p1/audio/s1.wav' as never, firstFramePath: undefined as never })
-    const cmp = vi.fn(async () => ({ score: 0.9, method: 'full' as const }))
+    const cmp = vi.fn(async (_ref: string, _seg: string, _times: number[]) => ({ score: 0.9, method: 'full' as const }))
     const { rt } = makeRt({
       project: makeProject([shot]),
       service: { compareFrames: cmp },
-      extractFails: true
+      extractFails: true,
     })
     const res = await recheckProjectConsistency(rt, 'p1')
     expect(res.rechecked).toBe(1)
-    expect(cmp.mock.calls[0][0]).toBe('B:projects/p1/refs/s1.png')
+    expect(cmp.mock.calls[0]?.[0]).toBe('B:projects/p1/refs/s1.png')
   })
 })
 
 describe('computeShotRoleConfusion', () => {
   const chars = [
     { id: 'c1', name: '甲', faceImagePath: 'projects/p1/chars/c1.png' },
-    { id: 'c2', name: '乙', faceImagePath: 'projects/p1/chars/c2.png' }
+    { id: 'c2', name: '乙', faceImagePath: 'projects/p1/chars/c2.png' },
   ]
 
   it('未绑定角色/角色不存在/无其他角色/非 done i2v/模型不可用均返回 null', async () => {
@@ -420,7 +457,7 @@ describe('computeShotRoleConfusion', () => {
     const cmp = vi.fn(async () => ({ score: 0.6, method: 'face' as const }))
     const { rt } = makeRt({ service: { compareFrames: cmp } })
     const v = await computeShotRoleConfusion(rt, 'p1', shot, makeProject([shot], chars))
-    expect(v.confused).toBe(false)
+    expect(v!.confused).toBe(false)
     expect(shot.roleConfusion).toBeUndefined()
   })
 
@@ -441,14 +478,17 @@ describe('computeShotRoleConfusion', () => {
 
   it('R2V 镜锚抽帧成功用锚图；失败保持首帧参照', async () => {
     const shot = makeShot('s1', { characterIds: ['c1'], audioPath: 'projects/p1/audio/s1.wav' as never })
-    const ok = vi.fn(async () => ({ score: 0.9, method: 'face' as const }))
+    const ok = vi.fn(async (_ref: string, _seg: string, _times: number[]) => ({ score: 0.9, method: 'face' as const }))
     const { rt } = makeRt({ service: { compareFrames: ok } })
     await computeShotRoleConfusion(rt, 'p1', shot, makeProject([shot], chars))
-    expect(ok.mock.calls[0][0]).toBe('B:projects/p1/shots/s1_anchor.png')
-    const fail = vi.fn(async () => ({ score: 0.9, method: 'face' as const }))
+    expect(ok.mock.calls[0]?.[0]).toBe('B:projects/p1/shots/s1_anchor.png')
+    const fail = vi.fn(async (_ref: string, _seg: string, _times: number[]) => ({
+      score: 0.9,
+      method: 'face' as const,
+    }))
     const { rt: rt2 } = makeRt({ service: { compareFrames: fail }, extractFails: true })
     await computeShotRoleConfusion(rt2, 'p1', shot, makeProject([shot], chars))
-    expect(fail.mock.calls[0][0]).toBe('B:projects/p1/first_s1.png')
+    expect(fail.mock.calls[0]?.[0]).toBe('B:projects/p1/first_s1.png')
   })
 
   it('无首帧且参考图解析抛错返回 null', async () => {
@@ -460,7 +500,9 @@ describe('computeShotRoleConfusion', () => {
   it('对方角色比对抛错：跳过该角色，判不混淆', async () => {
     const shot = makeShot('s1', { characterIds: ['c1'] })
     shot.consistencyScore = 0.3
-    const cmp = vi.fn(async () => { throw new Error('face-missing') })
+    const cmp = vi.fn(async () => {
+      throw new Error('face-missing')
+    })
     const { rt } = makeRt({ service: { compareFrames: cmp } })
     const v = await computeShotRoleConfusion(rt, 'p1', shot, makeProject([shot], chars))
     expect(v).toEqual({ confused: false, selfScore: 0.3 })
@@ -475,10 +517,7 @@ describe('recheckProjectRoleConfusion', () => {
   })
 
   it('单角色项目全部跳过', async () => {
-    const project = makeProject(
-      [makeShot('s1')],
-      [{ id: 'c1', name: '甲', faceImagePath: 'a.png' }]
-    )
+    const project = makeProject([makeShot('s1')], [{ id: 'c1', name: '甲', faceImagePath: 'a.png' }])
     const { rt } = makeRt({ project })
     const res = await recheckProjectRoleConfusion(rt, 'p1')
     expect(res).toEqual({ checked: 0, confused: 0, skipped: 1 })
@@ -491,11 +530,14 @@ describe('recheckProjectRoleConfusion', () => {
     s2.consistencyScore = 0.7
     const s3 = makeShot('s3', { type: 't2v' as never })
     const s4 = makeShot('s4', { characterIds: [] as never })
-    const project = makeProject([s1, s2, s3, s4], [
-      { id: 'c1', name: '甲', faceImagePath: 'projects/p1/chars/c1.png' },
-      { id: 'c2', name: '乙', faceImagePath: 'projects/p1/chars/c2.png' }
-    ])
-    const cmp = vi.fn(async () => ({ score: 0.6, method: 'face' as const }))
+    const project = makeProject(
+      [s1, s2, s3, s4],
+      [
+        { id: 'c1', name: '甲', faceImagePath: 'projects/p1/chars/c1.png' },
+        { id: 'c2', name: '乙', faceImagePath: 'projects/p1/chars/c2.png' },
+      ],
+    )
+    const cmp = vi.fn(async (_ref: string, _seg: string, _times: number[]) => ({ score: 0.6, method: 'face' as const }))
     const { rt, obj } = makeRt({ project, service: { compareFrames: cmp } })
     const res = await recheckProjectRoleConfusion(rt, 'p1')
     expect(res).toEqual({ checked: 2, confused: 1, skipped: 2 })
@@ -503,6 +545,6 @@ describe('recheckProjectRoleConfusion', () => {
     expect(s1.auditHint).toContain('甲')
     expect(s1.auditHint).toContain('乙')
     expect(s2.roleConfusion).toBeUndefined()
-    expect(obj.store.save.mock.calls[0][0]).toBe(project)
+    expect(obj.store.save.mock.calls[0]?.[0]).toBe(project)
   })
 })

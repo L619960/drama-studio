@@ -49,7 +49,7 @@ function richShot(i: number): Shot {
     consistencyScore: 0.92,
     lowConsistency: true,
     renderProfile: { engine: 'h3-i2v', workflow: 'h3_turbo', seed: 12345, lipSync: 'native', renderedAt: 0 },
-    status: 'done'
+    status: 'done',
   } as Shot
 }
 
@@ -72,12 +72,10 @@ describe('ProjectStore.duplicate（D-01 回归）', () => {
         description: '',
         voice: 'zh-CN-XiaoxiaoNeural',
         voiceRate: '88',
-        appearanceLock: '强'
-      }
+        appearanceLock: '强',
+      },
     ]
-    source.sceneBoards = [
-      { id: 'scene_src_0', key: 'S1', name: '夜巷', description: '', emptyPlatePath: '' }
-    ]
+    source.sceneBoards = [{ id: 'scene_src_0', key: 'S1', name: '夜巷', description: '', emptyPlatePath: '' }]
     source.shots = [richShot(0), richShot(1)]
     await store.save(source)
   })
@@ -90,20 +88,22 @@ describe('ProjectStore.duplicate（D-01 回归）', () => {
     const dup = await store.duplicate(source.id)
     expect(dup.id).not.toBe(source.id)
     const d0 = dup.shots[0]
-    expect(d0.promptEn).toBe(source.shots[0].promptEn)
-    expect(d0.negativeEn).toBe(source.shots[0].negativeEn)
-    expect(d0.firstFrameEn).toBe(source.shots[0].firstFrameEn)
-    expect(d0.lastFrameEn).toBe(source.shots[0].lastFrameEn)
-    expect(d0.transitionEn).toBe(source.shots[0].transitionEn)
-    expect(d0.frameSeconds).toBe(source.shots[0].frameSeconds)
+    if (!d0) throw new Error('测试夹具缺少 dup.shots[0]')
+    expect(d0.promptEn).toBe(source.shots[0]?.promptEn)
+    expect(d0.negativeEn).toBe(source.shots[0]?.negativeEn)
+    expect(d0.firstFrameEn).toBe(source.shots[0]?.firstFrameEn)
+    expect(d0.lastFrameEn).toBe(source.shots[0]?.lastFrameEn)
+    expect(d0.transitionEn).toBe(source.shots[0]?.transitionEn)
+    expect(d0.frameSeconds).toBe(source.shots[0]?.frameSeconds)
     expect(d0.props).toEqual(['umbrella'])
     expect(d0.workflow).toBe('wan22_i2v')
-    expect(d0.voice).toBe(source.shots[0].voice)
+    expect(d0.voice).toBe(source.shots[0]?.voice)
   })
 
   it('运行时/产物字段全部重置（无悬空资产、不复活成 done）', async () => {
     const dup = await store.duplicate(source.id)
     const d0 = dup.shots[0]
+    if (!d0) throw new Error('测试夹具缺少 dup.shots[0]')
     expect(d0.status).toBe('pending')
     expect(d0.firstFramePath).toBeUndefined()
     expect(d0.lastFramePath).toBeUndefined()
@@ -119,8 +119,10 @@ describe('ProjectStore.duplicate（D-01 回归）', () => {
 
   it('角色/场景板 ID 重映射到新 ID，镜头引用同步', async () => {
     const dup = await store.duplicate(source.id)
-    expect(dup.characters[0].id).not.toBe('char_src_0')
-    expect(dup.shots[0].characterIds).toContain(dup.characters[0].id)
-    expect(dup.shots[0].sceneBoardId).toBe(dup.sceneBoards?.[0]?.id)
+    const c0 = dup.characters[0]
+    if (!c0) throw new Error('测试夹具缺少 dup.characters[0]')
+    expect(c0.id).not.toBe('char_src_0')
+    expect(dup.shots[0]?.characterIds).toContain(c0.id)
+    expect(dup.shots[0]?.sceneBoardId).toBe(dup.sceneBoards?.[0]?.id)
   })
 })

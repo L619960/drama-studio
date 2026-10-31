@@ -27,19 +27,19 @@ describe('SkillService 技能库', () => {
   it('首次运行：返回全部内置技能并落盘 skills.json', async () => {
     const list = await svc.list()
     expect(list).toHaveLength(BUILTIN_SKILLS.length)
-    expect(list.every(s => s.builtin)).toBe(true)
+    expect(list.every((s) => s.builtin)).toBe(true)
     const saved = JSON.parse(await fs.readFile(file(), 'utf8'))
     expect(Array.isArray(saved)).toBe(true)
     expect(saved).toHaveLength(BUILTIN_SKILLS.length)
   })
 
   it('升级内置技能：描述以代码为准，启用状态沿用用户配置', async () => {
-    await fs.writeFile(file(), JSON.stringify([
-      { ...BUILTIN_SKILLS[0], description: '旧描述', enabled: false }
-    ]))
+    const builtin0 = BUILTIN_SKILLS[0]
+    if (!builtin0) throw new Error('测试夹具缺少 BUILTIN_SKILLS[0]')
+    await fs.writeFile(file(), JSON.stringify([{ ...builtin0, description: '旧描述', enabled: false }]))
     const list = await new SkillService(dir).list()
-    const first = list.find(s => s.id === BUILTIN_SKILLS[0].id)!
-    expect(first.description).toBe(BUILTIN_SKILLS[0].description)
+    const first = list.find((s) => s.id === builtin0.id)!
+    expect(first.description).toBe(builtin0.description)
     expect(first.enabled).toBe(false)
     // 用户文件里缺失的内置技能会被补齐
     expect(list).toHaveLength(BUILTIN_SKILLS.length)
@@ -53,7 +53,7 @@ describe('SkillService 技能库', () => {
 
     const reloaded = await new SkillService(dir).list()
     expect(reloaded).toHaveLength(BUILTIN_SKILLS.length + 1)
-    expect(reloaded[reloaded.length - 1].id).toBe(created.id)
+    expect(reloaded[reloaded.length - 1]?.id).toBe(created.id)
   })
 
   it('update / toggle 持久化，remove 只允许自定义技能', async () => {
@@ -61,14 +61,16 @@ describe('SkillService 技能库', () => {
     await svc.update(created.id, { name: 'a2', promptTemplate: 'c2' })
     await svc.toggle(created.id, false)
     const reloaded = await new SkillService(dir).list()
-    const found = reloaded.find(s => s.id === created.id)!
+    const found = reloaded.find((s) => s.id === created.id)!
     expect(found.name).toBe('a2')
     expect(found.promptTemplate).toBe('c2')
     expect(found.enabled).toBe(false)
 
     await svc.remove(created.id)
-    expect((await new SkillService(dir).list()).some(s => s.id === created.id)).toBe(false)
-    await expect(svc.remove(BUILTIN_SKILLS[0].id)).rejects.toThrow('内置技能不可删除')
+    expect((await new SkillService(dir).list()).some((s) => s.id === created.id)).toBe(false)
+    const builtinId = BUILTIN_SKILLS[0]?.id
+    if (!builtinId) throw new Error('测试夹具缺少 BUILTIN_SKILLS[0]')
+    await expect(svc.remove(builtinId)).rejects.toThrow('内置技能不可删除')
     await expect(svc.update('sk_missing', { name: 'x' })).rejects.toThrow('技能不存在')
   })
 
@@ -76,11 +78,11 @@ describe('SkillService 技能库', () => {
     await Promise.all([
       svc.create({ name: 's1', description: '', promptTemplate: '1' }),
       svc.create({ name: 's2', description: '', promptTemplate: '2' }),
-      svc.create({ name: 's3', description: '', promptTemplate: '3' })
+      svc.create({ name: 's3', description: '', promptTemplate: '3' }),
     ])
     const list = await new SkillService(dir).list()
-    const custom = list.filter(s => !s.builtin)
-    expect(custom.map(s => s.name).sort()).toEqual(['s1', 's2', 's3'])
+    const custom = list.filter((s) => !s.builtin)
+    expect(custom.map((s) => s.name).sort()).toEqual(['s1', 's2', 's3'])
   })
 
   it('list 返回浅拷贝，外部修改不污染缓存', async () => {
@@ -96,7 +98,7 @@ describe('SkillService 技能库', () => {
     expect(list).toHaveLength(BUILTIN_SKILLS.length)
 
     const entries = await fs.readdir(dir)
-    const bak = entries.find(n => n.startsWith('skills.json.bak_'))
+    const bak = entries.find((n) => n.startsWith('skills.json.bak_'))
     expect(bak).toBeTruthy()
     expect(await fs.readFile(path.join(dir, bak!), 'utf8')).toBe(broken)
     // 原始文件已被改名，且本轮不回写新的 skills.json
@@ -108,6 +110,6 @@ describe('SkillService 技能库', () => {
     const list = await svc.list()
     expect(list).toHaveLength(BUILTIN_SKILLS.length)
     const entries = await fs.readdir(dir)
-    expect(entries.some(n => n.startsWith('skills.json.bak_'))).toBe(true)
+    expect(entries.some((n) => n.startsWith('skills.json.bak_'))).toBe(true)
   })
 })

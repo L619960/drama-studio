@@ -10,7 +10,7 @@ import axios from 'axios'
 import fs from 'node:fs'
 import path from 'node:path'
 import type { AppSettings } from '../../shared/ipcTypes'
-import { logLlmError, LLM_DUMP_DIR } from './llmRequest'
+import { logLlmError, LLM_DUMP_DIR, llmApiKey, llmBaseUrl } from './llmRequest'
 import { createLogger } from './logger'
 
 const log = createLogger('LLM')
@@ -21,10 +21,7 @@ export interface ChatMessage {
   /** 纯文本；多模态时可用 contentParts（图片+文本，OpenAI 兼容 content 数组） */
   content: string
   /** OpenAI 兼容 content 数组（图片/文本混合），存在时优先于 content 发送 */
-  contentParts?: Array<
-    | { type: 'text'; text: string }
-    | { type: 'image_url'; image_url: { url: string } }
-  >
+  contentParts?: Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }>
   tool_calls?: Array<{
     id: string
     type: 'function'
@@ -48,21 +45,28 @@ export interface ToolSpec {
 export async function httpChatCompletion(
   getSettings: () => Promise<AppSettings>,
   messages: ChatMessage[],
-  opts: { temperature?: number; timeoutMs?: number; tools?: ToolSpec[]; signal?: AbortSignal; effort?: string } = {}
+  opts: {
+    temperature?: number
+    timeoutMs?: number
+    tools?: ToolSpec[]
+    signal?: AbortSignal | undefined
+    effort?: string
+  } = {},
 ): Promise<ChatMessage> {
   const s = await getSettings()
-  if (!s.llm.apiKey) {
+  const apiKey = llmApiKey(s)
+  if (!apiKey) {
     throw new Error('请先在 设置 → LLM 中配置 API Key')
   }
-  const baseUrl = (s.llm.baseUrl || 'https://api.deepseek.com').replace(/\/+$/, '')
+  const baseUrl = llmBaseUrl(s)
   const body: Record<string, unknown> = {
     model: s.llm.model,
-    messages: messages.map(m =>
+    messages: messages.map((m) =>
       m.contentParts
-        ? { ...m, content: m.contentParts }   // 多模态：content 数组
-        : m
+        ? { ...m, content: m.contentParts } // 多模态：content 数组
+        : m,
     ),
-    temperature: opts.temperature ?? 0.6
+    temperature: opts.temperature ?? 0.6,
   }
   if (opts.tools?.length) {
     body.tools = opts.tools
@@ -76,9 +80,9 @@ export async function httpChatCompletion(
   let resp
   try {
     resp = await axios.post(`${baseUrl}/chat/completions`, body, {
-      headers: { Authorization: `Bearer ${s.llm.apiKey}` },
+      headers: { Authorization: `Bearer ${apiKey}` },
       timeout: opts.timeoutMs ?? 180000,
-      signal: opts.signal
+      ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
     })
   } catch (e) {
     // 部分 provider/模型不支持 thinking / effort 参数（400/422）→ 同时丢弃二者重试一次
@@ -86,9 +90,9 @@ export async function httpChatCompletion(
     if (st === 400 || st === 422) {
       const { thinking: _dropThinking, effort: _dropEffort, ...fallbackBody } = body
       resp = await axios.post(`${baseUrl}/chat/completions`, fallbackBody, {
-        headers: { Authorization: `Bearer ${s.llm.apiKey}` },
+        headers: { Authorization: `Bearer ${apiKey}` },
         timeout: opts.timeoutMs ?? 180000,
-        signal: opts.signal
+        ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
       })
     } else {
       throw e
@@ -98,15 +102,19 @@ export async function httpChatCompletion(
   if (elapsed && Number(elapsed) > 30) {
     try {
       const charLen = JSON.stringify(body).length
-      log.info(`chatCompletion ${elapsed}s, bodyChars=${charLen}, model=${s.llm.model}, tools=${opts.tools?.length ?? 0}, msgs=${messages.length}`)
-    } catch { /* 日志失败不影响主流程 */ }
+      log.info(
+        `chatCompletion ${elapsed}s, bodyChars=${charLen}, model=${s.llm.model}, tools=${opts.tools?.length ?? 0}, msgs=${messages.length}`,
+      )
+    } catch {
+      /* 日志失败不影响主流程 */
+    }
   }
   const msg = resp.data?.choices?.[0]?.message
   if (!msg) throw new Error('LLM 返回为空')
   return {
     role: 'assistant',
     content: msg.content || '',
-    tool_calls: Array.isArray(msg.tool_calls) ? msg.tool_calls : undefined
+    tool_calls: Array.isArray(msg.tool_calls) ? msg.tool_calls : undefined,
   }
 }
 
@@ -118,24 +126,25 @@ export async function httpChat(
   temperature = 0.7,
   timeoutMs = 60000,
   maxTokens = 16384,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<string> {
   const s = await getSettings()
-  if (!s.llm.apiKey) {
+  const apiKey = llmApiKey(s)
+  if (!apiKey) {
     throw new Error('请先在 设置 → LLM 中配置 API Key')
   }
-  const baseUrl = (s.llm.baseUrl || 'https://api.deepseek.com').replace(/\/+$/, '')
+  const baseUrl = llmBaseUrl(s)
   const axOpts = {
-    headers: { Authorization: `Bearer ${s.llm.apiKey}` },
+    headers: { Authorization: `Bearer ${apiKey}` },
     timeout: timeoutMs,
     // P1-2：长耗时分析可取消（导演任务取消/退出时 AbortController.abort() 立即中断请求）
-    signal
+    ...(signal !== undefined ? { signal } : {}),
   }
   const baseBody = {
     model: s.llm.model,
     messages: [
       { role: 'system', content: system },
-      { role: 'user', content: user }
+      { role: 'user', content: user },
     ],
     temperature,
     // 推理模型（deepseek-v4-flash / ark-code-latest）会先消耗 reasoning tokens；
@@ -144,7 +153,7 @@ export async function httpChat(
     // 更彻底：显式关闭思维链（thinking disabled），推理不再抢占输出配额，
     // 结构化 JSON 拆镜不依赖思维链，还能把首 token 延迟减半（实测 67.9s→32.9s）。
     max_tokens: maxTokens,
-    thinking: { type: 'disabled' }
+    thinking: { type: 'disabled' },
   }
   type ChatResp = { data: { choices?: Array<{ message?: { content?: string } }>; usage?: unknown } }
   const post = (b: Record<string, unknown>): Promise<ChatResp> =>
@@ -171,7 +180,7 @@ export async function httpChat(
           }
         }
         if (RETRYABLE_STATUS.has(st ?? 0) && attempt < MAX_ATTEMPTS) {
-          await new Promise(r => setTimeout(r, 300 * 2 ** (attempt - 1)))
+          await new Promise((r) => setTimeout(r, 300 * 2 ** (attempt - 1)))
           continue
         }
         const detail = logLlmError(`chat(${s.llm.model})`, e)
@@ -194,9 +203,24 @@ export async function httpChat(
     try {
       const dumpDir = LLM_DUMP_DIR
       fs.mkdirSync(dumpDir, { recursive: true })
-      fs.writeFileSync(path.join(dumpDir, 'analyze-empty-response.json'),
-        JSON.stringify({ ts: Date.now(), model: s.llm.model, keys: Object.keys(resp.data || {}), choicesLen: resp.data?.choices?.length, usage: resp.data?.usage }, null, 2), 'utf-8')
-    } catch { /* 诊断落盘失败不阻断 */ }
+      fs.writeFileSync(
+        path.join(dumpDir, 'analyze-empty-response.json'),
+        JSON.stringify(
+          {
+            ts: Date.now(),
+            model: s.llm.model,
+            keys: Object.keys(resp.data || {}),
+            choicesLen: resp.data?.choices?.length,
+            usage: resp.data?.usage,
+          },
+          null,
+          2,
+        ),
+        'utf-8',
+      )
+    } catch {
+      /* 诊断落盘失败不阻断 */
+    }
     throw new Error('LLM 返回为空')
   }
   return content
@@ -206,21 +230,18 @@ export async function httpChat(
 export async function httpChatRaw(
   getSettings: () => Promise<AppSettings>,
   body: Record<string, unknown>,
-  timeoutMs = 120000
+  timeoutMs = 120000,
 ): Promise<string> {
   const s = await getSettings()
-  if (!s.llm.apiKey) {
+  const apiKey = llmApiKey(s)
+  if (!apiKey) {
     throw new Error('请先在 设置 → LLM 中配置 API Key')
   }
-  const baseUrl = (s.llm.baseUrl || 'https://api.deepseek.com').replace(/\/+$/, '')
-  const resp = await axios.post(
-    `${baseUrl}/chat/completions`,
-    body,
-    {
-      headers: { Authorization: `Bearer ${s.llm.apiKey}` },
-      timeout: timeoutMs
-    }
-  )
+  const baseUrl = llmBaseUrl(s)
+  const resp = await axios.post(`${baseUrl}/chat/completions`, body, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+    timeout: timeoutMs,
+  })
   const content: string = resp.data?.choices?.[0]?.message?.content?.trim() || ''
   if (!content) throw new Error('LLM 返回为空')
   return content

@@ -28,7 +28,7 @@ describe('ComfyUI 连接状态轮询（REQ-15 MP-07）', () => {
         if (shouldThrow) throw new Error('ECONNREFUSED')
         return true
       },
-      onChange
+      onChange,
     })
     await watcher.poll()
     expect(onChange).toHaveBeenLastCalledWith(false)
@@ -39,10 +39,13 @@ describe('ComfyUI 连接状态轮询（REQ-15 MP-07）', () => {
 
   it('并发轮询时跳过重复检查', async () => {
     const onChange = vi.fn()
-    let resolveCheck: ((v: boolean) => void) | null = null
+    let resolveCheck: (v: boolean) => void = () => {}
     const watcher = createComfyStatusWatcher({
-      check: () => new Promise<boolean>((resolve) => { resolveCheck = resolve }),
-      onChange
+      check: () =>
+        new Promise<boolean>((resolve) => {
+          resolveCheck = resolve
+        }),
+      onChange,
     })
     const first = watcher.poll()
     await watcher.poll()
@@ -59,7 +62,7 @@ describe('ComfyUI 连接状态轮询（REQ-15 MP-07）', () => {
     const watcher = createComfyStatusWatcher({
       check: async () => online,
       onChange,
-      intervalMs: 1000
+      intervalMs: 1000,
     })
     watcher.start()
     await vi.advanceTimersByTimeAsync(0)

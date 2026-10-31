@@ -16,6 +16,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport, getDefaultEnvironment } from '@modelcontextprotocol/sdk/client/stdio.js'
 import type { SettingsStore } from './settingsStore'
 import type { ToolSpec } from './llmService'
+import { DEFAULT_COMFY_BASE_URL } from '../../shared/comfyDefaults'
 
 export type McpStatus = 'not_installed' | 'idle' | 'running' | 'error'
 
@@ -40,31 +41,31 @@ const STDERR_KEEP = 20
 
 /** 当前 comfy-mcp 版本里确认的管理类工具名（精确名单，源：comfy_mcp/server.py 的 @mcp.tool 注册） */
 const MANAGED_TOOL_NAMES = new Set([
-  'auth_login',             // 发起 Comfy Cloud OAuth 登录流程（环境认证）
-  'launch_comfyui',         // 启动本地 ComfyUI server
-  'stop_comfyui',           // 停止本地 ComfyUI server
-  'restart_comfyui',        // 重启 server，中断进行中的渲染
-  'update_comfyui',         // git pull + 重装依赖，改动本地安装
+  'auth_login', // 发起 Comfy Cloud OAuth 登录流程（环境认证）
+  'launch_comfyui', // 启动本地 ComfyUI server
+  'stop_comfyui', // 停止本地 ComfyUI server
+  'restart_comfyui', // 重启 server，中断进行中的渲染
+  'update_comfyui', // git pull + 重装依赖，改动本地安装
   'switch_comfyui_version', // 切版本，源码 docstring 标注 DESTRUCTIVE
-  'install_node'            // 安装第三方自定义节点包（运行第三方代码）
+  'install_node', // 安装第三方自定义节点包（运行第三方代码）
 ])
 
 /** 关键字兜底模式：未来 comfy-mcp 新增同类工具时自动命中，不依赖精确名单穷举 */
 const MANAGED_TOOL_PATTERNS: RegExp[] = [
-  /^(launch|start|stop|restart|shutdown)_comfyui/i,                        // server 生命周期
-  /^(install|uninstall|reinstall|update|upgrade|remove|delete|switch)_/i   // 安装/更新/删除/切换版本
+  /^(launch|start|stop|restart|shutdown)_comfyui/i, // server 生命周期
+  /^(install|uninstall|reinstall|update|upgrade|remove|delete|switch)_/i, // 安装/更新/删除/切换版本
 ]
 
 /** 判定单个 MCP 工具是否属于"环境管理类"（应从 LLM 工具清单隐藏）；纯函数，可单测 */
 export function isManagedMcpTool(name: string): boolean {
   if (!name) return false
   if (MANAGED_TOOL_NAMES.has(name)) return true
-  return MANAGED_TOOL_PATTERNS.some(re => re.test(name))
+  return MANAGED_TOOL_PATTERNS.some((re) => re.test(name))
 }
 
 /** 从 MCP listTools 结果中剔除管理类工具；保持原顺序，纯函数，可单测 */
 export function filterMcpTools<T extends { name: string }>(tools: T[]): T[] {
-  return tools.filter(t => !isManagedMcpTool(t.name))
+  return tools.filter((t) => !isManagedMcpTool(t.name))
 }
 
 /** 与 comfyuiClient 同款：解析带引号路径的命令行 */
@@ -73,7 +74,9 @@ function parseCommandLine(cmd: string): string[] {
   const re = /"([^"]*)"|'([^']*)'|(\S+)/g
   let m: RegExpExecArray | null
   while ((m = re.exec(cmd)) !== null) {
-    out.push(m[1] ?? m[2] ?? m[3])
+    const token = m[1] ?? m[2] ?? m[3]
+    if (token === undefined) continue
+    out.push(token)
   }
   return out
 }
@@ -106,7 +109,7 @@ export class ComfyMcpService {
   private installHint(startCommand: string, venv: string): string {
     const argv = parseCommandLine(startCommand)
     const pythonExe = argv[0]?.toLowerCase().endsWith('python.exe') ? argv[0] : ''
-    const comfyMain = argv.find(a => a.toLowerCase().endsWith('main.py')) || ''
+    const comfyMain = argv.find((a) => a.toLowerCase().endsWith('main.py')) || ''
     const comfyRoot = comfyMain ? path.dirname(comfyMain) : ''
     if (!pythonExe || !venv || !comfyRoot) {
       return 'ComfyUI-MCP 未安装，且设置中的 ComfyUI 启动命令无法解析 python.exe 与 main.py。请先在设置里填写启动命令。'
@@ -117,7 +120,7 @@ export class ComfyMcpService {
       'ComfyUI-MCP 未安装（独立 venv 缺失）。请在终端执行：',
       `"${pythonExe}" -m venv "${venv}"`,
       `"${venvPython}" -m pip install comfy-mcp "comfy-cli>=1.14.0"`,
-      `"${comfyExe}" set-default "${comfyRoot}"`
+      `"${comfyExe}" set-default "${comfyRoot}"`,
     ].join('\n')
   }
 
@@ -148,9 +151,9 @@ export class ComfyMcpService {
         env: {
           ...getDefaultEnvironment(),
           COMFY_BIN: path.join(venv, 'Scripts', 'comfy.exe'),
-          COMFYUI_URL: s.comfyui.baseUrl || 'http://127.0.0.1:8188'
+          COMFYUI_URL: s.comfyui.baseUrl || DEFAULT_COMFY_BASE_URL,
         },
-        stderr: 'pipe'
+        stderr: 'pipe',
       })
       transport.stderr?.on('data', (d: Buffer) => this.pushStderr(d.toString('utf8')))
       const client = new Client({ name: 'drama-studio', version: '1.0.0' })
@@ -195,8 +198,8 @@ export class ComfyMcpService {
         function: {
           name,
           description: `[ComfyUI-MCP] ${t.description || t.name}`,
-          parameters: (t.inputSchema ?? { type: 'object', properties: {} }) as Record<string, unknown>
-        }
+          parameters: (t.inputSchema ?? { type: 'object', properties: {} }) as Record<string, unknown>,
+        },
       })
     }
     this.toolSpecs = specs
@@ -207,24 +210,26 @@ export class ComfyMcpService {
   async callTool(
     prefixedName: string,
     args: Record<string, unknown>,
-    signal?: AbortSignal
+    signal?: AbortSignal,
   ): Promise<{ ok: boolean; text: string }> {
     const name = prefixedName.startsWith(COMFY_MCP_PREFIX) ? prefixedName.slice(COMFY_MCP_PREFIX.length) : prefixedName
     try {
       const client = await this.ensureClient()
       if (signal?.aborted) return { ok: false, text: '（本轮已停止，工具未执行）' }
-      const res = await client.callTool(
-        { name, arguments: args },
-        undefined,
-        { timeout: CALL_TIMEOUT_MS, signal }
-      )
+      const res = await client.callTool({ name, arguments: args }, undefined, {
+        timeout: CALL_TIMEOUT_MS,
+        ...(signal !== undefined ? { signal } : {}),
+      })
       const content = (res.content ?? []) as Array<{ type?: string; text?: string }>
       const text = content
-        .filter(c => c.type === 'text' && typeof c.text === 'string')
-        .map(c => c.text as string)
+        .filter((c) => c.type === 'text' && typeof c.text === 'string')
+        .map((c) => c.text as string)
         .join('\n')
       const isError = (res as { isError?: boolean }).isError === true
-      return { ok: !isError, text: text || (isError ? '（comfy-mcp 返回错误但无文本内容）' : '（工具执行成功，无文本输出）') }
+      return {
+        ok: !isError,
+        text: text || (isError ? '（comfy-mcp 返回错误但无文本内容）' : '（工具执行成功，无文本输出）'),
+      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       // 安装缺失时把安装指引直接给 LLM，让用户拿到可执行的下一步
@@ -252,7 +257,9 @@ export class ComfyMcpService {
     if (pid && process.platform === 'win32') {
       try {
         spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true, timeout: 3000 })
-      } catch { /* 进程可能已退出 */ }
+      } catch {
+        /* 进程可能已退出 */
+      }
     }
   }
 }

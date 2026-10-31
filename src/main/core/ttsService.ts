@@ -19,23 +19,23 @@ export interface SynthesizeOptions {
   text: string
   voice: string
   outputPath: string
-  rate?: string
-  volume?: string
+  rate?: string | undefined
+  volume?: string | undefined
   /** 取消探测：轮询循环每轮调用，返回 true 则中断 Qwen 克隆等待（对齐 generateClone） */
-  shouldAbort?: () => boolean
+  shouldAbort?: (() => boolean) | undefined
 }
 
 export interface CloneOptions {
   /** 参考音频转录文本（提升克隆相似度，可省略） */
-  refText?: string
+  refText?: string | undefined
   /** 固定种子；未传随机 */
-  seed?: number
+  seed?: number | undefined
   /** 克隆模型：0.6B / 1.7B（默认 1.7B，音色更像） */
-  model?: '0.6B' | '1.7B'
+  model?: '0.6B' | '1.7B' | undefined
   /** 取消探测 */
-  shouldAbort?: () => boolean
+  shouldAbort?: (() => boolean) | undefined
   /** Comfy 等待超时（毫秒），默认 600s */
-  timeoutMs?: number
+  timeoutMs?: number | undefined
 }
 
 /** Edge TTS 风控限流（403/429）：调用方应降级而非整体失败 */
@@ -49,7 +49,7 @@ export class TTSService {
   constructor(
     baseDir: string,
     private comfyui?: ComfyUIClient,
-    private workflow?: WorkflowLoader
+    private workflow?: WorkflowLoader,
   ) {
     this.baseDir = baseDir
   }
@@ -64,7 +64,7 @@ export class TTSService {
     relativePath: string,
     rate?: string,
     volume?: string,
-    shouldAbort?: () => boolean
+    shouldAbort?: () => boolean,
   ): Promise<string> {
     const outputPath = path.join(this.baseDir, relativePath)
     await this.synthesize({ text, voice, rate, volume, outputPath, shouldAbort })
@@ -88,8 +88,7 @@ export class TTSService {
     // ① msedge-tts：403 是微软风控（短时请求频率过高/出口 IP 被标记），
     // 秒级重试无效，必须 15s×3≈45s 长退避等待风控窗口；普通错误 2.5s×3
     let lastErr: unknown
-    const isRateLimited = (e: unknown): boolean =>
-      e instanceof Error && /403|429|rate.limit|limited/i.test(e.message)
+    const isRateLimited = (e: unknown): boolean => e instanceof Error && /403|429|rate.limit|limited/i.test(e.message)
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
         await this.synthesizeOnce(options)
@@ -98,18 +97,22 @@ export class TTSService {
         lastErr = e
         if (attempt < 2) {
           const backoff = isRateLimited(e) ? 15000 : 2500
-          await new Promise(r => setTimeout(r, backoff))
+          await new Promise((r) => setTimeout(r, backoff))
         }
       }
     }
-    log.warn(`Edge TTS 不可用（${lastErr instanceof Error ? lastErr.message.slice(0, 120) : String(lastErr).slice(0, 120)}），切本机 TTS`)
+    log.warn(
+      `Edge TTS 不可用（${lastErr instanceof Error ? lastErr.message.slice(0, 120) : String(lastErr).slice(0, 120)}），切本机 TTS`,
+    )
 
     // ② 本机 ComfyUI Qwen3-TTS 克隆：SAPI 合成音色样本 → 克隆合成（无风控、更自然）
     try {
       await this.synthesizeViaQwenClone(options)
       return
     } catch (localErr) {
-      log.warn(`本机 Qwen3-TTS 克隆失败：${localErr instanceof Error ? localErr.message.slice(0, 120) : String(localErr)}`)
+      log.warn(
+        `本机 Qwen3-TTS 克隆失败：${localErr instanceof Error ? localErr.message.slice(0, 120) : String(localErr)}`,
+      )
     }
 
     // ③ Windows SAPI 直出（最后兜底，零依赖）
@@ -138,14 +141,14 @@ export class TTSService {
     const nodeOk = await this.comfyui.hasNode('FB_Qwen3TTSVoiceClone')
     if (!nodeOk) throw new Error('本机 ComfyUI 未安装 FB_Qwen3TTSVoiceClone 节点')
     const listed = await this.workflow.list()
-    if (!listed.some(w => w.name === 'tts_clone')) {
+    if (!listed.some((w) => w.name === 'tts_clone')) {
       throw new Error('工作流 tts_clone 不存在')
     }
 
     // SAPI 参考样本（缓存复用：同 voice 只合成一次）
     const refDir = path.join(this.baseDir, 'tts_ref')
     const sampleWav = path.join(refDir, `${sanitizeVoice(options.voice)}.wav`)
-    if (!await fileExists(sampleWav)) {
+    if (!(await fileExists(sampleWav))) {
       await this.sapiSpeak(SAPI_REF_TEXT, sampleWav)
       await fs.mkdir(refDir, { recursive: true }).catch(() => undefined)
     }
@@ -157,14 +160,14 @@ export class TTSService {
       REF_AUDIO: audioName,
       REF_TEXT: '',
       SEED: seed,
-      X_VECTOR: true
+      X_VECTOR: true,
     })
     const { promptId } = await this.comfyui.submit(graph)
     const deadline = Date.now() + 600_000
     let output: { filename: string; subfolder: string; type: string } | null = null
     while (Date.now() < deadline) {
       if (options.shouldAbort?.()) throw new Error('TTS 已取消')
-      await new Promise(r => setTimeout(r, 1500))
+      await new Promise((r) => setTimeout(r, 1500))
       const history = await this.comfyui.getHistory(promptId)
       if (!history) continue
       for (const items of Object.values(history)) {
@@ -201,10 +204,15 @@ export class TTSService {
       `$s.SelectVoice('${SAPI_ZH_VOICE}');`,
       `$s.SetOutputToWaveFile('${outWavAbs.replace(/'/g, "''")}');`,
       `$s.Speak($t);`,
-      `$s.Dispose()`
+      `$s.Dispose()`,
     ].join(' ')
     await new Promise<void>((resolve, reject) => {
-      childProcessManager.execFile('powershell', ['-NoProfile', '-NonInteractive', '-Command', ps], { windowsHide: true, timeout: 60_000, label: 'tts-sapi' })
+      childProcessManager
+        .execFile('powershell', ['-NoProfile', '-NonInteractive', '-Command', ps], {
+          windowsHide: true,
+          timeout: 60_000,
+          label: 'tts-sapi',
+        })
         .then(() => resolve())
         .catch((err) => reject(new Error(`SAPI 合成失败：${String(err.message).slice(0, 120)}`)))
     })
@@ -219,7 +227,7 @@ export class TTSService {
       await childProcessManager.execFile(
         FFMPEG_STATIC,
         ['-y', '-i', wavAbs, '-codec:a', 'libmp3lame', '-q:a', '4', mp3Abs],
-        { windowsHide: true, timeout: 60_000, label: 'tts-wav2mp3' }
+        { windowsHide: true, timeout: 60_000, label: 'tts-wav2mp3' },
       )
     } catch (e) {
       throw new Error(`wav→mp3 转换失败：${String(e instanceof Error ? e.message : e).slice(0, 120)}`, { cause: e })
@@ -231,11 +239,7 @@ export class TTSService {
    * 已废弃——FB_Qwen3TTSVoiceClone 实际强制要求 ref_audio 或 voice_clone_prompt，
    * 无参考音频时无法出音；改由 synthesizeViaQwenClone（SAPI 样本驱动）承担该层。
    */
-  private async generateLocal(
-    text: string,
-    voice: string,
-    outputAbsPath: string
-  ): Promise<void> {
+  private async generateLocal(text: string, voice: string, outputAbsPath: string): Promise<void> {
     if (!this.comfyui || !this.workflow) {
       throw new Error('本机 TTS 兜底不可用：未注入 ComfyUI/工作流服务')
     }
@@ -244,21 +248,21 @@ export class TTSService {
     if (!nodeOk) throw new Error('本机 ComfyUI 未安装 FB_Qwen3TTSVoiceClone 节点，无法本地合成')
 
     const listed = await this.workflow.list()
-    if (!listed.some(w => w.name === 'tts_plain')) {
+    if (!listed.some((w) => w.name === 'tts_plain')) {
       throw new Error('工作流 tts_plain 不存在，无法本地合成')
     }
 
     const seed = crypto.createHash('md5').update(voice).digest().readUInt32BE(0)
     const graph = await this.workflow.buildGraph('tts_plain', {
       PROMPT: text,
-      SEED: seed
+      SEED: seed,
     })
 
     const { promptId } = await this.comfyui.submit(graph)
     const deadline = Date.now() + 600_000
     let output: { filename: string; subfolder: string; type: string } | null = null
     while (Date.now() < deadline) {
-      await new Promise(r => setTimeout(r, 1500))
+      await new Promise((r) => setTimeout(r, 1500))
       const history = await this.comfyui.getHistory(promptId)
       if (!history) continue
       for (const items of Object.values(history)) {
@@ -286,7 +290,7 @@ export class TTSService {
     try {
       const { audioStream } = tts.toStream(options.text, {
         rate: options.rate || '+0%',
-        volume: options.volume || '+0%'
+        volume: options.volume || '+0%',
       })
       await fs.mkdir(path.dirname(options.outputPath), { recursive: true })
       const chunks: Buffer[] = []
@@ -308,12 +312,7 @@ export class TTSService {
    * - 前置：ComfyUI 已装 FB_Qwen3TTSVoiceClone 节点、workflows/tts_clone.json 模板存在
    * - 未满足前置时抛错，调用方回退 msedge 固定音色
    */
-  async generateClone(
-    text: string,
-    refAudioAbs: string,
-    relativePath: string,
-    opts?: CloneOptions
-  ): Promise<string> {
+  async generateClone(text: string, refAudioAbs: string, relativePath: string, opts?: CloneOptions): Promise<string> {
     if (!this.comfyui || !this.workflow) {
       throw new Error('TTS 克隆不可用：未注入 ComfyUI/工作流服务')
     }
@@ -322,7 +321,7 @@ export class TTSService {
     if (!nodeOk) throw new Error('本机 ComfyUI 未安装 FB_Qwen3TTSVoiceClone 节点，无法克隆')
 
     const listed = await this.workflow.list()
-    if (!listed.some(w => w.name === 'tts_clone')) {
+    if (!listed.some((w) => w.name === 'tts_clone')) {
       throw new Error('工作流 tts_clone 不存在，无法克隆')
     }
 
@@ -334,7 +333,7 @@ export class TTSService {
       REF_AUDIO: audioName,
       REF_TEXT: opts?.refText ?? '',
       SEED: seed,
-      X_VECTOR: !opts?.refText
+      X_VECTOR: !opts?.refText,
     })
 
     const { promptId } = await this.comfyui.submit(graph)
@@ -342,7 +341,7 @@ export class TTSService {
     let output: { filename: string; subfolder: string; type: string } | null = null
     while (Date.now() < deadline) {
       if (opts?.shouldAbort?.()) throw new Error('TTS 克隆已取消')
-      await new Promise(r => setTimeout(r, 1500))
+      await new Promise((r) => setTimeout(r, 1500))
       const history = await this.comfyui.getHistory(promptId)
       if (!history) continue
       // SaveAudioMP3 输出在 gifs/audio 键（filename/subfolder/type）
@@ -374,7 +373,10 @@ export class TTSService {
   }
 
   getCacheKey(text: string, voice: string, rate?: string): string {
-    return crypto.createHash('md5').update(`${text}|${voice}|${rate || '+0%'}`).digest('hex')
+    return crypto
+      .createHash('md5')
+      .update(`${text}|${voice}|${rate || '+0%'}`)
+      .digest('hex')
   }
 }
 

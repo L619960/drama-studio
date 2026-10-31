@@ -28,31 +28,31 @@ describe('BUILTIN_TOOL_SPECS', () => {
 
   it('start_director：必填片名/题材/剧本，阶段确认点限定可选值', () => {
     const spec = BUILTIN_TOOL_SPECS.start_director
+    if (!spec) throw new Error('测试夹具缺少 start_director schema')
     expect(spec.function.parameters.required).toEqual(['title', 'genre', 'script'])
-    const gate = spec.function.parameters.properties.gate_stages as {
+    const gate = (spec.function.parameters.properties as Record<string, any>).gate_stages as {
       items?: { enum?: string[] }
     }
-    expect(gate.items?.enum).toEqual([
-      'analyze', 'casting', 'scenes', 'render', 'combine', 'subtitle', 'review'
-    ])
+    expect(gate.items?.enum).toEqual(['analyze', 'casting', 'scenes', 'render', 'combine', 'subtitle', 'review'])
   })
 
   it('rerender_shots 必填镜号列表且元素为整数', () => {
     const spec = BUILTIN_TOOL_SPECS.rerender_shots
+    if (!spec) throw new Error('测试夹具缺少 rerender_shots schema')
     expect(spec.function.parameters.required).toEqual(['shot_indexes'])
     const props = spec.function.parameters.properties as Record<string, any>
     expect(props.shot_indexes.items).toMatchObject({ type: 'integer' })
   })
 
   it('工具描述取自技能表描述', () => {
-    const start = BUILTIN_SKILLS.find(s => s.id === 'builtin-start')!
-    expect(BUILTIN_TOOL_SPECS.start_director.function.description).toBe(start.description)
+    const start = BUILTIN_SKILLS.find((s) => s.id === 'builtin-start')!
+    const startSpec = BUILTIN_TOOL_SPECS.start_director
+    if (!startSpec) throw new Error('测试夹具缺少 start_director schema')
+    expect(startSpec.function.description).toBe(start.description)
   })
 
   it('每个启用工具类技能声明的工具都有 Schema（MCP 工具集除外）', () => {
-    const tools = BUILTIN_SKILLS
-      .filter(s => s.kind === 'tool' && s.id !== 'builtin-comfy-mcp')
-      .map(s => s.tool!)
+    const tools = BUILTIN_SKILLS.filter((s) => s.kind === 'tool' && s.id !== 'builtin-comfy-mcp').map((s) => s.tool!)
     for (const tool of tools) {
       expect(BUILTIN_TOOL_SPECS).toHaveProperty(tool)
     }

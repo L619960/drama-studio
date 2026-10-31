@@ -3,7 +3,11 @@ import * as fs from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import {
-  scopeFileImpl, listImpl, clearImpl, forgetProjectImpl, saveImpl
+  scopeFileImpl,
+  listImpl,
+  clearImpl,
+  forgetProjectImpl,
+  saveImpl,
 } from '../../src/main/core/conversationSession'
 import type { ConversationMessage } from '../../src/shared/ipcTypes'
 
@@ -20,7 +24,7 @@ describe('conversationSession', () => {
     agent = {
       baseDir: dir,
       lastProjectId: undefined as string | undefined,
-      scopeFile: (scope: string) => scopeFileImpl(agent, scope)
+      scopeFile: (scope: string) => scopeFileImpl(agent, scope),
     }
   })
 
@@ -28,11 +32,14 @@ describe('conversationSession', () => {
     await fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })
   })
 
-  const msg = (i: number): ConversationMessage => ({
-    role: i % 2 === 0 ? 'user' : 'assistant',
-    content: `m${i}`,
-    timestamp: i
-  } as ConversationMessage)
+  const msg = (i: number): ConversationMessage =>
+    ({
+      id: `m${i}`,
+      role: i % 2 === 0 ? 'user' : 'assistant',
+      content: `m${i}`,
+      ts: i,
+      timestamp: i,
+    }) as ConversationMessage
 
   it('scope 只接受字母数字下划线连字符，其余回退 global', () => {
     expect(scopeFileImpl(agent, 'project_abc-1')).toBe(path.join(dir, 'conversations', 'project_abc-1.json'))
@@ -49,8 +56,8 @@ describe('conversationSession', () => {
     await saveImpl(agent, 'p1', many)
     const list = await listImpl(agent, 'p1')
     expect(list).toHaveLength(200)
-    expect(list[0].content).toBe('m30')
-    expect(list[199].content).toBe('m229')
+    expect(list[0]?.content).toBe('m30')
+    expect(list[199]?.content).toBe('m229')
   })
 
   it('历史文件损坏：备份原文并返回空历史，不覆盖原文件', async () => {
@@ -61,7 +68,7 @@ describe('conversationSession', () => {
 
     await expect(listImpl(agent, 'p1')).resolves.toEqual([])
     const entries = await fs.readdir(path.join(dir, 'conversations'))
-    const bak = entries.find(n => n.includes('.corrupt-') && n.endsWith('.bak'))
+    const bak = entries.find((n) => n.includes('.corrupt-') && n.endsWith('.bak'))
     expect(bak).toBeTruthy()
     expect(await fs.readFile(path.join(dir, 'conversations', bak!), 'utf8')).toBe(broken)
     // 损坏文件仍保留，等待用户/后续手工恢复
@@ -74,7 +81,7 @@ describe('conversationSession', () => {
     await fs.writeFile(file, JSON.stringify({ messages: [] }))
     await expect(listImpl(agent, 'p1')).resolves.toEqual([])
     const entries = await fs.readdir(path.join(dir, 'conversations'))
-    expect(entries.some(n => n.includes('.corrupt-'))).toBe(true)
+    expect(entries.some((n) => n.includes('.corrupt-'))).toBe(true)
   })
 
   it('clear 删除该 scope 历史，不影响其他 scope', async () => {

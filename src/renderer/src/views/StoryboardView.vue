@@ -23,7 +23,6 @@
     <ShotTablePanel
       v-if="shots.length > 0"
       :shots="shots"
-      :asset-urls="assetUrls"
       :is-rendering="isRendering"
       :characters="characters"
       :scene-boards="sceneBoards"
@@ -55,10 +54,10 @@
       :characters="characters"
       :project-id="projectId"
       :project-exists="!!project"
-      :on-persist="persistProject"
       @navigate="openReviewAt"
       @edit="editReviewingShot"
-      @reviewed="onReviewToggle"
+      @update-review="onReviewStateChange"
+      @frame-regenerated="onFrameRegenerated"
     />
 
     <!-- 分镜编辑对话框（独立组件） -->
@@ -109,7 +108,15 @@ import { clearFileUrlCache, useFileUrl } from '../composables/useFileUrl'
 import { useRouteProjectId } from '../composables/useRouteProjectId'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import type { Project, Shot, WorkflowMeta, ProgressEvent, PromptAuditReport, PromptAuditTask, PromptBulkFillProgress } from '../../../shared/ipcTypes'
+import type {
+  Project,
+  Shot,
+  WorkflowMeta,
+  ProgressEvent,
+  PromptAuditReport,
+  PromptAuditTask,
+  PromptBulkFillProgress,
+} from '../../../shared/ipcTypes'
 import { snapshot } from '../utils/snapshot'
 import { throttleTap } from '../utils/throttle'
 import { confirmDanger } from '../utils/confirm'
@@ -126,7 +133,9 @@ const { urlCache: assetUrls, ensureFileUrls } = useFileUrl()
 
 const router = useRouter()
 const route = useRoute()
-const projectId = useRouteProjectId((id) => { void loadProject(id) })
+const projectId = useRouteProjectId((id) => {
+  void loadProject(id)
+})
 
 const project = ref<Project | null>(null)
 const workflows = ref<WorkflowMeta[]>([])
@@ -153,17 +162,17 @@ const reviewMode = ref(false)
 /** REQ-09：分镜首帧门控（off 时审核无意义，「全部通过」按钮隐藏） */
 const shotReviewGate = ref<'off' | 'warn' | 'block'>('block')
 const reviewingShot = computed(() =>
-  reviewIndex.value >= 0 && reviewIndex.value < shots.value.length
-    ? shots.value[reviewIndex.value]
-    : null
+  reviewIndex.value >= 0 && reviewIndex.value < shots.value.length ? (shots.value[reviewIndex.value] ?? null) : null,
 )
 const reviewImageUrl = computed(() => {
   const s = reviewingShot.value
   if (!s) return ''
-  return (s.firstFramePath && assetUrls[s.firstFramePath])
-    || (s.sceneImagePath && assetUrls[s.sceneImagePath])
-    || (boardPlate(s) && assetUrls[boardPlate(s)!])
-    || ''
+  return (
+    (s.firstFramePath && assetUrls[s.firstFramePath]) ||
+    (s.sceneImagePath && assetUrls[s.sceneImagePath]) ||
+    (boardPlate(s) && assetUrls[boardPlate(s)!]) ||
+    ''
+  )
 })
 
 function openReview(): void {
@@ -184,7 +193,7 @@ function consumeReviewQuery(): void {
   const target = route.query.review
   if (typeof target !== 'string' || !project.value) return
   void router.replace({ query: { ...route.query, review: undefined } })
-  const idx = project.value.shots.findIndex(s => s.id === target)
+  const idx = project.value.shots.findIndex((s) => s.id === target)
   if (idx < 0) {
     ElMessage.warning('该镜头已不存在，请手动选择需要审核的镜头')
     return
@@ -194,9 +203,12 @@ function consumeReviewQuery(): void {
 }
 
 // REQ-04：已在分镜页时（如队列页确认框选「去审看」）再次收到 ?review=... 也要立即定位
-watch(() => route.query.review, (v) => {
-  if (typeof v === 'string') consumeReviewQuery()
-})
+watch(
+  () => route.query.review,
+  (v) => {
+    if (typeof v === 'string') consumeReviewQuery()
+  },
+)
 
 function editReviewingShot(): void {
   if (reviewIndex.value < 0) return
@@ -204,22 +216,41 @@ function editReviewingShot(): void {
   editShot(reviewIndex.value)
 }
 
-async function onReviewToggle(): Promise<void> {
-  if (!reviewingShot.value) return
+/**
+ * P2-10：审核结论由弹窗事件回传，在父级写回 reactive 项目并统一落盘，
+ * 避免子组件就地修改 props（弹窗与页面共享同一对象，写回点收敛到一处）。
+ */
+async function onReviewStateChange(shotId: string, reviewed: boolean): Promise<void> {
+  const s = project.value?.shots.find((x) => x.id === shotId)
+  if (!s) return
+  s.reviewed = reviewed
+  await persistProject()
+}
+
+/** P2-10：重出的首/尾帧路径由父级写回，并作废该镜旧审核结论（图已换，须重新核对） */
+async function onFrameRegenerated(
+  shotId: string,
+  field: 'firstFramePath' | 'lastFramePath',
+  path: string,
+): Promise<void> {
+  const s = project.value?.shots.find((x) => x.id === shotId)
+  if (!s) return
+  s[field] = path
+  s.reviewed = undefined
   await persistProject()
 }
 
 /** 全部通过：把所有 i2v 镜的 reviewed 设为 true，跳过逐镜审核（REQ-09：红色确认，防一键误伤） */
 async function approveAll(): Promise<void> {
   if (!project.value) return
-  const unreviewed = project.value.shots.filter(s => s.type === 'i2v' && !s.reviewed)
+  const unreviewed = project.value.shots.filter((s) => s.type === 'i2v' && !s.reviewed)
   if (unreviewed.length === 0) {
     ElMessage.info('所有人物镜都已核对，无需再次通过')
     return
   }
   const ok = await confirmDanger(
     `将标记 ${unreviewed.length} 个镜头为「首帧已核对」，此操作会覆盖渲染门禁确认，之后不会逐镜再拦。确定全部通过吗？`,
-    { title: '全部通过确认', confirmText: '全部通过' }
+    { title: '全部通过确认', confirmText: '全部通过' },
   )
   if (!ok) return
   for (const s of unreviewed) s.reviewed = true
@@ -243,29 +274,38 @@ function openSplitDialog(): void {
 const shots = computed(() => project.value?.shots || [])
 const characters = computed(() => project.value?.characters || [])
 const sceneBoards = computed(() => project.value?.sceneBoards || [])
-const hasPendingShots = computed(() =>
-  shots.value.some(s => s.status === 'pending' || s.status === 'failed')
-)
+const hasPendingShots = computed(() => shots.value.some((s) => s.status === 'pending' || s.status === 'failed'))
 
 function boardPlate(shot: Shot): string | undefined {
   if (!shot.sceneBoardId) return undefined
-  return sceneBoards.value.find(b => b.id === shot.sceneBoardId)?.emptyPlatePath
+  return sceneBoards.value.find((b) => b.id === shot.sceneBoardId)?.emptyPlatePath
 }
 
+/**
+ * P2-11：只跟踪「镜头产物路径」这一条派生列表，不再 deep watch 整个 project。
+ * computed 会精确收集被读取的字段依赖（shots/lastFramePath/sceneBoards 等），
+ * 改提示词、改状态等其它字段变更不会触发重复的路径预热。
+ */
+const shotAssetPathsToWarm = computed(() => {
+  const p = project.value
+  if (!p) return [] as string[]
+  const paths = [
+    ...p.shots.flatMap((s) => [s.firstFramePath, s.lastFramePath, s.sceneImagePath]),
+    ...(p.sceneBoards || []).map((b) => b.emptyPlatePath),
+  ].filter((x): x is string => Boolean(x))
+  return Array.from(new Set(paths))
+})
+
 watch(
-  () => project.value,
-  async (p) => {
-    if (!p) return
-    const paths = [
-      ...p.shots.flatMap(s => [s.firstFramePath, s.lastFramePath, s.sceneImagePath]),
-      ...(p.sceneBoards || []).map(b => b.emptyPlatePath)
-    ].filter(Boolean) as string[]
+  shotAssetPathsToWarm,
+  async (paths) => {
+    if (paths.length === 0) return
     await ensureFileUrls(paths)
   },
-  { deep: true }
+  { immediate: true },
 )
 // 渲染中锁定：有镜头正在渲染时，禁止编辑/删除/拖拽/添加
-const isRendering = computed(() => shots.value.some(s => s.status === 'rendering'))
+const isRendering = computed(() => shots.value.some((s) => s.status === 'rendering'))
 
 /**
  * 分镜内容变更/删除时使旧产物失效：
@@ -300,37 +340,44 @@ async function persistProject(): Promise<boolean> {
 
 let unsubProgress: (() => void) | null = null
 let unsubProjectUpdated: (() => void) | null = null
+/** UI-02：批量渲染时 done/queued 事件按镜连发，逐条全量重载会造成 O(n²) 磁盘读与列表抖动 */
+let reloadTimer: ReturnType<typeof setTimeout> | null = null
+
+function scheduleReload(): void {
+  if (reloadTimer) clearTimeout(reloadTimer)
+  reloadTimer = setTimeout(() => {
+    reloadTimer = null
+    void loadProject()
+  }, 300)
+}
 
 onMounted(async () => {
   unsubProgress = window.api.onProgress((e: ProgressEvent) => {
     if (e.projectId !== projectId.value) return
-    const shot = project.value?.shots.find(s => s.id === e.shotId)
+    const shot = project.value?.shots.find((s) => s.id === e.shotId)
     if (shot && e.step !== 'done' && e.step !== 'failed') {
       shot.status = 'rendering'
     }
     if (e.step === 'done' || e.step === 'failed' || e.step === 'queued') {
-      void loadProject()
+      scheduleReload()
     }
   })
   // 后台资产（首帧/尾帧/场景板/定妆）落盘后自动刷新本页，无需手动切页
   unsubProjectUpdated = window.api.director.onProjectUpdated((e) => {
     if (e?.projectId === projectId.value) {
-      clearFileUrlCache()
-      void loadProject()
+      clearFileUrlCache(`projects/${projectId.value}/`)
+      scheduleReload()
     }
   })
   try {
-    const [s, wf] = await Promise.all([
-      window.api.settings.get(),
-      window.api.workflow.list()
-    ])
+    const [s, wf] = await Promise.all([window.api.settings.get(), window.api.workflow.list()])
     // REQ-12 RA-01：默认尺寸/帧数只读 render（单一事实源）；creation.edit 由设置页双写镜像同步，
     // 不再在此处加「creation.edit 优先」分支，避免「改了 render 不生效」的双源歧义
     if (s?.render) {
       defaultFrames.value = s.render.defaultFrames
       defaultShotSize.value = {
         width: s.render.defaultWidth,
-        height: s.render.defaultHeight
+        height: s.render.defaultHeight,
       }
     }
     autoSaveEnabled.value = s?.general?.autoSave ?? true
@@ -345,6 +392,10 @@ onUnmounted(() => {
   unsubProgress?.()
   unsubProjectUpdated?.()
   unsubscribeBulkProgress?.()
+  if (reloadTimer) {
+    clearTimeout(reloadTimer)
+    reloadTimer = null
+  }
 })
 
 async function loadProject(id?: string) {
@@ -377,7 +428,7 @@ useHotkeys([
     handler: () => {
       if (isRendering.value || editDialogRef.value?.isVisible) return
       addShot()
-    }
+    },
   },
   {
     keys: 'delete',
@@ -385,11 +436,11 @@ useHotkeys([
       // R1：审核/编辑弹窗打开时禁用 Delete 删镜——reviewingShot 按下标锚定，
       // 弹窗期间删镜会导致审核中的镜头错位（审核结论落到错误的镜头上）
       if (isRendering.value || reviewVisible.value || editDialogRef.value?.isVisible) return
-      const idx = shots.value.findIndex(s => s.id === currentShotId.value)
+      const idx = shots.value.findIndex((s) => s.id === currentShotId.value)
       if (idx < 0) return
       void deleteShot(idx)
-    }
-  }
+    },
+  },
 ])
 
 function onCurrentChange(row: Shot | null): void {
@@ -400,7 +451,7 @@ function editShot(index: number) {
   pendingInsertIndex.value = null
   pendingInsertId.value = null
   editingIndex.value = index
-  editDialogRef.value?.open(shots.value[index])
+  editDialogRef.value?.open(shots.value[index] ?? null)
 }
 
 /** 编辑对话框保存：按 editingIndex 组装完整 Shot 并持久化 */
@@ -427,7 +478,7 @@ async function onSaveShot(draft: ShotDraft) {
     segmentPath: undefined,
     renderProfile: undefined,
     consistencyScore: undefined,
-    error: undefined
+    error: undefined,
   }
 
   if (isNew) {
@@ -445,7 +496,9 @@ async function onSaveShot(draft: ShotDraft) {
     return
   }
   // 作废旧产物与整集成片（编辑/新增均会改变成片内容）；清理失败不阻塞保存结果
-  const oldShot = isNew || wasPendingInsert ? undefined : shots.value[editingIndex.value]
+  // UI-03：必须用保存前的 prev——上一行已把内存槽位替换成新 shot（产物字段已清空），
+  // 再按 editingIndex 取到的就是新对象，旧音频/原片/分段永远不会被删除
+  const oldShot = isNew || wasPendingInsert ? undefined : prev
   await invalidateArtifacts(oldShot).catch(() => undefined)
   ElMessage.success(prevHadRender ? '已保存，旧产物已失效，需重新渲染' : '保存成功')
 }
@@ -458,13 +511,13 @@ async function onEditDialogCancel() {
   editingIndex.value = -1
   if (placeholderId === null || !project.value) return
   // 按 id 定位（R3）：弹窗期间后台进度事件可能触发 loadProject 重排，下标锚定会误删真实镜头
-  const idx = project.value.shots.findIndex(s => s.id === placeholderId)
+  const idx = project.value.shots.findIndex((s) => s.id === placeholderId)
   if (idx < 0) return
   const placeholder = project.value.shots[idx]
   // 仅清理无内容的占位（scene/action 均空），防止误删已有数据
   if (placeholder && !placeholder.scene && !placeholder.action) {
     project.value.shots.splice(idx, 1)
-    project.value.shots.forEach((s, i) => s.index = i + 1)
+    project.value.shots.forEach((s, i) => (s.index = i + 1))
     // R3：移除后回写磁盘——占位镜若曾被其他保存路径顺带落盘，仅内存 splice 会留幽灵镜
     await persistProject()
   }
@@ -474,7 +527,10 @@ async function onEditDialogCancel() {
 async function onSplitScript(scriptText: string) {
   if (!project.value) return
   const text = (scriptText || '').trim()
-  if (!text) { ElMessage.warning('请输入剧本内容'); return }
+  if (!text) {
+    ElMessage.warning('请输入剧本内容')
+    return
+  }
   // ① 剧本回写并保存（reanalyze 从项目读取剧本）
   project.value.script = text
   if (!(await persistProject())) {
@@ -487,7 +543,9 @@ async function onSplitScript(scriptText: string) {
   try {
     const r = await window.api.director.reanalyze(projectId.value)
     await loadProject(projectId.value)
-    ElMessage.success(`AI 拆分完成：${r.shots} 个分镜 · 角色 ${r.characters} 人 · 道具 ${r.props} 个（已绑定角色/场景/道具）`)
+    ElMessage.success(
+      `AI 拆分完成：${r.shots} 个分镜 · 角色 ${r.characters} 人 · 道具 ${r.props} 个（已绑定角色/场景/道具）`,
+    )
   } catch (e) {
     ElMessage.error(`AI 拆分失败：${e instanceof Error ? e.message : String(e)}`)
   } finally {
@@ -502,29 +560,36 @@ async function deleteShot(index: number) {
   // REQ-16：软删除 + 5 秒撤销窗，产物在撤销窗结束后才真正作废
   const ok = await confirmDanger(
     '确定删除这个分镜吗？该镜已生成的音频/视频产物和整集成片将在 5 秒后删除，期间可撤销。',
-    { title: '删除分镜', confirmText: '删除', cancelText: '取消' }
+    { title: '删除分镜', confirmText: '删除', cancelText: '取消' },
   )
   if (!ok) return
   if (!throttleTap('shot-del-' + shot.id, 1000)) return
   const before = [...project.value.shots]
-  const beforeIndexes = before.map(s => s.index)
+  const beforeIndexes = before.map((s) => s.index)
   project.value.shots.splice(index, 1)
-  project.value.shots.forEach((s, i) => s.index = i + 1)
+  project.value.shots.forEach((s, i) => (s.index = i + 1))
   if (!(await persistProject())) {
     // 保存失败：回滚内存态，避免界面与磁盘不一致
     project.value.shots = before
-    before.forEach((s, i) => s.index = beforeIndexes[i])
+    before.forEach((s, i) => {
+      const n = beforeIndexes[i]
+      if (n !== undefined) s.index = n
+    })
     return
   }
-  showUndoToast('分镜已删除', async () => {
-    const p = project.value
-    if (!p || p.shots.some(s => s.id === shot.id)) return
-    p.shots.splice(Math.min(index, p.shots.length), 0, shot)
-    p.shots.forEach((s, i) => s.index = i + 1)
-    if (await persistProject()) ElMessage.success('已撤销删除')
-  }, async () => {
-    await invalidateArtifacts(shot)
-  })
+  showUndoToast(
+    '分镜已删除',
+    async () => {
+      const p = project.value
+      if (!p || p.shots.some((s) => s.id === shot.id)) return
+      p.shots.splice(Math.min(index, p.shots.length), 0, shot)
+      p.shots.forEach((s, i) => (s.index = i + 1))
+      if (await persistProject()) ElMessage.success('已撤销删除')
+    },
+    async () => {
+      await invalidateArtifacts(shot)
+    },
+  )
 }
 
 /** REQ-14 RA-20：批量删除（一次确认，撤销窗结束后逐镜作废旧产物） */
@@ -532,43 +597,50 @@ async function deleteShots(rows: Shot[]) {
   if (!project.value || rows.length === 0) return
   const ok = await confirmDanger(
     `确定删除选中的 ${rows.length} 个分镜吗？这些镜已生成的产物和整集成片将在 5 秒后删除，期间可撤销。`,
-    { title: '批量删除分镜', confirmText: '删除', cancelText: '取消' }
+    { title: '批量删除分镜', confirmText: '删除', cancelText: '取消' },
   )
   if (!ok) return
   const removed = rows
-    .map(r => ({ shot: r, at: project.value!.shots.findIndex(s => s.id === r.id) }))
-    .filter(x => x.at >= 0)
+    .map((r) => ({ shot: r, at: project.value!.shots.findIndex((s) => s.id === r.id) }))
+    .filter((x) => x.at >= 0)
   if (removed.length === 0) return
-  const ids = new Set(removed.map(x => x.shot.id))
+  const ids = new Set(removed.map((x) => x.shot.id))
   const before = [...project.value.shots]
-  const beforeIndexes = before.map(s => s.index)
-  project.value.shots = project.value.shots.filter(s => !ids.has(s.id))
-  project.value.shots.forEach((s, i) => s.index = i + 1)
+  const beforeIndexes = before.map((s) => s.index)
+  project.value.shots = project.value.shots.filter((s) => !ids.has(s.id))
+  project.value.shots.forEach((s, i) => (s.index = i + 1))
   if (!(await persistProject())) {
     project.value.shots = before
-    before.forEach((s, i) => s.index = beforeIndexes[i])
+    before.forEach((s, i) => {
+      const n = beforeIndexes[i]
+      if (n !== undefined) s.index = n
+    })
     return
   }
-  showUndoToast(`已删除 ${removed.length} 个分镜`, async () => {
-    const p = project.value
-    if (!p) return
-    for (const x of [...removed].sort((a, b) => a.at - b.at)) {
-      if (!p.shots.some(s => s.id === x.shot.id)) {
-        p.shots.splice(Math.min(x.at, p.shots.length), 0, x.shot)
+  showUndoToast(
+    `已删除 ${removed.length} 个分镜`,
+    async () => {
+      const p = project.value
+      if (!p) return
+      for (const x of [...removed].sort((a, b) => a.at - b.at)) {
+        if (!p.shots.some((s) => s.id === x.shot.id)) {
+          p.shots.splice(Math.min(x.at, p.shots.length), 0, x.shot)
+        }
       }
-    }
-    p.shots.forEach((s, i) => s.index = i + 1)
-    if (await persistProject()) ElMessage.success('已撤销删除')
-  }, async () => {
-    for (const x of removed) await invalidateArtifacts(x.shot)
-  })
+      p.shots.forEach((s, i) => (s.index = i + 1))
+      if (await persistProject()) ElMessage.success('已撤销删除')
+    },
+    async () => {
+      for (const x of removed) await invalidateArtifacts(x.shot)
+    },
+  )
 }
 
 /** REQ-14 RA-20：批量加入渲染队列（沿用未审镜告警放行确认） */
 async function renderShots(rows: Shot[]) {
   if (!project.value || rows.length === 0) return
   if (!throttleTap('shot-render-batch', 1500)) return
-  const ids = rows.map(r => r.id)
+  const ids = rows.map((r) => r.id)
   if (!(await confirmUnreviewedRender(project.value, ids))) return
   rendering.value = true
   try {
@@ -588,8 +660,10 @@ async function renderShots(rows: Shot[]) {
 /** REQ-14 RA-20：批量标已跳过（不参与成片合成，可再次取消） */
 async function skipShots(rows: Shot[]) {
   if (!project.value || rows.length === 0) return
-  const ids = new Set(rows.map(r => r.id))
-  project.value.shots.forEach(s => { if (ids.has(s.id)) s.skipped = true })
+  const ids = new Set(rows.map((r) => r.id))
+  project.value.shots.forEach((s) => {
+    if (ids.has(s.id)) s.skipped = true
+  })
   if (await persistProject()) ElMessage.success(`已标记 ${rows.length} 镜为跳过（不参与成片）`)
 }
 
@@ -620,7 +694,10 @@ async function startRender() {
     const res = await window.api.render.start(projectId.value, undefined, false)
     if (res.warnedShots.length > 0) {
       // R4：告警须给出具体镜号，只报数量用户无法定位需补审的镜头
-      const list = res.warnedShots.slice(0, 8).map(i => `第${i}镜`).join('、')
+      const list = res.warnedShots
+        .slice(0, 8)
+        .map((i) => `第${i}镜`)
+        .join('、')
       const more = res.warnedShots.length > 8 ? ` 等 ${res.warnedShots.length} 镜` : ''
       ElMessage.warning(`未核对分镜图的人物镜：${list}${more}，已按「告警放行」入队渲染`)
     } else {
@@ -635,7 +712,8 @@ async function startRender() {
 }
 
 function copyPrompt(shot: Shot) {
-  navigator.clipboard.writeText(shot.action)
+  navigator.clipboard
+    .writeText(shot.action)
     .then(() => ElMessage.success('已复制'))
     .catch(() => ElMessage.error('复制失败，请手动选择复制'))
 }
@@ -645,7 +723,9 @@ const clipboardShot = ref<Shot | null>(null)
 
 function copyShot(index: number) {
   if (!project.value) return
-  clipboardShot.value = { ...shots.value[index] }
+  const source = shots.value[index]
+  if (!source) return
+  clipboardShot.value = { ...source }
   ElMessage.success('已复制')
 }
 
@@ -665,10 +745,10 @@ async function pasteShot(index: number) {
     audioPath: undefined,
     rawVideoPath: undefined,
     segmentPath: undefined,
-    error: undefined
+    error: undefined,
   }
   project.value.shots.splice(insertAt, 0, copy)
-  project.value.shots.forEach((s, i) => s.index = i + 1)
+  project.value.shots.forEach((s, i) => (s.index = i + 1))
   await persistProject()
   ElMessage.success('已粘贴')
 }
@@ -689,10 +769,10 @@ function insertShot(index: number, position: 'above' | 'below') {
     height: defaultShotSize.value.height,
     frames: defaultFrames.value,
     seed: Math.floor(Math.random() * 1000000),
-    status: 'pending'
+    status: 'pending',
   }
   project.value.shots.splice(insertAt, 0, shot)
-  project.value.shots.forEach((s, i) => s.index = i + 1)
+  project.value.shots.forEach((s, i) => (s.index = i + 1))
   // R-18：占位镜仅入内存不落盘，保存成功才持久化，取消由 onEditDialogCancel 移除
   pendingInsertIndex.value = insertAt
   pendingInsertId.value = shot.id
@@ -705,8 +785,9 @@ function insertShot(index: number, position: 'above' | 'below') {
 async function onShotsReorder(from: number, to: number) {
   if (!project.value) return
   const item = project.value.shots.splice(from, 1)[0]
+  if (!item) return
   project.value.shots.splice(to, 0, item)
-  project.value.shots.forEach((s, i) => s.index = i + 1)
+  project.value.shots.forEach((s, i) => (s.index = i + 1))
   if (await persistProject()) ElMessage.success('已保存排序')
 }
 
@@ -715,9 +796,11 @@ async function moveShot(index: number, direction: number) {
   const newIndex = index + direction
   if (newIndex < 0 || newIndex >= shots.value.length) return
   const temp = project.value.shots[index]
-  project.value.shots[index] = project.value.shots[newIndex]
+  const other = project.value.shots[newIndex]
+  if (!temp || !other) return
+  project.value.shots[index] = other
   project.value.shots[newIndex] = temp
-  project.value.shots.forEach((s, i) => s.index = i + 1)
+  project.value.shots.forEach((s, i) => (s.index = i + 1))
   if (await persistProject()) ElMessage.success('已保存排序')
 }
 
@@ -725,10 +808,11 @@ async function resetShot(shot: Shot) {
   if (!project.value) return
   // 仅对已完成/失败的镜头需确认重置（pending 本身无需确认）
   if (shot.status === 'done' || shot.status === 'failed') {
-    const ok = await confirmDanger(
-      '将该镜头重置为待渲染：已完成的产物保留，但下次渲染会重新生成并覆盖。确定重置？',
-      { title: '重置状态', confirmText: '重置', cancelText: '取消' }
-    )
+    const ok = await confirmDanger('将该镜头重置为待渲染：已完成的产物保留，但下次渲染会重新生成并覆盖。确定重置？', {
+      title: '重置状态',
+      confirmText: '重置',
+      cancelText: '取消',
+    })
     if (!ok) return
   }
   shot.status = 'pending'
@@ -772,7 +856,7 @@ async function fixPrompts(taskId?: string): Promise<void> {
   try {
     const res = await window.api.prompt.fixPrompts({
       projectId: projectId.value,
-      taskIds: taskId ? [taskId] : undefined
+      ...(taskId ? { taskIds: [taskId] } : {}),
     })
     auditReport.value = res.report
     if (res.applied > 0) {
@@ -796,14 +880,16 @@ async function bulkFillPrompts(taskId?: string): Promise<void> {
   auditBulkProgress.value = null
   if (!unsubscribeBulkProgress) {
     unsubscribeBulkProgress = window.api.prompt.onBulkFillProgress((e: PromptBulkFillProgress) => {
+      // P2-15：全局进度通道，只接受当前项目的事件——切到别的项目时不会串进度
+      if (e.projectId !== projectId.value) return
       auditBulkProgress.value = { done: e.done, total: e.total }
     })
   }
   try {
     const res = await window.api.prompt.bulkFillPrompts({
       projectId: projectId.value,
-      taskIds: taskId ? [taskId] : undefined,
-      concurrency: 2
+      ...(taskId ? { taskIds: [taskId] } : {}),
+      concurrency: 2,
     })
     auditReport.value = res.report
     if (res.filled > 0) {
@@ -818,7 +904,9 @@ async function bulkFillPrompts(taskId?: string): Promise<void> {
     ElMessage.error(`AI 补写失败：${e instanceof Error ? e.message : String(e)}`)
   } finally {
     auditBulkFilling.value = false
-    setTimeout(() => { auditBulkProgress.value = null }, 1500)
+    setTimeout(() => {
+      auditBulkProgress.value = null
+    }, 1500)
   }
 }
 
@@ -826,7 +914,7 @@ async function bulkFillPrompts(taskId?: string): Promise<void> {
 function editAuditTask(task: PromptAuditTask): void {
   auditVisible.value = false
   if (task.scope === 'shot') {
-    const idx = shots.value.findIndex(s => s.id === task.id)
+    const idx = shots.value.findIndex((s) => s.id === task.id)
     if (idx < 0) {
       ElMessage.warning('该分镜已不存在，请重新加载后再试')
       return
@@ -837,9 +925,18 @@ function editAuditTask(task: PromptAuditTask): void {
   const routes: Record<string, string> = {
     character: `/project/${projectId.value}/characters`,
     sceneBoard: `/project/${projectId.value}/scenes`,
-    prop: `/project/${projectId.value}/props`
+    prop: `/project/${projectId.value}/props`,
   }
   const target = routes[task.scope]
   if (target) void router.push(target)
 }
 </script>
+
+<style scoped>
+/* P2-13：分镜表占满分镜页剩余高度，虚拟滚动需要确定高度（避免视口高度魔法数） */
+.storyboard.page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+</style>

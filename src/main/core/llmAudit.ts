@@ -10,6 +10,7 @@ import type { AppSettings } from '../../shared/ipcTypes'
 import { resolveCreation } from '../../shared/creationSettings'
 import { validateNarrativeContinuity } from '../../shared/narrativeBeats'
 import { httpChat } from './llmHttp'
+import { llmApiKey, llmBaseUrl } from './llmRequest'
 
 /**
  * AI 导演·成片复审：以剧本统筹视角审查分镜叙事的完整性与音频匹配。
@@ -31,9 +32,9 @@ export async function reviewStoryOp(
       durationSec: number
       action?: string
       type?: 'i2v' | 't2v'
-      shotSize?: string
+      shotSize?: string | undefined
     }>
-  }
+  },
 ): Promise<{ passed: boolean; issues: string[]; summary: string }> {
   const sb = resolveCreation(await getSettings()).storyboard
   // 本地硬规则：道具/反应/上车/驶离——不依赖模型是否记得审片维度
@@ -41,20 +42,20 @@ export async function reviewStoryOp(
     input.title,
     input.logline,
     input.scriptHint || '',
-    input.shots.map(s => ({
+    input.shots.map((s) => ({
       index: s.index,
       scene: s.scene,
       action: s.action || '',
       dialogue: s.dialogue,
       type: s.type || (s.character ? 'i2v' : 't2v'),
-      characterName: s.character || undefined,
-      shotSize: s.shotSize
+      ...(s.character ? { characterName: s.character } : {}),
+      ...(s.shotSize !== undefined ? { shotSize: s.shotSize } : {}),
     })),
     {
       enforcePropLock: sb.enforcePropLock,
       enforceReactionBeats: sb.enforceReactionBeats,
-      enforceBoardingChain: sb.enforceBoardingChain
-    }
+      enforceBoardingChain: sb.enforceBoardingChain,
+    },
   )
 
   const system = [
@@ -77,12 +78,13 @@ export async function reviewStoryOp(
     '- summary：两句话内给出总体评价',
     '',
     '# 输出格式：只输出一个 JSON 对象，禁止 markdown 围栏与解释',
-    '{"passed": true 或 false, "issues": ["问题1", "问题2"], "summary": "总体评价"}'
+    '{"passed": true 或 false, "issues": ["问题1", "问题2"], "summary": "总体评价"}',
   ].join('\n')
 
   const listing = input.shots
-    .map(s =>
-      `第${s.index}镜 [${s.durationSec}s] ${s.scene}｜${s.type || '?'}｜${s.shotSize || '-'}｜角色:${s.character || '空镜'}｜台词:${s.dialogue || '（无）'}｜action:${s.action || '（无）'}`
+    .map(
+      (s) =>
+        `第${s.index}镜 [${s.durationSec}s] ${s.scene}｜${s.type || '?'}｜${s.shotSize || '-'}｜角色:${s.character || '空镜'}｜台词:${s.dialogue || '（无）'}｜action:${s.action || '（无）'}`,
     )
     .join('\n')
 
@@ -91,7 +93,7 @@ export async function reviewStoryOp(
     system,
     `片名《${input.title}》 题材:${input.genre}\n梗概:${input.logline || '（未提供）'}\n\n分镜清单:\n${listing}`,
     0.2,
-    120000
+    120000,
   )
   const cleaned = raw.replace(/```(?:json)?/g, '').trim()
   const start = cleaned.indexOf('{')
@@ -99,11 +101,8 @@ export async function reviewStoryOp(
   if (start === -1 || end === -1 || end <= start) {
     return {
       passed: localIssues.length === 0,
-      issues: [
-        ...localIssues,
-        '剧情复审模型输出异常，已跳过模型剧情项（本地叙事规则仍有效）'
-      ].slice(0, 12),
-      summary: '剧情复审部分跳过'
+      issues: [...localIssues, '剧情复审模型输出异常，已跳过模型剧情项（本地叙事规则仍有效）'].slice(0, 12),
+      summary: '剧情复审部分跳过',
     }
   }
   try {
@@ -112,12 +111,10 @@ export async function reviewStoryOp(
       issues?: unknown
       summary?: unknown
     }
-    const modelIssues = Array.isArray(parsed.issues)
-      ? parsed.issues.map(x => String(x)).filter(Boolean)
-      : []
+    const modelIssues = Array.isArray(parsed.issues) ? parsed.issues.map((x) => String(x)).filter(Boolean) : []
     const merged = [...localIssues]
     for (const i of modelIssues) {
-      if (!merged.some(m => m.includes(i.slice(0, 12)) || i.includes(m.slice(0, 12)))) {
+      if (!merged.some((m) => m.includes(i.slice(0, 12)) || i.includes(m.slice(0, 12)))) {
         merged.push(i)
       }
     }
@@ -125,16 +122,13 @@ export async function reviewStoryOp(
     return {
       passed: parsed.passed !== false && localIssues.length === 0,
       issues,
-      summary: String(parsed.summary || '').trim()
+      summary: String(parsed.summary || '').trim(),
     }
   } catch {
     return {
       passed: localIssues.length === 0,
-      issues: [
-        ...localIssues,
-        '剧情复审模型输出解析失败，已跳过模型剧情项（本地叙事规则仍有效）'
-      ].slice(0, 12),
-      summary: '剧情复审部分跳过'
+      issues: [...localIssues, '剧情复审模型输出解析失败，已跳过模型剧情项（本地叙事规则仍有效）'].slice(0, 12),
+      summary: '剧情复审部分跳过',
     }
   }
 }
@@ -150,7 +144,7 @@ export async function diagnoseFailureOp(
     stageLabel: string
     errors: string[]
     context?: string
-  }
+  },
 ): Promise<{ canAutoFix: boolean; diagnosis: string; suggestion: string }> {
   const system = [
     '你是 AI 视频生产流水线的故障诊断专家。流水线阶段失败后，系统会把错误样本交给你。',
@@ -160,7 +154,7 @@ export async function diagnoseFailureOp(
     '3. 给出具体可执行的修复建议（中文，说清楚去哪里、改什么）',
     '',
     '# 输出格式：只输出一个 JSON 对象，禁止 markdown 围栏与解释',
-    '{"canAutoFix": true 或 false, "diagnosis": "根因判断（一两句话）", "suggestion": "修复建议（具体可执行）"}'
+    '{"canAutoFix": true 或 false, "diagnosis": "根因判断（一两句话）", "suggestion": "修复建议（具体可执行）"}',
   ].join('\n')
 
   const raw = await httpChat(
@@ -168,7 +162,7 @@ export async function diagnoseFailureOp(
     system,
     `失败阶段：${input.stageLabel}\n${input.context ? `上下文：${input.context}\n` : ''}错误样本（已去重）：\n${input.errors.map((e, i) => `${i + 1}. ${e}`).join('\n')}`,
     0.2,
-    60000
+    60000,
   )
   const cleaned = raw.replace(/```(?:json)?/g, '').trim()
   const start = cleaned.indexOf('{')
@@ -203,9 +197,9 @@ export async function auditImageOp(
       action: string
       shotSize: string
       camera: string
-      lookEn?: string
+      lookEn?: string | undefined
     }
-  }
+  },
 ): Promise<{
   visionUnavailable: boolean
   passed: boolean
@@ -213,7 +207,8 @@ export async function auditImageOp(
   fixHint: string
 }> {
   const s = await getSettings()
-  if (!s.llm.apiKey) return { visionUnavailable: true, passed: true, blockedProblems: [], fixHint: '' }
+  const apiKey = llmApiKey(s)
+  if (!apiKey) return { visionUnavailable: true, passed: true, blockedProblems: [], fixHint: '' }
 
   const dataUrl = await (async () => {
     try {
@@ -243,14 +238,14 @@ export async function auditImageOp(
     '- blockedProblems：中文列出未通过的 block 项（含第几项），无则空数组',
     '',
     '# 输出格式：只输出 JSON，禁止 markdown 围栏',
-    '{"passed": true 或 false, "blockedProblems": ["人脸身份与定妆不一致"], "fixHint": "keep exact face identity and outfit from reference, no outfit change"}'
+    '{"passed": true 或 false, "blockedProblems": ["人脸身份与定妆不一致"], "fixHint": "keep exact face identity and outfit from reference, no outfit change"}',
   ].join('\n')
 
   const user = [
     `第${input.context.index}镜 ${input.kind === 'video' ? '视频抽帧' : '关键帧'}审核｜景别:${input.context.shotSize}｜机位:${input.context.camera}`,
     `场景:${input.context.scene}｜角色:${input.context.character}${input.context.lookEn ? `｜外观锁定:${input.context.lookEn}` : ''}`,
     `动作:${input.context.action}`,
-    '请按清单审核这张画面。'
+    '请按清单审核这张画面。',
   ].join('\n')
 
   const body: Record<string, unknown> = {
@@ -261,21 +256,21 @@ export async function auditImageOp(
         role: 'user',
         content: [
           { type: 'text', text: user },
-          { type: 'image_url', image_url: { url: dataUrl } }
-        ]
-      }
+          { type: 'image_url', image_url: { url: dataUrl } },
+        ],
+      },
     ],
     temperature: 0.2,
     // 推理型多模态模型（如 deepseek-flash）默认把配额耗在 reasoning 上导致 content 空：
     // 用低推理档 + 大配额保证 JSON 落地；content 仍被挤占时自动重试一次
     effort: 'low',
-    max_tokens: 2000
+    max_tokens: 2000,
   }
-  const post = () => axios.post(
-    `${(s.llm.baseUrl || 'https://api.deepseek.com').replace(/\/+$/, '')}/chat/completions`,
-    body,
-    { headers: { Authorization: `Bearer ${s.llm.apiKey}` }, timeout: 90000 }
-  )
+  const post = () =>
+    axios.post(`${llmBaseUrl(s)}/chat/completions`, body, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+      timeout: 90000,
+    })
   let resp = await post()
   let content: string = resp.data?.choices?.[0]?.message?.content?.trim() || ''
   const reasoning: string = resp.data?.choices?.[0]?.message?.reasoning_content || ''
@@ -306,9 +301,14 @@ export async function auditImageOp(
       visionUnavailable: false,
       passed: parsed.passed !== false,
       blockedProblems: Array.isArray(parsed.blockedProblems)
-        ? parsed.blockedProblems.map(x => String(x)).filter(Boolean).slice(0, 6)
+        ? parsed.blockedProblems
+            .map((x) => String(x))
+            .filter(Boolean)
+            .slice(0, 6)
         : [],
-      fixHint: String(parsed.fixHint || '').trim().slice(0, 300)
+      fixHint: String(parsed.fixHint || '')
+        .trim()
+        .slice(0, 300),
     }
   } catch {
     return { visionUnavailable: false, passed: true, blockedProblems: [], fixHint: '' }

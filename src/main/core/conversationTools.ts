@@ -36,42 +36,63 @@ export interface ConversationToolsHost {
   memory: MemoryStore
   ffmpeg: FFmpegService
   settings: SettingsStore
-  skillLibrary?: SkillLibrary
-  workflowLibrary?: WorkflowLibrary
-  comfyMcp?: ComfyMcpService
-  lastProjectId?: string
+  skillLibrary?: SkillLibrary | undefined
+  workflowLibrary?: WorkflowLibrary | undefined
+  comfyMcp?: ComfyMcpService | undefined
+  lastProjectId?: string | undefined
 }
 
 export type ToolResult = { ok: boolean; text: string }
 
 export {
-  runCustomSkill, resolvePid,
-  tListMemories, tSaveMemory, tGetSettings, tSetSettings,
-  tCreateSkill, tListSkills, tUpdateSkill
+  runCustomSkill,
+  resolvePid,
+  tListMemories,
+  tSaveMemory,
+  tGetSettings,
+  tSetSettings,
+  tCreateSkill,
+  tListSkills,
+  tUpdateSkill,
 } from './conversationToolsMemory'
 
 export {
-  tStart, tSimple, tStatus, tListShots, tRerender,
-  tRenderSample, tMakeTrailer, tRebuildFrames
+  tStart,
+  tSimple,
+  tStatus,
+  tListShots,
+  tRerender,
+  tRenderSample,
+  tMakeTrailer,
+  tRebuildFrames,
 } from './conversationToolsDirector'
 
 export {
-  tListProjects, tOpenProject,
-  tListCharacters, tUpdateCharacter,
-  renumberShots, validateFrames, recalcProjectStatus,
-  tUpdateShot, tAddShot, tDeleteShot, tMoveShot
+  tListProjects,
+  tOpenProject,
+  tListCharacters,
+  tUpdateCharacter,
+  renumberShots,
+  validateFrames,
+  recalcProjectStatus,
+  tUpdateShot,
+  tAddShot,
+  tDeleteShot,
+  tMoveShot,
 } from './conversationToolsProject'
 
 export {
-  workflowExists, tChooseWorkflow, tGetComfyuiStatus,
-  tListWorkflows, tImportLibraryWorkflow, tRenderQuick,
-  tGetWorkflowParams, tUpdateWorkflowParam, tCreateWorkflow
+  workflowExists,
+  tChooseWorkflow,
+  tGetComfyuiStatus,
+  tListWorkflows,
+  tImportLibraryWorkflow,
+  tRenderQuick,
+  tGetWorkflowParams,
+  tUpdateWorkflowParam,
+  tCreateWorkflow,
 } from './conversationToolsWorkflow'
 
-export {
-  tWebSearch, tFetchUrl, isBlockedFetchHost
-} from './conversationToolsNetwork'
+export { tWebSearch, tFetchUrl, isBlockedFetchHost } from './conversationToolsNetwork'
 
-export {
-  tSetProjectBgm, tListProjectFiles, tOpenFile
-} from './conversationToolsFile'
+export { tSetProjectBgm, tListProjectFiles, tOpenFile } from './conversationToolsFile'

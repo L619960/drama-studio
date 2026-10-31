@@ -24,7 +24,7 @@ const state = vi.hoisted(() => ({
   spawnCalls: [] as Array<{ file: string; args: string[]; opts: unknown }>,
   axiosBehavior: null as null | ((url: string) => { data: ArrayBuffer } | never),
   axiosCalls: [] as string[],
-  requireResolve: 'C:/fake/onnxruntime-node/index.js'
+  requireResolve: 'C:/fake/onnxruntime-node/index.js',
 }))
 
 class FakeChildProcess extends EventEmitter {
@@ -36,7 +36,9 @@ class FakeChildProcess extends EventEmitter {
     this.stdout = new EventEmitter()
     this.stderr = new EventEmitter()
   }
-  kill() { this.killed = true }
+  kill() {
+    this.killed = true
+  }
 }
 
 // ============================================================ mocks
@@ -50,20 +52,30 @@ vi.mock('node:fs/promises', async () => {
     unlink: 'unlinkSync',
     stat: 'statSync',
     rename: 'renameSync',
-    rm: 'rmSync'
+    rm: 'rmSync',
   }
-  const wrap = (name: string) => (...args: unknown[]) => {
-    state.fsCalls.push({ fn: name, args })
-    if (name === 'access' && state.accessBehavior) {
-      try { state.accessBehavior(args[0] as string); return Promise.resolve(undefined) }
-      catch (e) { return Promise.reject(e) }
+  const wrap =
+    (name: string) =>
+    (...args: unknown[]) => {
+      state.fsCalls.push({ fn: name, args })
+      if (name === 'access' && state.accessBehavior) {
+        try {
+          state.accessBehavior(args[0] as string)
+          return Promise.resolve(undefined)
+        } catch (e) {
+          return Promise.reject(e)
+        }
+      }
+      try {
+        const syncName = SYNC_MAP[name]
+        if (!syncName) throw new Error(`测试夹具缺少 fs 同步方法映射：${name}`)
+        const syncFn = (fs as unknown as Record<string, (...a: unknown[]) => unknown>)[syncName]
+        if (!syncFn) throw new Error(`测试夹具缺少 fs 同步方法：${syncName}`)
+        return Promise.resolve(syncFn(...args))
+      } catch (e) {
+        return Promise.reject(e)
+      }
     }
-    try {
-      return Promise.resolve((fs as unknown as Record<string, (...a: unknown[]) => unknown>)[SYNC_MAP[name]](...args))
-    } catch (e) {
-      return Promise.reject(e)
-    }
-  }
   const out: Record<string, unknown> = {}
   for (const n of Object.keys(SYNC_MAP)) out[n] = wrap(n)
   out.default = out
@@ -80,7 +92,7 @@ vi.mock('node:child_process', () => ({
       queueMicrotask(() => behavior(cp, args))
     }
     return cp
-  }
+  },
 }))
 
 vi.mock('node:module', () => ({
@@ -91,7 +103,7 @@ vi.mock('node:module', () => ({
       return state.requireResolve
     }
     return req
-  }
+  },
 }))
 
 vi.mock('axios', () => ({
@@ -100,12 +112,12 @@ vi.mock('axios', () => ({
       state.axiosCalls.push(url)
       if (state.axiosBehavior) return state.axiosBehavior(url)
       return { data: new ArrayBuffer(16) }
-    }
-  }
+    },
+  },
 }))
 
 vi.mock('../../src/main/core/logger', () => ({
-  createLogger: () => ({ info: () => {}, warn: () => {}, error: () => {}, debug: () => {} })
+  createLogger: () => ({ info: () => {}, warn: () => {}, error: () => {}, debug: () => {} }),
 }))
 
 import { FaceDetector, FACE_INPUT_SIZE, FACE_REC_SIZE } from '../../src/main/core/faceDetector'
@@ -114,10 +126,12 @@ import { FaceDetector, FACE_INPUT_SIZE, FACE_REC_SIZE } from '../../src/main/cor
 let baseDir = ''
 let modelDir = ''
 
-const accessOk = () => { state.accessBehavior = () => undefined }
+const accessOk = () => {
+  state.accessBehavior = () => undefined
+}
 function accessMissing(...paths: string[]) {
   state.accessBehavior = (p: string) => {
-    if (paths.some(x => String(p).includes(x))) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' })
+    if (paths.some((x) => String(p).includes(x))) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' })
     return undefined
   }
 }
@@ -125,7 +139,7 @@ const makeDetector = () => new FaceDetector(modelDir)
 
 /** 等待子进程事件触发 */
 function waitForSpawn(ms = 10) {
-  return new Promise(res => setTimeout(res, ms))
+  return new Promise((res) => setTimeout(res, ms))
 }
 
 beforeEach(() => {
@@ -141,12 +155,15 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  try { nodeFs.rmSync(baseDir, { recursive: true, force: true }) } catch { /* 清理失败忽略 */ }
+  try {
+    nodeFs.rmSync(baseDir, { recursive: true, force: true })
+  } catch {
+    /* 清理失败忽略 */
+  }
 })
 
 // ============================================================ describe
 describe('FaceDetector', () => {
-
   it('常量导出：FACE_INPUT_SIZE=640 / FACE_REC_SIZE=112', () => {
     expect(FACE_INPUT_SIZE).toBe(640)
     expect(FACE_REC_SIZE).toBe(112)
@@ -158,8 +175,10 @@ describe('FaceDetector', () => {
       const fd = makeDetector()
       await expect(fd.available()).resolves.toBe(true)
       await expect(fd.available()).resolves.toBe(true)
-      expect(state.fsCalls.some(c => c.fn === 'mkdir')).toBe(true)
-      expect(state.fsCalls.some(c => c.fn === 'writeFile' && String(c.args[0]).includes('face-detect-worker'))).toBe(true)
+      expect(state.fsCalls.some((c) => c.fn === 'mkdir')).toBe(true)
+      expect(state.fsCalls.some((c) => c.fn === 'writeFile' && String(c.args[0]).includes('face-detect-worker'))).toBe(
+        true,
+      )
     })
 
     it('ensure 的 access 抛 EACCES（非 ENOENT）→ 也触发下载路径（catch 吞掉任何错误），可用', async () => {
@@ -171,7 +190,7 @@ describe('FaceDetector', () => {
       const fd = makeDetector()
       await expect(fd.available()).resolves.toBe(true)
       // access 任何失败 → 都尝试 axios 下载
-      expect(state.axiosCalls.some(u => u.includes('yunet'))).toBe(true)
+      expect(state.axiosCalls.some((u) => u.includes('yunet'))).toBe(true)
     })
 
     it('ensure 的 createRequire.resolve 抛错 → ensure throw → available false，永久降级', async () => {
@@ -189,13 +208,15 @@ describe('FaceDetector', () => {
       state.axiosBehavior = () => ({ data: new ArrayBuffer(4096) })
       const fd = makeDetector()
       await expect(fd.available()).resolves.toBe(true)
-      expect(state.axiosCalls.some(u => u.includes('yunet'))).toBe(true)
-      expect(state.fsCalls.some(c => c.fn === 'writeFile' && String(c.args[0]).includes('yunet.onnx'))).toBe(true)
+      expect(state.axiosCalls.some((u) => u.includes('yunet'))).toBe(true)
+      expect(state.fsCalls.some((c) => c.fn === 'writeFile' && String(c.args[0]).includes('yunet.onnx'))).toBe(true)
     })
 
     it('YuNet 下载失败 → available false，二次仍 false', async () => {
       accessMissing('yunet.onnx')
-      state.axiosBehavior = () => { throw new Error('network down') }
+      state.axiosBehavior = () => {
+        throw new Error('network down')
+      }
       const fd = makeDetector()
       await expect(fd.available()).resolves.toBe(false)
       await expect(fd.available()).resolves.toBe(false)
@@ -208,14 +229,14 @@ describe('FaceDetector', () => {
       accessOk()
       const fd = makeDetector()
       await expect(fd.recognitionAvailable()).resolves.toBe(false)
-      expect(state.axiosCalls.filter(u => u.includes('w600k'))).toHaveLength(0)
+      expect(state.axiosCalls.filter((u) => u.includes('w600k'))).toHaveLength(0)
     })
 
     it('rec 模型已缓存 → 不下载，直接 true', async () => {
       accessOk()
       const fd = makeDetector()
       await expect(fd.recognitionAvailable()).resolves.toBe(true)
-      expect(state.axiosCalls.filter(u => u.includes('w600k'))).toHaveLength(0)
+      expect(state.axiosCalls.filter((u) => u.includes('w600k'))).toHaveLength(0)
     })
 
     it('rec 模型缺失 → 下载成功；仅首次下载（recAttempted 锁）', async () => {
@@ -229,9 +250,9 @@ describe('FaceDetector', () => {
       }
       const fd = makeDetector()
       await expect(fd.recognitionAvailable()).resolves.toBe(true)
-      expect(state.axiosCalls.filter(u => u.includes('w600k'))).toHaveLength(1)
+      expect(state.axiosCalls.filter((u) => u.includes('w600k'))).toHaveLength(1)
       await expect(fd.recognitionAvailable()).resolves.toBe(true)
-      expect(state.axiosCalls.filter(u => u.includes('w600k'))).toHaveLength(1)
+      expect(state.axiosCalls.filter((u) => u.includes('w600k'))).toHaveLength(1)
     })
 
     it('rec 模型下载失败 → recognitionAvailable=false（不影响 detect）', async () => {
@@ -250,10 +271,12 @@ describe('FaceDetector', () => {
   })
 
   describe('runWorker（detectPair）', () => {
-    beforeEach(() => { accessOk() })
+    beforeEach(() => {
+      accessOk()
+    })
 
     it('正常返回 RESULT= → 解析成功', async () => {
-      const boxes = [{ x: 0.1, y: 0.2, w: 0.3, h: 0.4, score: 0.85, lm: [1,2,3,4,5,6,7,8,9,10] }]
+      const boxes = [{ x: 0.1, y: 0.2, w: 0.3, h: 0.4, score: 0.85, lm: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] }]
       state.spawnBehaviors.push((cp) => {
         cp.stdout.emit('data', 'RESULT=' + JSON.stringify({ a: boxes, b: [] }))
         cp.emit('close', 0)
@@ -322,10 +345,14 @@ describe('FaceDetector', () => {
   })
 
   describe('detectPair permanentFail=true 降级', () => {
-    beforeEach(() => { accessOk() })
+    beforeEach(() => {
+      accessOk()
+    })
 
     it('子进程失败 → initFailed 永久置真，后续 available 永远 false', async () => {
-      state.spawnBehaviors.push((cp) => { cp.emit('close', 1) })
+      state.spawnBehaviors.push((cp) => {
+        cp.emit('close', 1)
+      })
       const fd = makeDetector()
       const p = fd.detectPair('a.rgb', 'b.rgb')
       await waitForSpawn()
@@ -335,7 +362,9 @@ describe('FaceDetector', () => {
   })
 
   describe('embedPair', () => {
-    beforeEach(() => { accessOk() })
+    beforeEach(() => {
+      accessOk()
+    })
 
     it('正常流程：写临时 rgb → 跑子进程 → finally 清理 unlink', async () => {
       state.spawnBehaviors.push((cp) => {
@@ -349,23 +378,27 @@ describe('FaceDetector', () => {
       expect(r).toBeDefined()
       expect(r!.a).toHaveLength(512)
       // writeFile = ensure 写 worker 1 + embedPair 写 pA/pB 2 = 3
-      expect(state.fsCalls.filter(c => c.fn === 'writeFile')).toHaveLength(3)
-      expect(state.fsCalls.filter(c => c.fn === 'unlink')).toHaveLength(2)
+      expect(state.fsCalls.filter((c) => c.fn === 'writeFile')).toHaveLength(3)
+      expect(state.fsCalls.filter((c) => c.fn === 'unlink')).toHaveLength(2)
     })
 
     it('子进程失败 → 临时文件仍清理；permanentFail=false 不永久降级', async () => {
-      state.spawnBehaviors.push((cp) => { cp.emit('close', 2) })
+      state.spawnBehaviors.push((cp) => {
+        cp.emit('close', 2)
+      })
       const fd = makeDetector()
       const p = fd.embedPair(new Uint8Array(112 * 112 * 3), new Uint8Array(112 * 112 * 3))
       await waitForSpawn()
       await expect(p).resolves.toBeNull()
-      expect(state.fsCalls.filter(c => c.fn === 'unlink')).toHaveLength(2)
+      expect(state.fsCalls.filter((c) => c.fn === 'unlink')).toHaveLength(2)
       await expect(fd.available()).resolves.toBe(true)
     })
   })
 
   describe('子进程 spawn 入参', () => {
-    beforeEach(() => { accessOk() })
+    beforeEach(() => {
+      accessOk()
+    })
 
     it('detectPair：process.execPath + worker + ortEntry + yunet.onnx + 两个 rgb', async () => {
       state.spawnBehaviors.push((cp) => {
@@ -377,6 +410,7 @@ describe('FaceDetector', () => {
       await waitForSpawn()
       await p
       const call = state.spawnCalls[0]
+      if (!call) throw new Error('测试夹具缺少 state.spawnCalls[0]')
       expect(call.file).toBe(process.execPath)
       expect(call.args).toHaveLength(5)
       expect(call.args[0]).toContain('face-detect-worker')
@@ -399,6 +433,7 @@ describe('FaceDetector', () => {
       await waitForSpawn()
       await p
       const call = state.spawnCalls[0]
+      if (!call) throw new Error('测试夹具缺少 state.spawnCalls[0]')
       expect(call.args[2]).toBe('embed')
       expect(call.args[3]).toContain('w600k_mbf')
     })

@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { join, resolve, sep, isAbsolute } from 'node:path'
 import { realpathSync } from 'node:fs'
+import { sanitizeErrorText } from '../../shared/errorSanitize'
 
 // 统一数据根目录：userData/drama-studio
 // ProjectStore 的 projects 目录 = DATA_ROOT/projects
@@ -32,9 +33,7 @@ export function toAppFileUrl(relativePath: string): string {
  * Windows 下大小写不敏感。
  */
 export function resolveInsideRoot(inputPath: string): string {
-  const abs = resolve(
-    isAbsolute(inputPath) ? inputPath : join(DATA_ROOT, inputPath)
-  )
+  const abs = resolve(isAbsolute(inputPath) ? inputPath : join(DATA_ROOT, inputPath))
   let real = abs
   try {
     real = resolve(realpathSync(abs))
@@ -78,8 +77,9 @@ const rawIpcHandle = ipcMain.handle.bind(ipcMain)
 
 /**
  * 统一 IPC handler 包装（I-10）：主进程异常先记主进程日志（含通道名，路径脱敏）
- * 再原样透传。此前 65 个 handler 裸注册，底层异常原文直透渲染层且主进程无日志可查。
- * 注意：只做日志与透传，不改变错误类型——渲染层按 Error.message 展示。
+ * 再脱敏后透传（SEC-05：数据根路径 → <DATA_ROOT>、密钥样式掩码、截断 500 字）。
+ * 此前 65 个 handler 裸注册，底层异常原文直透渲染层且主进程无日志可查。
+ * 注意：渲染层按 Error.message 展示，故保留原始可读文案，只做敏感信息清洗。
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- IPC 边界：渲染层透传参数为不可信外部输入，各 handler 内部自行断言
 export function handleIpc(channel: string, fn: (...args: any[]) => unknown): void {
@@ -90,9 +90,11 @@ export function handleIpc(channel: string, fn: (...args: any[]) => unknown): voi
       // 丢掉会导致所有带参 handler 参数左移一位（settings:save 报 ERR_INVALID_ARG_TYPE 即此因）
       return await fn(_event, ...args)
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      console.error(`[IPC] ${channel} 失败: ${msg.replaceAll(DATA_ROOT_RESOLVED, '<DATA_ROOT>')}`)
-      throw err
+      const sanitized = sanitizeErrorText(err instanceof Error ? err.message : String(err), {
+        dataRoot: DATA_ROOT_RESOLVED,
+      })
+      console.error(`[IPC] ${channel} 失败: ${sanitized}`)
+      throw new Error(sanitized, { cause: err })
     }
   })
 }

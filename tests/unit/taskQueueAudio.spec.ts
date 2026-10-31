@@ -18,11 +18,17 @@ import * as nodeOs from 'node:os'
 // prepareShotAudio catch 块里的 fs.stat(leadedAbs) 必须能找到真实存在的文件。
 // 用同步 node:fs 包 Promise.resolve 规避 async stat 的潜在竞态（Windows + vitest ESM 下偶发）。
 vi.mock('node:fs/promises', async () => {
-  const syncFs = await import('node:fs') as unknown as Record<string, (...a: unknown[]) => unknown>
+  const syncFs = (await import('node:fs')) as unknown as Record<string, (...a: unknown[]) => unknown>
   const SYNC_MAP: Record<string, string> = {
-    mkdir: 'mkdirSync', writeFile: 'writeFileSync', readFile: 'readFileSync',
-    unlink: 'unlinkSync', access: 'accessSync', stat: 'statSync', rename: 'renameSync',
-    rm: 'rmSync', mkdtemp: 'mkdtempSync'
+    mkdir: 'mkdirSync',
+    writeFile: 'writeFileSync',
+    readFile: 'readFileSync',
+    unlink: 'unlinkSync',
+    access: 'accessSync',
+    stat: 'statSync',
+    rename: 'renameSync',
+    rm: 'rmSync',
+    mkdtemp: 'mkdtempSync',
   }
   const out: Record<string, unknown> = {}
   for (const [name, syncName] of Object.entries(SYNC_MAP)) {
@@ -30,17 +36,28 @@ vi.mock('node:fs/promises', async () => {
       // 缓存兜底专用：stat 无条件返回 isFile=true，排除文件系统路径差异
       if (name === 'stat') {
         // 先让真实 statSync 跑一下确保能抛出正确的 ENOENT 等
-        try { syncFs.statSync(args[0]) } catch (e) { return Promise.reject(e) }
+        const statSync = syncFs.statSync
+        if (!statSync) throw new Error('测试夹具缺少 fs.statSync')
+        try {
+          statSync(args[0])
+        } catch (e) {
+          return Promise.reject(e)
+        }
         // 返回一个带有 isFile() 的对象
         return Promise.resolve({
           isFile: () => true,
           isDirectory: () => false,
           size: 0,
-          mtimeMs: Date.now()
+          mtimeMs: Date.now(),
         })
       }
-      try { return Promise.resolve(syncFs[syncName](...args)) }
-      catch (e) { return Promise.reject(e) }
+      const fn = syncFs[syncName]
+      try {
+        if (!fn) throw new Error(`测试夹具缺少 fs.${syncName}`)
+        return Promise.resolve(fn(...args))
+      } catch (e) {
+        return Promise.reject(e)
+      }
     }
   }
   out.default = out
@@ -49,12 +66,15 @@ vi.mock('node:fs/promises', async () => {
 
 // logger：空实现
 vi.mock('../../src/main/core/logger', () => ({
-  createLogger: () => ({ info: () => {}, warn: () => {}, error: () => {}, debug: () => {} })
+  createLogger: () => ({ info: () => {}, warn: () => {}, error: () => {}, debug: () => {} }),
 }))
 // TTSRateLimitedError 必须原样导出（被 instanceof 检查）
 vi.mock('../../src/main/core/ttsService', () => {
   class TTSRateLimitedError extends Error {
-    constructor(m: string) { super(m); this.name = 'TTSRateLimitedError' }
+    constructor(m: string) {
+      super(m)
+      this.name = 'TTSRateLimitedError'
+    }
   }
   return { TTSService: class {}, TTSRateLimitedError }
 })
@@ -65,37 +85,68 @@ import { TTSRateLimitedError } from '../../src/main/core/ttsService'
 
 // ============================================================ 固定 baseDir（beforeEach/afterEach 共享）
 let baseDir = ''
-beforeEach(() => { baseDir = nodeFs.mkdtempSync(nodePath.join(nodeOs.tmpdir(), 'audio-spec-')) })
-afterEach(() => { try { nodeFs.rmSync(baseDir, { recursive: true, force: true }) } catch { /* 清理失败忽略 */ } })
+beforeEach(() => {
+  baseDir = nodeFs.mkdtempSync(nodePath.join(nodeOs.tmpdir(), 'audio-spec-'))
+})
+afterEach(() => {
+  try {
+    nodeFs.rmSync(baseDir, { recursive: true, force: true })
+  } catch {
+    /* 清理失败忽略 */
+  }
+})
 
 const rel = (p: string) => nodePath.join(baseDir, p)
 
 // ============================================================ 构造 Shot / Project
 function makeShot(id: string, over: Partial<Shot> = {}): Shot {
   return {
-    id, index: 1, type: 'i2v', status: 'rendering',
-    scene: '街景', action: '站立', dialogue: '', emotion: 'calm',
-    camera: '中景', frames: 49, characterIds: ['c1'],
+    id,
+    index: 1,
+    type: 'i2v',
+    status: 'rendering',
+    scene: '街景',
+    action: '站立',
+    dialogue: '',
+    emotion: 'calm',
+    camera: '中景',
+    frames: 49,
+    characterIds: ['c1'],
     firstFramePath: undefined as unknown as string,
     segmentPath: undefined as unknown as string,
     workflow: 'wan22_i2v',
-    ...over
+    ...over,
   } as unknown as Shot
 }
 function makeProject(shots: Shot[], chars: Array<Record<string, unknown>> = []): Project {
   return {
-    id: 'p1', title: 't', genre: '都市', status: 'draft',
-    characters: chars as never, scenes: [], sceneBoards: [], shots
+    id: 'p1',
+    title: 't',
+    genre: '都市',
+    status: 'draft',
+    characters: chars as never,
+    scenes: [],
+    sceneBoards: [],
+    shots,
   } as unknown as Project
 }
-function makeWatcher() { return { promise: new Promise<never>(() => {}) } }
+function makeWatcher() {
+  return { promise: new Promise<never>(() => {}) }
+}
 
 // ============================================================ Runtime stub
 interface RtCfg {
   getDuration?: (p: string) => Promise<number>
   padAudioLead?: (i: string, o: string, sec: number) => Promise<string>
   prepareSegment?: (v: string, a: string | undefined, o: string) => Promise<string>
-  onTtsGenerate?: (dialogue: string, voice: string, rel: string, rate: string, volume: string, cb?: () => boolean) => Promise<string>
+  onTtsGenerate?: (
+    dialogue: string,
+    voice: string,
+    rel: string,
+    rate: string,
+    volume: string,
+    cb?: () => boolean,
+  ) => Promise<string>
   ttsThrows?: Error
   project?: Project | null
   settings?: { tts?: { rate: number; volume: number; defaultVoice: string } }
@@ -110,20 +161,31 @@ function makeRuntime(cfg: RtCfg = {}): {
   const patchedShots: Shot[] = []
   const ffmpeg = {
     getDuration: cfg.getDuration ?? (async () => 0),
-    padAudioLead: cfg.padAudioLead ?? (async (_i: string, o: string) => {
-      nodeFs.mkdirSync(nodePath.dirname(o), { recursive: true })
-      nodeFs.writeFileSync(o, 'fake-leaded'); return o
-    }),
-    prepareSegment: cfg.prepareSegment ?? (async (_v: string, _a: string | undefined, o: string) => {
-      nodeFs.mkdirSync(nodePath.dirname(o), { recursive: true })
-      nodeFs.writeFileSync(o, 'fake-seg'); return o
-    })
+    padAudioLead:
+      cfg.padAudioLead ??
+      (async (_i: string, o: string) => {
+        nodeFs.mkdirSync(nodePath.dirname(o), { recursive: true })
+        nodeFs.writeFileSync(o, 'fake-leaded')
+        return o
+      }),
+    prepareSegment:
+      cfg.prepareSegment ??
+      (async (_v: string, _a: string | undefined, o: string) => {
+        nodeFs.mkdirSync(nodePath.dirname(o), { recursive: true })
+        nodeFs.writeFileSync(o, 'fake-seg')
+        return o
+      }),
   }
   const settings = cfg.settings ?? { tts: { rate: 100, volume: 100, defaultVoice: 'zh-CN-XiaoxiaoNeural' } }
 
   // 用普通 function（不是箭头函数），直接传递参数
   function ttsGenerateImpl(
-    dialogue: string, voice: string, relPath: string, rate: string, volume: string, cb?: () => boolean
+    dialogue: string,
+    voice: string,
+    relPath: string,
+    rate: string,
+    volume: string,
+    cb?: () => boolean,
   ): Promise<string> {
     if (cfg.ttsThrows) return Promise.reject(cfg.ttsThrows)
     if (cfg.onTtsGenerate) return cfg.onTtsGenerate(dialogue, voice, relPath, rate, volume, cb)
@@ -139,11 +201,15 @@ function makeRuntime(cfg: RtCfg = {}): {
     tts: { generate: ttsGenerateImpl } as never,
     settings: { get: async () => settings } as never,
     resolveInBase: (p: string) => rel(p),
-    checkCancelled: () => { if (cfg.cancelled) throw new Error('CANCELLED') },
+    checkCancelled: () => {
+      if (cfg.cancelled) throw new Error('CANCELLED')
+    },
     emitProgress: (e: Record<string, unknown>) => progress.push(e),
-    patchShot: async (_pid: string, shot: Shot) => { patchedShots.push(shot) }
+    patchShot: async (_pid: string, shot: Shot) => {
+      patchedShots.push(shot)
+    },
   }
-  return { rt: rt as AudioRuntime, progress, patchedShots }
+  return { rt: rt as unknown as AudioRuntime, progress, patchedShots }
 }
 
 function writeFile(relPath: string, content = 'x') {
@@ -154,12 +220,16 @@ function writeFile(relPath: string, content = 'x') {
 
 // ============================================================ describe
 describe('prepareShotAudio', () => {
-
   it('占位镜（「（无台词）」）：清除 audioPath/audioFailed，不调 TTS/ffmpeg', async () => {
     const shot = makeShot('s1', { dialogue: '（无台词）', audioPath: 'p/a/s1.mp3', audioFailed: true })
     const project = makeProject([shot])
     let ffmpegCalls = 0
-    const { rt } = makeRuntime({ getDuration: async () => { ffmpegCalls++; return 3 } })
+    const { rt } = makeRuntime({
+      getDuration: async () => {
+        ffmpegCalls++
+        return 3
+      },
+    })
     await prepareShotAudio(rt, 'p1', shot, project, makeWatcher())
     expect(shot.audioPath).toBeUndefined()
     expect(shot.audioFailed).toBe(false)
@@ -174,11 +244,18 @@ describe('prepareShotAudio', () => {
       padAudioLead: async (_i, o, sec) => {
         expect(sec).toBe(SHOT_TIMING.audioLeadSec)
         return o
-      }
+      },
     })
     let ttsCalled = false
     // 直接用上面构造的 rt（复用 getDuration=2.0）
-    Object.assign(rt, { tts: { generate: async () => { ttsCalled = true; return 'x' } } })
+    Object.assign(rt, {
+      tts: {
+        generate: async () => {
+          ttsCalled = true
+          return 'x'
+        },
+      },
+    })
     const r = await prepareShotAudio(rt, 'p1', shot, makeProject([shot]), makeWatcher())
     expect(ttsCalled).toBe(false)
     expect(shot.audioFailed).toBe(false)
@@ -192,19 +269,19 @@ describe('prepareShotAudio', () => {
     writeFile('projects/p1/audio/s1.mp3')
     const { rt, progress } = makeRuntime({
       getDuration: async () => 10.0,
-      onTtsGenerate: async () => 'x'
+      onTtsGenerate: async () => 'x',
     })
     await prepareShotAudio(rt, 'p1', shot, makeProject([shot]), makeWatcher(), { capSec: 5 })
     expect(shot.audioPath).toBeDefined()
     // 有提速 progress
-    expect(progress.some(p => String(p.message || '').includes('提速'))).toBe(true)
+    expect(progress.some((p) => String(p.message || '').includes('提速'))).toBe(true)
   })
 
   it('TTS 成功：audioPath/audioFailed 写回，帧秒 = min(maxSec,max(minSec,max(defaultSec,needSec)))，帧秒与 frames 一致，patchShot 被调', async () => {
     const shot = makeShot('s1', { dialogue: '短台词', frames: 49 })
     const { rt, patchedShots } = makeRuntime({
       getDuration: async () => 3.0,
-      padAudioLead: async (_i, o) => o
+      padAudioLead: async (_i, o) => o,
     })
     await prepareShotAudio(rt, 'p1', shot, makeProject([shot]), makeWatcher())
     expect(shot.audioPath).toBe('projects/p1/audio/s1.mp3')
@@ -224,7 +301,7 @@ describe('prepareShotAudio', () => {
     expect(shot.audioFailed).toBe(true)
     expect(shot.audioFailedReason).toBe('403 rate limited')
     expect(shot.audioPath).toBeUndefined()
-    expect(progress.some(p => String(p.message || '').includes('风控限流'))).toBe(true)
+    expect(progress.some((p) => String(p.message || '').includes('风控限流'))).toBe(true)
     // 帧秒仍有 minSec 钳制 → 65 帧
     expect(shot.frames).toBe(65)
   })
@@ -234,14 +311,14 @@ describe('prepareShotAudio', () => {
     writeFile('projects/p1/audio/s1_leaded.mp3', 'old-leaded')
     const { rt, progress } = makeRuntime({
       ttsThrows: new Error('msedge down'),
-      getDuration: async () => 4.0
+      getDuration: async () => 4.0,
     })
     const r = await prepareShotAudio(rt, 'p1', shot, makeProject([shot]), makeWatcher())
     // audioFailed 被成功回写（源码 line 127）
     expect(shot.audioFailed).toBe(false)
     // syncAudioRelPath 来自 catch 块里设的 audioRelPath = _leaded.mp3
     expect(r.syncAudioRelPath).toBe('projects/p1/audio/s1_leaded.mp3')
-    expect(progress.some(p => String(p.message || '').includes('复用历史音频缓存'))).toBe(true)
+    expect(progress.some((p) => String(p.message || '').includes('复用历史音频缓存'))).toBe(true)
   })
 
   it('TTS 彻底失败 + 无缓存 → audioFailed=true，静音降级，帧秒不低于 minSec', async () => {
@@ -260,7 +337,10 @@ describe('prepareShotAudio', () => {
     let padCalls = 0
     const { rt } = makeRuntime({
       getDuration: async () => 2.5,
-      padAudioLead: async () => { padCalls++; return '' }
+      padAudioLead: async () => {
+        padCalls++
+        return ''
+      },
     })
     const r = await prepareShotAudio(rt, 'p1', shot, makeProject([shot]), makeWatcher())
     expect(padCalls).toBe(0)
@@ -271,7 +351,10 @@ describe('prepareShotAudio', () => {
     const shot = makeShot('s1', { dialogue: '短' })
     let usedRate = ''
     const { rt } = makeRuntime({
-      onTtsGenerate: async (_d, _v, _r, rate) => { usedRate = rate; return 'x' }
+      onTtsGenerate: async (_d, _v, _r, rate) => {
+        usedRate = rate
+        return 'x'
+      },
     })
     await prepareShotAudio(rt, 'p1', shot, makeProject([shot]), makeWatcher())
     expect(usedRate).toBe('+0%')
@@ -280,10 +363,15 @@ describe('prepareShotAudio', () => {
   it('i2v 镜 + 角色 voiceRate 数字 105 + voice Yunxi → voice 优先，rate=+5%', async () => {
     const shot = makeShot('s1', { dialogue: '台词', characterIds: ['c1'] })
     const char = { id: 'c1', name: '甲', voiceRate: 105, voice: 'zh-CN-YunxiNeural' }
-    let usedVoice = '', usedRate = ''
+    let usedVoice = '',
+      usedRate = ''
     const { rt } = makeRuntime({
       settings: { tts: { rate: 100, volume: 100, defaultVoice: 'default-v' } },
-      onTtsGenerate: async (_d, voice, _r, rate) => { usedVoice = voice; usedRate = rate; return 'x' }
+      onTtsGenerate: async (_d, voice, _r, rate) => {
+        usedVoice = voice
+        usedRate = rate
+        return 'x'
+      },
     })
     await prepareShotAudio(rt, 'p1', shot, makeProject([shot], [char]), makeWatcher())
     expect(usedVoice).toBe('zh-CN-YunxiNeural')
@@ -296,7 +384,10 @@ describe('prepareShotAudio', () => {
     const char = { id: 'c1', name: '甲', voiceRate: '+20%' }
     let usedRate = ''
     const { rt } = makeRuntime({
-      onTtsGenerate: async (_d, _v, _r, rate) => { usedRate = rate; return 'x' }
+      onTtsGenerate: async (_d, _v, _r, rate) => {
+        usedRate = rate
+        return 'x'
+      },
     })
     await prepareShotAudio(rt, 'p1', shot, makeProject([shot], [char]), makeWatcher())
     // "+20%" → "20" → 20 → toPercent(20) = -80%
@@ -308,7 +399,10 @@ describe('prepareShotAudio', () => {
     const char = { id: 'c1', name: '甲', voiceRate: 'abc' }
     let usedRate = ''
     const { rt } = makeRuntime({
-      onTtsGenerate: async (_d, _v, _r, rate) => { usedRate = rate; return 'x' }
+      onTtsGenerate: async (_d, _v, _r, rate) => {
+        usedRate = rate
+        return 'x'
+      },
     })
     await prepareShotAudio(rt, 'p1', shot, makeProject([shot], [char]), makeWatcher())
     expect(usedRate).toBe('+0%')
@@ -316,10 +410,15 @@ describe('prepareShotAudio', () => {
 
   it('t2v 镜 → 不找角色，voice/rate 全走 settings.tts', async () => {
     const shot = makeShot('s1', { dialogue: '台词', type: 't2v' })
-    let usedVoice = '', usedRate = ''
+    let usedVoice = '',
+      usedRate = ''
     const { rt } = makeRuntime({
       settings: { tts: { rate: 130, volume: 100, defaultVoice: 'zh-CN-XiaoxiaoNeural' } },
-      onTtsGenerate: async (_d, voice, _r, rate) => { usedVoice = voice; usedRate = rate; return 'x' }
+      onTtsGenerate: async (_d, voice, _r, rate) => {
+        usedVoice = voice
+        usedRate = rate
+        return 'x'
+      },
     })
     await prepareShotAudio(rt, 'p1', shot, makeProject([shot]), makeWatcher())
     expect(usedVoice).toBe('zh-CN-XiaoxiaoNeural')
@@ -345,14 +444,14 @@ describe('prepareShotAudio', () => {
 
 // ============================================================ repairSilentDialogue
 describe('repairSilentDialogue', () => {
-
   function makeSilentShot(id: string, over: Partial<Shot> = {}): Shot {
     return makeShot(id, {
-      status: 'done', audioFailed: true,
+      status: 'done',
+      audioFailed: true,
       dialogue: '需要补配音的台词',
       segmentPath: `projects/p1/segments/${id}.mp4`,
       rawVideoPath: `projects/p1/raw/${id}.mp4`,
-      ...over
+      ...over,
     })
   }
 
@@ -362,7 +461,7 @@ describe('repairSilentDialogue', () => {
       makeSilentShot('s2', { audioFailed: false }),
       makeSilentShot('s3', { dialogue: '' }),
       makeSilentShot('s4', { dialogue: '（无台词）' }),
-      makeSilentShot('s5', { skipped: true })
+      makeSilentShot('s5', { skipped: true }),
     ]
     const { rt } = makeRuntime({ project: makeProject(shots) })
     const r = await repairSilentDialogue(rt, 'p1')
@@ -400,7 +499,7 @@ describe('repairSilentDialogue', () => {
     writeFile('projects/p1/raw/s1.mp4')
     const { rt } = makeRuntime({
       project: makeProject([shot]),
-      ttsThrows: new Error('edge crashed')
+      ttsThrows: new Error('edge crashed'),
     })
     const r = await repairSilentDialogue(rt, 'p1')
     expect(r.blocked).toContain(3)
@@ -413,7 +512,9 @@ describe('repairSilentDialogue', () => {
     writeFile('projects/p1/raw/s1.mp4')
     const { rt } = makeRuntime({
       project: makeProject([shot]),
-      prepareSegment: async () => { throw new Error('ffmpeg encode fail') }
+      prepareSegment: async () => {
+        throw new Error('ffmpeg encode fail')
+      },
     })
     const r = await repairSilentDialogue(rt, 'p1')
     expect(r.blocked).toContain(4)
@@ -424,11 +525,16 @@ describe('repairSilentDialogue', () => {
     const shot = makeSilentShot('s1', { index: 10, characterIds: ['c1'] })
     const char = { id: 'c1', name: '甲', voiceRate: 90, voice: 'zh-CN-YunxiNeural' }
     writeFile('projects/p1/raw/s1.mp4')
-    let usedVoice = '', usedRate = ''
+    let usedVoice = '',
+      usedRate = ''
     const { rt } = makeRuntime({
       project: makeProject([shot], [char]),
       settings: { tts: { rate: 100, volume: 100, defaultVoice: 'default-v' } },
-      onTtsGenerate: async (_d, voice, _r, rate) => { usedVoice = voice; usedRate = rate; return 'x' }
+      onTtsGenerate: async (_d, voice, _r, rate) => {
+        usedVoice = voice
+        usedRate = rate
+        return 'x'
+      },
     })
     await repairSilentDialogue(rt, 'p1')
     expect(usedVoice).toBe('zh-CN-YunxiNeural')
@@ -442,7 +548,10 @@ describe('repairSilentDialogue', () => {
     const { rt } = makeRuntime({
       project: makeProject([shot]),
       settings: { tts: { rate: 150, volume: 80, defaultVoice: 'v' } },
-      onTtsGenerate: async (_d, _v, _r, rate) => { usedRate = rate; return 'x' }
+      onTtsGenerate: async (_d, _v, _r, rate) => {
+        usedRate = rate
+        return 'x'
+      },
     })
     await repairSilentDialogue(rt, 'p1')
     expect(usedRate).toBe('+50%')
@@ -461,7 +570,10 @@ describe('私有 parseRate / estimateSpeechSec（经 prepareShotAudio 间接覆�
     let usedRate = ''
     const { rt } = makeRuntime({
       getDuration: async () => 0,
-      onTtsGenerate: async (_d, _v, _r, rate) => { usedRate = rate; return 'x' }
+      onTtsGenerate: async (_d, _v, _r, rate) => {
+        usedRate = rate
+        return 'x'
+      },
     })
     await prepareShotAudio(rt, 'p1', shot, makeProject([shot]), makeWatcher(), { capSec: 1.2 })
     expect(usedRate).toBe('+8%')
@@ -472,7 +584,10 @@ describe('私有 parseRate / estimateSpeechSec（经 prepareShotAudio 间接覆�
     let usedRate = ''
     const { rt } = makeRuntime({
       getDuration: async () => 0,
-      onTtsGenerate: async (_d, _v, _r, rate) => { usedRate = rate; return 'x' }
+      onTtsGenerate: async (_d, _v, _r, rate) => {
+        usedRate = rate
+        return 'x'
+      },
     })
     await prepareShotAudio(rt, 'p1', shot, makeProject([shot]), makeWatcher(), { capSec: 1.2 })
     expect(usedRate).toBe('+65%')
@@ -481,7 +596,12 @@ describe('私有 parseRate / estimateSpeechSec（经 prepareShotAudio 间接覆�
   it('台词被 placeholder 匹配时不走 estimateSpeechSec/TTS', async () => {
     const shot = makeShot('s1', { dialogue: '（无台词）' })
     let ttsCalled = false
-    const { rt } = makeRuntime({ onTtsGenerate: async () => { ttsCalled = true; return 'x' } })
+    const { rt } = makeRuntime({
+      onTtsGenerate: async () => {
+        ttsCalled = true
+        return 'x'
+      },
+    })
     await prepareShotAudio(rt, 'p1', shot, makeProject([shot]), makeWatcher())
     expect(ttsCalled).toBe(false)
   })

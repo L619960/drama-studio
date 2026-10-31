@@ -1,7 +1,12 @@
 import * as fs from 'node:fs/promises'
 import * as path from 'node:path'
 import type {
-  DirectorState, DirectorStage, StageState, StageStatus, DirectorLogEntry, InterruptedTask
+  DirectorState,
+  DirectorStage,
+  StageState,
+  StageStatus,
+  DirectorLogEntry,
+  InterruptedTask,
 } from '../../shared/ipcTypes'
 import { reviewedIsValid } from '../../shared/pipelineGuards'
 import { atomicWriteJson } from './fsUtil'
@@ -17,11 +22,7 @@ const log = createLogger('DirState')
  * 每个函数接收 agent 作为上下文（this. → agent.），行为与原类方法一致。
  */
 
-export function freshStateImpl(
-  agent: DirectorAgent,
-  projectId: string,
-  title: string
-): DirectorState {
+export function freshStateImpl(agent: DirectorAgent, projectId: string, title: string): DirectorState {
   const stages = {} as Record<DirectorStage, StageState>
   for (const stage of STAGE_ORDER) {
     stages[stage] = { status: 'pending', message: '', percent: 0 }
@@ -38,7 +39,7 @@ export function freshStateImpl(
     doneShots: 0,
     failedShotIds: [],
     startedAt: Date.now(),
-    logs: []
+    logs: [],
   }
 }
 
@@ -60,7 +61,7 @@ export function setStageImpl(
   stage: DirectorStage,
   status: StageStatus,
   message: string,
-  percent?: number
+  percent?: number,
 ): void {
   const state = agent.states.get(projectId)
   if (!state) return
@@ -74,9 +75,8 @@ export function setStageImpl(
     const last = agent.lastStageMsg.get(key)
     if (status !== 'running' || last !== message) {
       agent.lastStageMsg.set(key, message)
-      const level = status === 'done' ? 'success'
-        : status === 'error' ? 'error'
-        : status === 'skipped' ? 'warn' : 'info'
+      const level =
+        status === 'done' ? 'success' : status === 'error' ? 'error' : status === 'skipped' ? 'warn' : 'info'
       logImpl(agent, projectId, stage, level, `${STAGE_LABELS[stage]} · ${message}`)
     }
   }
@@ -90,16 +90,20 @@ export function logImpl(
   stage: DirectorStage,
   level: 'info' | 'success' | 'warn' | 'error',
   message: string,
-  extra?: { detail?: string; errorKind?: DirectorLogEntry['errorKind'] }
+  extra?: { detail?: string; errorKind?: DirectorLogEntry['errorKind'] },
 ): void {
   const state = agent.states.get(projectId)
   if (!state || !message) return
   const seq = (agent.logSeq.get(projectId) || 0) + 1
   agent.logSeq.set(projectId, seq)
   const entry: DirectorLogEntry = {
-    id: seq, stage, level, message, timestamp: Date.now(),
+    id: seq,
+    stage,
+    level,
+    message,
+    timestamp: Date.now(),
     ...(extra?.detail ? { detail: extra.detail } : {}),
-    ...(extra?.errorKind ? { errorKind: extra.errorKind } : {})
+    ...(extra?.errorKind ? { errorKind: extra.errorKind } : {}),
   }
   state.logs.push(entry)
   if (state.logs.length > LOG_LIMIT) {
@@ -121,9 +125,7 @@ export function emitStateImpl(agent: DirectorAgent, projectId: string): void {
 export async function persistImpl(agent: DirectorAgent, projectId: string): Promise<void> {
   const state = agent.states.get(projectId)
   if (!state) return
-  const file = path.join(
-    agent.baseDir, 'projects', projectId, 'director-state.json'
-  )
+  const file = path.join(agent.baseDir, 'projects', projectId, 'director-state.json')
   await fs.mkdir(path.dirname(file), { recursive: true })
   await atomicWriteJson(file, state)
 }
@@ -132,11 +134,7 @@ export async function persistImpl(agent: DirectorAgent, projectId: string): Prom
  * 阶段间确认点：命中配置门或用户手动暂停时挂起流水线，
  * 等待 resume/cancel 放行。进行中的渲染不受影响（调用点均在阶段边界）。
  */
-export async function maybeGateImpl(
-  agent: DirectorAgent,
-  projectId: string,
-  afterStage: DirectorStage
-): Promise<void> {
+export async function maybeGateImpl(agent: DirectorAgent, projectId: string, afterStage: DirectorStage): Promise<void> {
   if (isCancelledImpl(agent, projectId)) return
   const hitGate = agent.gates.get(projectId)?.has(afterStage) ?? false
   if (!hitGate && !agent.pauseRequested.has(projectId)) return
@@ -146,10 +144,9 @@ export async function maybeGateImpl(
   // 结构化门禁负载：阶段确认点无需镜头清单
   state.pendingGates = [{ stage: afterStage, reason: 'stageReview', unreviewedShotIds: [] }]
   agent.pauseRequested.delete(projectId)
-  logImpl(agent, projectId, afterStage, 'warn',
-    `「${STAGE_LABELS[afterStage]}」阶段已完成，任务暂停，确认后继续`)
+  logImpl(agent, projectId, afterStage, 'warn', `「${STAGE_LABELS[afterStage]}」阶段已完成，任务暂停，确认后继续`)
   emitStateImpl(agent, projectId)
-  await new Promise<void>(resolve => agent.waiters.set(projectId, resolve))
+  await new Promise<void>((resolve) => agent.waiters.set(projectId, resolve))
   if (!isCancelledImpl(agent, projectId)) {
     logImpl(agent, projectId, afterStage, 'info', '已继续执行下一阶段')
   }
@@ -160,10 +157,7 @@ export async function maybeGateImpl(
  * 等用户逐镜核对后 resume/cancel 放行。'warn' 只告警放行；'off' 不检查。
  * @returns true 可继续渲染；false 已取消。
  */
-export async function pauseUntilShotsReviewedImpl(
-  agent: DirectorAgent,
-  projectId: string
-): Promise<boolean> {
+export async function pauseUntilShotsReviewedImpl(agent: DirectorAgent, projectId: string): Promise<boolean> {
   const settings = await agent.settings.get()
   // 本项目"一口气跑到底"临时关闭分镜审核门禁
   const projState = agent.states.get(projectId)
@@ -172,8 +166,9 @@ export async function pauseUntilShotsReviewedImpl(
   const gate = settings.render?.shotReviewGate ?? 'block'
   if (gate === 'off') return true
   const project = await agent.store.get(projectId)
-  const unreviewed = project.shots
-    .filter(s => s.type === 'i2v' && !reviewedIsValid(s.type, s.reviewed, s.firstFramePath))
+  const unreviewed = project.shots.filter(
+    (s) => s.type === 'i2v' && !reviewedIsValid(s.type, s.reviewed, s.firstFramePath),
+  )
   // 已无待审镜：清理可能残留的门禁负载，避免暂停告警幽灵存在
   if (unreviewed.length === 0) {
     const st = agent.states.get(projectId)
@@ -188,17 +183,33 @@ export async function pauseUntilShotsReviewedImpl(
   if (!state) return false
   state.paused = true
   // 完整镜号清单交给 UI（不再只把前 5 个拼进 message 字符串）
-  state.pendingGates = [{
-    stage: 'render',
-    reason: 'shotReview',
-    unreviewedShotIds: unreviewed.map(s => s.id)
-  }]
-  const names = unreviewed.slice(0, 5).map(s => `第${s.index}镜`).join('、')
-  logImpl(agent, projectId, 'render', 'warn',
-    `分镜审核门：${unreviewed.length} 镜未核对分镜图，已暂停等待审核（可在分镜页逐镜核对/重出首帧后继续）`)
-  setStageImpl(agent, projectId, 'render', 'paused',
-    `等待分镜审核：${names}${unreviewed.length > 5 ? ` 等 ${unreviewed.length} 镜` : ''}未核对分镜图`, 0)
-  await new Promise<void>(resolve => agent.waiters.set(projectId, resolve))
+  state.pendingGates = [
+    {
+      stage: 'render',
+      reason: 'shotReview',
+      unreviewedShotIds: unreviewed.map((s) => s.id),
+    },
+  ]
+  const names = unreviewed
+    .slice(0, 5)
+    .map((s) => `第${s.index}镜`)
+    .join('、')
+  logImpl(
+    agent,
+    projectId,
+    'render',
+    'warn',
+    `分镜审核门：${unreviewed.length} 镜未核对分镜图，已暂停等待审核（可在分镜页逐镜核对/重出首帧后继续）`,
+  )
+  setStageImpl(
+    agent,
+    projectId,
+    'render',
+    'paused',
+    `等待分镜审核：${names}${unreviewed.length > 5 ? ` 等 ${unreviewed.length} 镜` : ''}未核对分镜图`,
+    0,
+  )
+  await new Promise<void>((resolve) => agent.waiters.set(projectId, resolve))
   // 恢复/取消后门禁负载失效：UI 的待审清单/CTA 随之消失
   const after = agent.states.get(projectId)
   if (after) after.pendingGates = []
@@ -301,9 +312,10 @@ export async function listInterruptedImpl(agent: DirectorAgent): Promise<Interru
       }
       if (!state.interrupted && !state.running && !state.paused) continue
       // 优先用修复时记录的中断阶段；未修复的磁盘残留则取运行中/出错阶段
-      const stage = state.interruptedStage
-        ?? STAGE_ORDER.find(s => state.stages?.[s]?.status === 'running')
-        ?? STAGE_ORDER.find(s => state.stages?.[s]?.status === 'error')
+      const stage =
+        state.interruptedStage ??
+        STAGE_ORDER.find((s) => state.stages?.[s]?.status === 'running') ??
+        STAGE_ORDER.find((s) => state.stages?.[s]?.status === 'error')
       let projectName = state.title
       if (!projectName) {
         try {
@@ -318,9 +330,9 @@ export async function listInterruptedImpl(agent: DirectorAgent): Promise<Interru
       tasks.push({
         projectId,
         projectName,
-        interruptedStage: stage,
-        failedAt,
-        reason: stage ? `停在「${STAGE_LABELS[stage]}」` : '任务未跑完'
+        ...(stage !== undefined ? { interruptedStage: stage } : {}),
+        ...(failedAt !== undefined ? { failedAt } : {}),
+        reason: stage ? `停在「${STAGE_LABELS[stage]}」` : '任务未跑完',
       })
     }
   } catch {
@@ -334,21 +346,17 @@ export async function listInterruptedImpl(agent: DirectorAgent): Promise<Interru
  * 只对剩余阶段生效：当前阶段边界及之后的确认点纳入 gates，已过阶段不回退；
  * 同时重新打开分镜审核门禁（noShotGate=false）。
  */
-export function enableGatesImpl(
-  agent: DirectorAgent,
-  projectId: string,
-  stages: readonly DirectorStage[]
-): boolean {
+export function enableGatesImpl(agent: DirectorAgent, projectId: string, stages: readonly DirectorStage[]): boolean {
   const state = agent.states.get(projectId)
   if (!state) return false
-  const gateList = stages.filter(g => g !== 'done') as DirectorStage[]
+  const gateList = stages.filter((g) => g !== 'done') as DirectorStage[]
   state.gateStages = gateList
   // 与 start 的写入对称：恢复分镜审核门禁
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- JSON 动态字段，与 directorAgent.start 对称
   ;(state as any).noShotGate = false
   const current = currentStageImpl(state)
   const from = current === 'done' ? 0 : stageIndexOf(current)
-  agent.gates.set(projectId, new Set(gateList.filter(g => stageIndexOf(g) >= from)))
+  agent.gates.set(projectId, new Set(gateList.filter((g) => stageIndexOf(g) >= from)))
   state.pendingGates = []
   logImpl(agent, projectId, current, 'info', '已重新启用阶段确认点，剩余阶段将在边界暂停等待确认')
   emitStateImpl(agent, projectId)
@@ -370,10 +378,7 @@ export function clearStateImpl(agent: DirectorAgent, projectId: string): void {
   agent.shadowSettledShots.delete(projectId)
   agent.visionWarned.delete(projectId)
   agent.shadowRenders.delete(projectId)
-  for (const key of [
-    ...agent.lastStageMsg.keys(),
-    ...agent.lastStepByShot.keys()
-  ]) {
+  for (const key of [...agent.lastStageMsg.keys(), ...agent.lastStepByShot.keys()]) {
     if (key.startsWith(`${projectId}:`)) {
       agent.lastStageMsg.delete(key)
       agent.lastStepByShot.delete(key)
@@ -386,10 +391,7 @@ export function clearStateImpl(agent: DirectorAgent, projectId: string): void {
  * 崩溃/重启恢复：内存无状态且磁盘有 director-state.json 时回填。
  * 恢复回来的 running 状态一律降级为「已中断」展示，防止显示假运行。
  */
-export async function hydrateImpl(
-  agent: DirectorAgent,
-  projectId: string
-): Promise<DirectorState | null> {
+export async function hydrateImpl(agent: DirectorAgent, projectId: string): Promise<DirectorState | null> {
   const existing = agent.states.get(projectId)
   if (existing) return existing
   try {
@@ -411,13 +413,14 @@ export async function hydrateImpl(
           state.stages[stage] = {
             status: 'error',
             message: '应用重启导致该阶段中断',
-            percent: state.stages[stage].percent
+            percent: state.stages[stage].percent,
           }
         }
       }
       // P0-1：标记「任务中断」，供 UI 展示明确提示 + 一键继续入口
       state.interrupted = true
-      state.interruptedStage = interruptedStage
+      if (interruptedStage !== undefined) state.interruptedStage = interruptedStage
+      else delete state.interruptedStage
       // 续用日志序号器：从磁盘日志的最大 id 起算，保证唯一
       const maxId = state.logs.reduce((m, l) => Math.max(m, typeof l.id === 'number' ? l.id : 0), 0)
       const seq = Math.max(agent.logSeq.get(projectId) || 0, maxId) + 1
@@ -429,7 +432,7 @@ export async function hydrateImpl(
         message: interruptedStage
           ? `应用重启，上次任务已中断（中断于「${STAGE_LABELS[interruptedStage]}」阶段，渲染产物保留，可从该阶段重跑续传）`
           : '应用重启，上次任务已中断（渲染产物保留，可从失败阶段重跑续传）',
-        timestamp: Date.now()
+        timestamp: Date.now(),
       })
       repaired = true
     }

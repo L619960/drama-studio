@@ -12,8 +12,14 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 import type { DirectorAgent } from '../../src/main/core/directorAgent'
 import type {
-  AnalyzeResult, AppSettings, Character, Project, SceneBoard, DirectorState,
-  DirectorStage, StageState
+  AnalyzeResult,
+  AppSettings,
+  Character,
+  Project,
+  SceneBoard,
+  DirectorState,
+  DirectorStage,
+  StageState,
 } from '../../src/shared/ipcTypes'
 import { STAGE_ORDER } from '../../src/main/core/directorConstants'
 
@@ -22,7 +28,7 @@ const state = vi.hoisted(() => ({
   statFail: false,
   mkdirFail: false,
   copyFileFail: false,
-  renameFail: false
+  renameFail: false,
 }))
 
 // fs/promises mock：用 node:fs 同步方法 + Promise 包装（纯微任务，无真实异步 IO 竞态）。
@@ -51,21 +57,33 @@ vi.mock('node:fs/promises', async () => {
       if (state.renameFail) return fail(new Error('ENOENT'))
       return ok(undefined)
     },
-    existsSync: () => false
+    existsSync: () => false,
   }
 })
 
 // 避免 emitStateImpl fire-and-forget 的 persistImpl 写盘
 vi.mock('../../src/main/core/fsUtil', () => ({
-  atomicWriteJson: vi.fn().mockResolvedValue(undefined)
+  atomicWriteJson: vi.fn().mockResolvedValue(undefined),
 }))
 
 import {
-  sanitizeCameraForFrameImpl, buildCloseupEditPromptImpl, buildPanoEditPromptImpl,
-  buildCharactersImpl, buildPropAssetsImpl, tryReuseSceneBoardImpl, ensureSceneEnImpl,
-  generateShotFirstFrameImpl, buildShotsImpl
+  sanitizeCameraForFrameImpl,
+  buildCloseupEditPromptImpl,
+  buildPanoEditPromptImpl,
+  buildCharactersImpl,
+  buildPropAssetsImpl,
+  tryReuseSceneBoardImpl,
+  ensureSceneEnImpl,
+  generateShotFirstFrameImpl,
+  buildShotsImpl,
 } from '../../src/main/core/directorAssetBuilder'
-import { ImageGenerateCancelled } from '../../src/main/core/imageService'
+import { ImageGenerateCancelled, type ImageGenerateOptions } from '../../src/main/core/imageService'
+
+type DeepPartial<T> = T extends (infer U)[]
+  ? Array<DeepPartial<U>>
+  : T extends object
+    ? { [K in keyof T]?: DeepPartial<T[K]> }
+    : T
 
 // ===== 夹具 =====
 
@@ -73,62 +91,112 @@ function mkState(projectId: string): DirectorState {
   const stages = {} as Record<DirectorStage, StageState>
   for (const s of STAGE_ORDER) stages[s] = { status: 'pending', message: '', percent: 0 }
   return {
-    projectId, title: '测试片', running: true, cancelled: false, paused: false,
-    gateStages: [], stages, totalShots: 0, doneShots: 0, failedShotIds: [],
-    startedAt: Date.now(), logs: []
+    projectId,
+    title: '测试片',
+    running: true,
+    cancelled: false,
+    paused: false,
+    gateStages: [],
+    stages,
+    totalShots: 0,
+    doneShots: 0,
+    failedShotIds: [],
+    startedAt: Date.now(),
+    logs: [],
   }
 }
 
-function mkSettings(over: Partial<AppSettings> = {}): AppSettings {
+function mkSettings(over: DeepPartial<AppSettings> = {}): AppSettings {
   return {
     render: {
-      defaultWidth: 720, defaultHeight: 480, defaultFrames: 81, timeout: 600,
-      lipSync: false, lipSyncMode: 'auto', oomRetry: false, consistencyMode: 'off',
-      resolutionTier: 'standard', shotReviewGate: 'off', reviewGate: 'off',
-      finalReviewGate: 'off', assetConcurrency: 2, perShotAudit: false, turboH3: true,
+      defaultWidth: 720,
+      defaultHeight: 480,
+      defaultFrames: 81,
+      timeout: 600,
+      lipSync: false,
+      lipSyncMode: 'auto',
+      oomRetry: false,
+      consistencyMode: 'off',
+      resolutionTier: 'standard',
+      shotReviewGate: 'off',
+      reviewGate: 'off',
+      finalReviewGate: 'off',
+      assetConcurrency: 2,
+      perShotAudit: false,
+      turboH3: true,
       fusionFallback: 'block',
-      ...(over.render as object)
+      ...(over.render as object),
     },
     creation: {
       storyboard: {} as never,
       character: {
-        faceWidth: 768, faceHeight: 1152, bodyWidth: 1344, bodyHeight: 896,
-        realismLock: 'strong', seedMode: 'random', seed: 42, t2iWorkflow: '',
-        candidates: 1, llmPick: false
+        faceWidth: 768,
+        faceHeight: 1152,
+        bodyWidth: 1344,
+        bodyHeight: 896,
+        realismLock: 'strong',
+        seedMode: 'random',
+        seed: 42,
+        t2iWorkflow: '',
+        candidates: 1,
+        llmPick: false,
       },
       scene: {
-        plateWidth: 768, plateHeight: 1152, frameWidth: 768, frameHeight: 1152,
-        emptyStrict: true, weatherHint: 'auto', candidates: 1, llmPick: false,
-        panorama: true, panoViewsCount: 4
+        plateWidth: 768,
+        plateHeight: 1152,
+        frameWidth: 768,
+        frameHeight: 1152,
+        emptyStrict: true,
+        weatherHint: 'auto',
+        candidates: 1,
+        llmPick: false,
+        panorama: true,
+        panoViewsCount: 4,
       },
       edit: {} as never,
-      presets: []
+      presets: [],
     },
     comfyui: {},
-    ...over
+    ...over,
   } as unknown as AppSettings
 }
 
 function mkProject(over: Partial<Project> = {}): Project {
   return {
-    id: 'p1', title: '测试', genre: '悬疑', episode: 1, status: 'draft',
-    characters: [], shots: [], fps: 24, createdAt: 0, updatedAt: 0,
-    ...over
+    id: 'p1',
+    title: '测试',
+    genre: '悬疑',
+    episode: 1,
+    status: 'draft',
+    characters: [],
+    shots: [],
+    fps: 24,
+    createdAt: 0,
+    updatedAt: 0,
+    ...over,
   } as Project
 }
 
 function mkBoard(over: Partial<SceneBoard> = {}): SceneBoard {
   return {
-    id: 'sb1', key: '雨夜天台', name: '雨夜天台', description: 'desc', emptyPlatePath: '',
-    ...over
+    id: 'sb1',
+    key: '雨夜天台',
+    name: '雨夜天台',
+    description: 'desc',
+    emptyPlatePath: '',
+    ...over,
   }
 }
 
 function mkChar(name = '林川', over: Partial<Character> = {}): Character {
   return {
-    id: 'c1', name, refImagePath: '', description: '黑色大衣', voice: 'zh-CN-YunjianNeural',
+    id: 'c1',
+    name,
+    refImagePath: '',
+    description: '黑色大衣',
+    voice: 'zh-CN-YunjianNeural',
     appearanceLock: 'chinese man, black coat',
-    ...over
+    ...over,
   }
 }
 
@@ -151,7 +219,7 @@ function mkShot(over: Partial<AnalyzeResult['shots'][number]> = {}): AnalyzeResu
     promptEn: 'a cinematic shot of Lin by the window',
     firstFrameEn: 'Lin stands by the window',
     lastFrameEn: 'Lin turns away from the window',
-    ...over
+    ...over,
   } as AnalyzeResult['shots'][number]
 }
 
@@ -163,7 +231,7 @@ function mkFrameD(over: Record<string, unknown> = {}) {
     board: mkBoard(),
     characterIds: ['c1'],
     character: mkChar('林川', { faceImagePath: 'projects/p1/characters/c1_face.png' }),
-    ...over
+    ...over,
   } as Parameters<typeof generateShotFirstFrameImpl>[2]
 }
 
@@ -171,19 +239,42 @@ let baseDir = ''
 
 function makeAgent(over: Record<string, unknown> = {}) {
   const settings = { get: vi.fn(async () => mkSettings()) }
-  const store = { get: vi.fn(async () => mkProject()), save: vi.fn(async () => {}) }
-  const image = { generate: vi.fn(async () => {}), restoreFace: vi.fn(async () => {}) }
+  const store = {
+    get: vi.fn(async (_id: string) => mkProject()),
+    save: vi.fn(async (_project: Project) => {}),
+  }
+  const image = {
+    generate: vi.fn(async (_prompt: string, _absOutput: string, _options: ImageGenerateOptions) => {}),
+    restoreFace: vi.fn(async (_absInput: string, _absOutput: string) => {}),
+  }
   const ffmpeg = {
-    cropPanoramaViews: vi.fn(async () => [path.join(baseDir, 'v0.png')]),
-    tileImages: vi.fn(async () => {})
+    cropPanoramaViews: vi.fn(async (..._args: unknown[]) => [path.join(baseDir, 'v0.png')]),
+    tileImages: vi.fn(async (..._args: unknown[]) => {}),
   }
   const picker = {
-    pick: vi.fn(async () => ({ winner: { relativePath: 'w.png' }, rejected: [], reason: 'ok' })),
-    promoteWinner: vi.fn(async () => {})
+    pick: vi.fn(
+      async (_opts: {
+        kind: 'character' | 'scene' | 'render'
+        brief: string
+        candidates: Array<{ id: string; relativePath: string; seed: number; score?: number; note?: string }>
+        llmPick: boolean
+      }) => ({ winner: { relativePath: 'w.png' }, rejected: [] as Array<{ relativePath: string }>, reason: 'ok' }),
+    ),
+    promoteWinner: vi.fn(
+      async (_opts: {
+        baseDir: string
+        winnerRel: string
+        finalRel: string
+        rejectedRels: string[]
+        keepRejected?: boolean
+      }) => {},
+    ),
   }
   const llm = {
-    fillPromptField: vi.fn(async () =>
-      'a bright modern kitchen interior in the morning, sun from east window, warm wood cabinets, clean counters, soft shadows, cozy atmosphere')
+    fillPromptField: vi.fn(
+      async (_guide: unknown, _ctx: { currentText: string; scene?: string; sceneEn?: string; action?: string }) =>
+        'a bright modern kitchen interior in the morning, sun from east window, warm wood cabinets, clean counters, soft shadows, cozy atmosphere',
+    ),
   }
   const agent = {
     baseDir,
@@ -200,9 +291,21 @@ function makeAgent(over: Record<string, unknown> = {}) {
     lastStageMsg: new Map<string, string>(),
     lastStepByShot: new Map<string, string>(),
     emit: vi.fn(),
-    settings, store, image, ffmpeg, picker, llm,
-    ...over
-  } as unknown as DirectorAgent
+    settings,
+    store,
+    image,
+    ffmpeg,
+    picker,
+    llm,
+    ...over,
+  } as unknown as DirectorAgent & {
+    settings: typeof settings
+    store: typeof store
+    image: typeof image
+    ffmpeg: typeof ffmpeg
+    picker: typeof picker
+    llm: typeof llm
+  }
   return { agent, settings, store, image, ffmpeg, picker, llm }
 }
 
@@ -222,16 +325,13 @@ describe('sanitizeCameraForFrameImpl', () => {
     expect(sanitizeCameraForFrameImpl('low angle, from behind')).toBe('low angle, from behind')
   })
   it('剥离英文第二人/背景人影从句', () => {
-    expect(sanitizeCameraForFrameImpl('another person enters, low angle, background figure'))
-      .toBe('low angle')
+    expect(sanitizeCameraForFrameImpl('another person enters, low angle, background figure')).toBe('low angle')
   })
   it('剥离中文路人/剪影从句', () => {
-    expect(sanitizeCameraForFrameImpl('路人走过，另一人入画，剪影在窗边，中景'))
-      .toBe('中景')
+    expect(sanitizeCameraForFrameImpl('路人走过，另一人入画，剪影在窗边，中景')).toBe('中景')
   })
   it('中文顿号与空格混用、空段过滤', () => {
-    expect(sanitizeCameraForFrameImpl(' high angle ， out of focus ， ， closeup '))
-      .toBe('high angle, closeup')
+    expect(sanitizeCameraForFrameImpl(' high angle ， out of focus ， ， closeup ')).toBe('high angle, closeup')
   })
   it('空输入返回空串', () => {
     expect(sanitizeCameraForFrameImpl('')).toBe('')
@@ -241,8 +341,16 @@ describe('sanitizeCameraForFrameImpl', () => {
 
 describe('buildCloseupEditPromptImpl', () => {
   const d = (over: Record<string, unknown> = {}) => ({
-    as: { action: 'Lin opens the door', emotion: 'calm', camera: 'low angle', shotSize: 'closeup',
-      firstFrameEn: 'Lin at door', lastFrameEn: 'Lin closes door', props: ['umbrella'] as string[], ...over }
+    as: {
+      action: 'Lin opens the door',
+      emotion: 'calm',
+      camera: 'low angle',
+      shotSize: 'closeup',
+      firstFrameEn: 'Lin at door',
+      lastFrameEn: 'Lin closes door',
+      props: ['umbrella'] as string[],
+      ...over,
+    },
   })
 
   it('start 相位优先 action，含关键道具锁', () => {
@@ -257,8 +365,7 @@ describe('buildCloseupEditPromptImpl', () => {
   it('end 相位优先 lastFrameEn，action 兜底', () => {
     const p = buildCloseupEditPromptImpl('书房', d(), 'CU', 'end')
     expect(p).toContain('，Lin closes door')
-    expect(buildCloseupEditPromptImpl('书房', d({ lastFrameEn: '   ' }), 'CU', 'end'))
-      .toContain('，Lin opens the door')
+    expect(buildCloseupEditPromptImpl('书房', d({ lastFrameEn: '   ' }), 'CU', 'end')).toContain('，Lin opens the door')
   })
 
   it('start 相位 action 为空时 firstFrameEn 兜底', () => {
@@ -276,8 +383,15 @@ describe('buildCloseupEditPromptImpl', () => {
 
 describe('buildPanoEditPromptImpl', () => {
   const d = () => ({
-    as: { action: 'Lin walks in', emotion: 'sad', camera: 'wide', shotSize: 'wide',
-      firstFrameEn: 'Lin enters', lastFrameEn: 'Lin exits', props: [] as string[] }
+    as: {
+      action: 'Lin walks in',
+      emotion: 'sad',
+      camera: 'wide',
+      shotSize: 'wide',
+      firstFrameEn: 'Lin enters',
+      lastFrameEn: 'Lin exits',
+      props: [] as string[],
+    },
   })
 
   it('start 相位与图2人物/图1场景约束', () => {
@@ -298,9 +412,9 @@ describe('buildCharactersImpl', () => {
   const analysis: AnalyzeResult = {
     characters: [
       { name: '林川', gender: 'male', appearance: '黑色大衣', lookEn: 'chinese man, black coat' },
-      { name: '苏晚', gender: 'female', appearance: '白色长裙', lookEn: 'asian woman, white dress' }
+      { name: '苏晚', gender: 'female', appearance: '白色长裙', lookEn: 'asian woman, white dress' },
     ],
-    shots: [mkShot()]
+    shots: [mkShot()],
   }
 
   it('正常建档（candidates=1，随机种子）', async () => {
@@ -316,67 +430,75 @@ describe('buildCharactersImpl', () => {
     expect(image.generate).toHaveBeenCalledTimes(4)
     // 保存 + 通知
     expect(store.save).toHaveBeenCalledTimes(1)
-    expect(store.save.mock.calls[0][0].characters).toHaveLength(2)
+    expect(store.save.mock.calls[0]?.[0]?.characters).toHaveLength(2)
     expect(agent.emit).toHaveBeenCalledWith('projectUpdated', expect.objectContaining({ projectId: 'p1' }))
     expect(agent.states.get('p1')!.stages.casting.status).toBe('done')
   })
 
   it('fixed 种子：face/body 均用 ch.seed 且随候选偏移', async () => {
     const { agent, image } = makeAgent()
-    agent.settings.get.mockImplementation(async () => mkSettings({
-      creation: { character: { candidates: 1, seedMode: 'fixed', seed: 42 } }
-    }))
-    await buildCharactersImpl(agent, 'p1', { characters: [analysis.characters[0]], shots: [] })
-    expect(image.generate.mock.calls[0][2].seed).toBe(42)
-    expect(image.generate.mock.calls[1][2].seed).toBe(42)
+    agent.settings.get.mockImplementation(async () =>
+      mkSettings({
+        creation: { character: { candidates: 1, seedMode: 'fixed', seed: 42 } },
+      }),
+    )
+    await buildCharactersImpl(agent, 'p1', { characters: analysis.characters.slice(0, 1), shots: [] })
+    expect(image.generate.mock.calls[0]?.[2].seed).toBe(42)
+    expect(image.generate.mock.calls[1]?.[2].seed).toBe(42)
   })
 
   it('candidates>1：stat 打分 + picker 抽卡 + promoteWinner 落位', async () => {
     const { agent, image, picker } = makeAgent()
-    agent.settings.get.mockImplementation(async () => mkSettings({
-      creation: { character: { candidates: 2, llmPick: true } }
-    }))
+    agent.settings.get.mockImplementation(async () =>
+      mkSettings({
+        creation: { character: { candidates: 2, llmPick: true } },
+      }),
+    )
     picker.pick.mockResolvedValue({
       winner: { relativePath: 'projects/p1/characters/c_f_face_c1.png' },
       rejected: [{ relativePath: 'projects/p1/characters/c_f_face_c0.png' }],
-      reason: '五官更清晰'
+      reason: '五官更清晰',
     })
-    const result = await buildCharactersImpl(agent, 'p1', { characters: [analysis.characters[0]], shots: [] })
+    const result = await buildCharactersImpl(agent, 'p1', { characters: analysis.characters.slice(0, 1), shots: [] })
     const lin = result.get('林川')!
     expect(lin.faceImagePath).toMatch(/char_.*_face\.png$/) // finalRel（promote 后）
     expect(image.generate).toHaveBeenCalledTimes(3) // 2 face + 1 body
     expect(picker.pick).toHaveBeenCalledWith(expect.objectContaining({ kind: 'character' }))
-    expect(picker.promoteWinner).toHaveBeenCalledWith(expect.objectContaining({ winnerRel: 'projects/p1/characters/c_f_face_c1.png', keepRejected: true }))
+    expect(picker.promoteWinner).toHaveBeenCalledWith(
+      expect.objectContaining({ winnerRel: 'projects/p1/characters/c_f_face_c1.png', keepRejected: true }),
+    )
   })
 
   it('candidates>1 且 stat 失败：note 标 stat 失败仍可抽卡', async () => {
     const { agent, picker } = makeAgent()
-    agent.settings.get.mockImplementation(async () => mkSettings({
-      creation: { character: { candidates: 2 } }
-    }))
+    agent.settings.get.mockImplementation(async () =>
+      mkSettings({
+        creation: { character: { candidates: 2 } },
+      }),
+    )
     state.statFail = true
-    await buildCharactersImpl(agent, 'p1', { characters: [analysis.characters[0]], shots: [] })
-    const items = picker.pick.mock.calls[0][0].candidates as Array<{ note: string }>
-    expect(items.every(c => c.note === 'stat 失败')).toBe(true)
+    await buildCharactersImpl(agent, 'p1', { characters: analysis.characters.slice(0, 1), shots: [] })
+    const items = picker.pick.mock.calls[0]?.[0]?.candidates as unknown as Array<{ note: string }>
+    expect(items.every((c) => c.note === 'stat 失败')).toBe(true)
   })
 
   it('面部失败、三视图成功：refImagePath 回退 body，warning 日志', async () => {
     const { agent, image } = makeAgent()
     image.generate.mockRejectedValueOnce(new Error('face boom'))
-    const result = await buildCharactersImpl(agent, 'p1', { characters: [analysis.characters[0]], shots: [] })
+    const result = await buildCharactersImpl(agent, 'p1', { characters: analysis.characters.slice(0, 1), shots: [] })
     const lin = result.get('林川')!
     expect(lin.faceImagePath).toBeUndefined()
     expect(lin.bodySheetPath).toMatch(/_body\.png$/)
     expect(lin.refImagePath).toBe(lin.bodySheetPath)
     expect(lin.description).toBe('黑色大衣') // 未标记失败
     const logs = agent.states.get('p1')!.logs
-    expect(logs.some(l => l.message.includes('面部定妆失败'))).toBe(true)
+    expect(logs.some((l) => l.message.includes('面部定妆失败'))).toBe(true)
   })
 
   it('面部+三视图全失败：description 标记失败、阶段 error', async () => {
     const { agent, image } = makeAgent()
     image.generate.mockRejectedValue(new Error('all boom'))
-    const result = await buildCharactersImpl(agent, 'p1', { characters: [analysis.characters[0]], shots: [] })
+    const result = await buildCharactersImpl(agent, 'p1', { characters: analysis.characters.slice(0, 1), shots: [] })
     expect(result.get('林川')!.description).toBe('黑色大衣（定妆资产生成失败）')
     expect(agent.states.get('p1')!.stages.casting.status).toBe('error')
   })
@@ -384,15 +506,21 @@ describe('buildCharactersImpl', () => {
   it('取消：ImageGenerateCancelled 透传', async () => {
     const { agent, image } = makeAgent()
     image.generate.mockRejectedValue(new ImageGenerateCancelled())
-    await expect(buildCharactersImpl(agent, 'p1', { characters: [analysis.characters[0]], shots: [] }))
-      .rejects.toBeInstanceOf(ImageGenerateCancelled)
+    await expect(
+      buildCharactersImpl(agent, 'p1', { characters: analysis.characters.slice(0, 1), shots: [] }),
+    ).rejects.toBeInstanceOf(ImageGenerateCancelled)
   })
 })
 
 // ===== buildPropAssetsImpl =====
 
 describe('buildPropAssetsImpl', () => {
-  const prop = () => ({ id: 'umbrella', zh: '雨伞', en: 'black umbrella', description: 'folded' })
+  const prop = (): { id: string; zh: string; en: string; description: string; imagePath?: string } => ({
+    id: 'umbrella',
+    zh: '雨伞',
+    en: 'black umbrella',
+    description: 'folded',
+  })
 
   it('无 props 提前返回', async () => {
     const { agent, image, store } = makeAgent()
@@ -407,9 +535,9 @@ describe('buildPropAssetsImpl', () => {
     await buildPropAssetsImpl(agent, 'p1', { characters: [], shots: [], props: [p] })
     expect(image.generate).toHaveBeenCalledTimes(1)
     expect(p.imagePath).toBe('projects/p1/props/umbrella.png')
-    expect(store.save.mock.calls[0][0].props[0].imagePath).toBe('projects/p1/props/umbrella.png')
+    expect(store.save.mock.calls[0]?.[0]?.props?.[0]?.imagePath).toBe('projects/p1/props/umbrella.png')
     const logs = agent.states.get('p1')!.logs
-    expect(logs.some(l => l.message.includes('道具定妆图 1/1 生成完成'))).toBe(true)
+    expect(logs.some((l) => l.message.includes('道具定妆图 1/1 生成完成'))).toBe(true)
   })
 
   it('普通失败：记 warning、不中断、无完成日志', async () => {
@@ -419,25 +547,28 @@ describe('buildPropAssetsImpl', () => {
     await buildPropAssetsImpl(agent, 'p1', { characters: [], shots: [], props: [p] })
     expect(p.imagePath).toBeUndefined()
     const logs = agent.states.get('p1')!.logs
-    expect(logs.some(l => l.message.includes('道具「雨伞」定妆图生成失败'))).toBe(true)
-    expect(logs.some(l => l.message.includes('生成完成'))).toBe(false)
+    expect(logs.some((l) => l.message.includes('道具「雨伞」定妆图生成失败'))).toBe(true)
+    expect(logs.some((l) => l.message.includes('生成完成'))).toBe(false)
   })
 
   it('取消透传：ImageGenerateCancelled / CANCELLED 文案均重抛', async () => {
     const { agent, image } = makeAgent()
     image.generate.mockRejectedValueOnce(new ImageGenerateCancelled())
-    await expect(buildPropAssetsImpl(agent, 'p1', { characters: [], shots: [], props: [prop()] }))
-      .rejects.toBeInstanceOf(ImageGenerateCancelled)
+    await expect(
+      buildPropAssetsImpl(agent, 'p1', { characters: [], shots: [], props: [prop()] }),
+    ).rejects.toBeInstanceOf(ImageGenerateCancelled)
     image.generate.mockRejectedValueOnce(new Error('CANCELLED: user abort'))
-    await expect(buildPropAssetsImpl(agent, 'p1', { characters: [], shots: [], props: [prop()] }))
-      .rejects.toThrow('CANCELLED')
+    await expect(buildPropAssetsImpl(agent, 'p1', { characters: [], shots: [], props: [prop()] })).rejects.toThrow(
+      'CANCELLED',
+    )
   })
 
   it('保存失败静默吞掉', async () => {
     const { agent, store } = makeAgent()
     store.save.mockRejectedValueOnce(new Error('disk full'))
-    await expect(buildPropAssetsImpl(agent, 'p1', { characters: [], shots: [], props: [prop()] }))
-      .resolves.toBeUndefined()
+    await expect(
+      buildPropAssetsImpl(agent, 'p1', { characters: [], shots: [], props: [prop()] }),
+    ).resolves.toBeUndefined()
   })
 })
 
@@ -446,8 +577,9 @@ describe('buildPropAssetsImpl', () => {
 describe('tryReuseSceneBoardImpl', () => {
   const board = mkBoard()
   const fbProject = mkProject({
-    id: 'fb1', genre: '悬疑',
-    sceneBoards: [mkBoard({ id: 'fb_b', key: '雨夜天台', emptyPlatePath: 'projects/fb1/scenes/x_plate.png' })]
+    id: 'fb1',
+    genre: '悬疑',
+    sceneBoards: [mkBoard({ id: 'fb_b', key: '雨夜天台', emptyPlatePath: 'projects/fb1/scenes/x_plate.png' })],
   })
 
   it('settings.get 抛错 / 无 fallbackProjectId → undefined', async () => {
@@ -470,30 +602,37 @@ describe('tryReuseSceneBoardImpl', () => {
     const { agent } = makeAgent()
     agent.settings.get.mockImplementation(async () => mkSettings({ render: { assetFallbackProjectId: 'fb1' } }))
     agent.store.get.mockImplementation(async (id) =>
-      id === 'fb1' ? mkProject({ id: 'fb1', genre: '古装', sceneBoards: fbProject.sceneBoards }) : mkProject())
+      id === 'fb1'
+        ? mkProject({
+            id: 'fb1',
+            genre: '古装',
+            ...(fbProject.sceneBoards !== undefined ? { sceneBoards: fbProject.sceneBoards } : {}),
+          })
+        : mkProject(),
+    )
     expect(await tryReuseSceneBoardImpl(agent, 'p1', board, 0)).toBeUndefined()
     const logs = agent.states.get('p1')!.logs
-    expect(logs.some(l => l.message.includes('禁止跨题材复用场景板'))).toBe(true)
+    expect(logs.some((l) => l.message.includes('禁止跨题材复用场景板'))).toBe(true)
   })
 
   it('题材一致但资产库无场景板 → undefined', async () => {
     const { agent } = makeAgent()
     agent.settings.get.mockImplementation(async () => mkSettings({ render: { assetFallbackProjectId: 'fb1' } }))
     agent.store.get.mockImplementation(async (id) =>
-      id === 'fb1' ? mkProject({ id: 'fb1', genre: '悬疑', sceneBoards: [mkBoard()] }) : mkProject())
+      id === 'fb1' ? mkProject({ id: 'fb1', genre: '悬疑', sceneBoards: [mkBoard()] }) : mkProject(),
+    )
     expect(await tryReuseSceneBoardImpl(agent, 'p1', board, 0)).toBeUndefined()
   })
 
   it('复用成功：复制到本剧 scenes、回填 emptyPlatePath/panoViews、返回 fbId', async () => {
     const { agent } = makeAgent()
     agent.settings.get.mockImplementation(async () => mkSettings({ render: { assetFallbackProjectId: 'fb1' } }))
-    agent.store.get.mockImplementation(async (id) =>
-      id === 'fb1' ? fbProject : mkProject())
+    agent.store.get.mockImplementation(async (id) => (id === 'fb1' ? fbProject : mkProject()))
     expect(await tryReuseSceneBoardImpl(agent, 'p1', board, 0)).toBe('fb1')
     expect(board.emptyPlatePath).toBe('projects/p1/scenes/sb1_plate.png')
     expect(board.panoViews).toEqual(['projects/p1/scenes/sb1_plate.png'])
-    const mk = state.fsCalls.find(c => c.fn === 'mkdir')
-    const cp = state.fsCalls.find(c => c.fn === 'copyFile')
+    const mk = state.fsCalls.find((c) => c.fn === 'mkdir')
+    const cp = state.fsCalls.find((c) => c.fn === 'copyFile')
     expect(mk).toBeDefined()
     expect(cp).toBeDefined()
   })
@@ -501,7 +640,7 @@ describe('tryReuseSceneBoardImpl', () => {
   it('复制失败 → undefined', async () => {
     const { agent } = makeAgent()
     agent.settings.get.mockImplementation(async () => mkSettings({ render: { assetFallbackProjectId: 'fb1' } }))
-    agent.store.get.mockImplementation(async (id) => id === 'fb1' ? fbProject : mkProject())
+    agent.store.get.mockImplementation(async (id) => (id === 'fb1' ? fbProject : mkProject()))
     state.copyFileFail = true
     expect(await tryReuseSceneBoardImpl(agent, 'p1', board, 0)).toBeUndefined()
   })
@@ -510,7 +649,14 @@ describe('tryReuseSceneBoardImpl', () => {
 // ===== ensureSceneEnImpl =====
 
 describe('ensureSceneEnImpl', () => {
-  const LONG_EN = 'a quiet study room at dusk, bookshelves along the wall, a desk with papers, warm desk lamp, dust in the air'
+  const LONG_EN =
+    'a quiet study room at dusk, bookshelves along the wall, a desk with papers, warm desk lamp, dust in the air'
+  /** 覆盖 mkShot 默认场景短语：显式构造「缺 sceneEn」的分镜 */
+  const noSceneEn = (over: Parameters<typeof mkShot>[0] = {}) => {
+    const s = mkShot(over)
+    delete s.sceneEn
+    return s
+  }
 
   it('全部 ≥8 词：不调 LLM', async () => {
     const { agent, llm } = makeAgent()
@@ -523,25 +669,29 @@ describe('ensureSceneEnImpl', () => {
     const { agent, llm } = makeAgent()
     llm.fillPromptField.mockResolvedValue(LONG_EN)
     const scenes = [{ key: '书房', name: '书房', sceneEn: 'short' }]
-    const shots = [mkShot({ scene: '书房', sceneEn: undefined }), mkShot({ scene: '天台', sceneEn: undefined })]
+    const shots = [noSceneEn({ scene: '书房' }), noSceneEn({ scene: '天台' })]
     await ensureSceneEnImpl(agent, 'p1', scenes, { characters: [], shots })
     expect(llm.fillPromptField).toHaveBeenCalledTimes(1)
-    expect(llm.fillPromptField.mock.calls[0][1]).toEqual({ scene: '书房', action: expect.any(String), currentText: 'short' })
-    expect(scenes[0].sceneEn).toBe(LONG_EN)
-    expect(shots[0].sceneEn).toBe(LONG_EN)
-    expect(shots[1].sceneEn).toBeUndefined()
+    expect(llm.fillPromptField.mock.calls[0]?.[1]).toEqual({
+      scene: '书房',
+      action: expect.any(String),
+      currentText: 'short',
+    })
+    expect(scenes[0]?.sceneEn).toBe(LONG_EN)
+    expect(shots[0]?.sceneEn).toBe(LONG_EN)
+    expect(shots[1]?.sceneEn).toBeUndefined()
   })
 
   it('LLM 失败：记 warning、保持中文名、不回写', async () => {
     const { agent, llm } = makeAgent()
     llm.fillPromptField.mockRejectedValue(new Error('llm down'))
     const scenes = [{ key: '书房', name: '书房', sceneEn: 'short' }]
-    const shots = [mkShot({ scene: '书房', sceneEn: undefined })]
+    const shots = [noSceneEn({ scene: '书房' })]
     await ensureSceneEnImpl(agent, 'p1', scenes, { characters: [], shots })
-    expect(scenes[0].sceneEn).toBe('short')
-    expect(shots[0].sceneEn).toBe('short') // 已有（短）短语仍回写，仅 LLM 补写失败
+    expect(scenes[0]?.sceneEn).toBe('short')
+    expect(shots[0]?.sceneEn).toBe('short') // 已有（短）短语仍回写，仅 LLM 补写失败
     const logs = agent.states.get('p1')!.logs
-    expect(logs.some(l => l.message.includes('英文环境短语补写失败'))).toBe(true)
+    expect(logs.some((l) => l.message.includes('英文环境短语补写失败'))).toBe(true)
   })
 })
 
@@ -557,36 +707,44 @@ describe('generateShotFirstFrameImpl', () => {
     await generateShotFirstFrameImpl(agent, 'p1', d, sc, neverAbort, ['林川'])
     expect(d.firstFramePath).toBe('projects/p1/shots/shot_x_first.png')
     expect(image.generate).toHaveBeenCalledTimes(1)
-    expect(image.generate.mock.calls[0][2].workflowName).toBe('qwen2511_i2i_edit')
-    expect(image.generate.mock.calls[0][2].referenceImagePath).toContain('c1_face.png')
+    expect(image.generate.mock.calls[0]?.[2].workflowName).toBe('qwen2511_i2i_edit')
+    expect(image.generate.mock.calls[0]?.[2].referenceImagePath).toContain('c1_face.png')
   })
 
   it('单图失败 → 全景双图融合成功（camera=left 命中方位图）', async () => {
     const { agent, image } = makeAgent()
     image.generate.mockRejectedValueOnce(new Error('i2i edit down'))
     const d = mkFrameD({
-      board: mkBoard({ panoViews: ['projects/p1/scenes/v0.png', 'projects/p1/scenes/v1.png', 'projects/p1/scenes/v2.png', 'projects/p1/scenes/v3.png'] }),
-      as: mkShot({ camera: 'left side, medium eye level' })
+      board: mkBoard({
+        panoViews: [
+          'projects/p1/scenes/v0.png',
+          'projects/p1/scenes/v1.png',
+          'projects/p1/scenes/v2.png',
+          'projects/p1/scenes/v3.png',
+        ],
+      }),
+      as: mkShot({ camera: 'left side, medium eye level' }),
     })
     await generateShotFirstFrameImpl(agent, 'p1', d, sc, neverAbort, ['林川'])
     expect(d.firstFramePath).toBe('projects/p1/shots/shot_x_first.png')
     expect(image.generate).toHaveBeenCalledTimes(2)
     const second = image.generate.mock.calls[1]
-    expect(second[2].workflowName).toBe('qwen2511_i2i_two')
-    expect(second[2].referenceImagePaths).toEqual([
+    expect(second?.[2].workflowName).toBe('qwen2511_i2i_two')
+    expect(second?.[2].referenceImagePaths).toEqual([
       path.join(baseDir, 'projects/p1/scenes/v3.png'),
-      path.join(baseDir, 'projects/p1/characters/c1_face.png')
+      path.join(baseDir, 'projects/p1/characters/c1_face.png'),
     ])
     const logs = agent.states.get('p1')!.logs
-    expect(logs.some(l => l.message.includes('尝试全景双图融合'))).toBe(true)
+    expect(logs.some((l) => l.message.includes('尝试全景双图融合'))).toBe(true)
   })
 
   it('两级融合均失败且 fusionFallback=block：throw halt', async () => {
     const { agent, image } = makeAgent()
     image.generate.mockRejectedValue(new Error('all fusion down'))
     const d = mkFrameD({ board: mkBoard({ panoViews: [] }) })
-    await expect(generateShotFirstFrameImpl(agent, 'p1', d, sc, neverAbort, ['林川']))
-      .rejects.toThrow(/已 halt（fusionFallback=block）/)
+    await expect(generateShotFirstFrameImpl(agent, 'p1', d, sc, neverAbort, ['林川'])).rejects.toThrow(
+      /已 halt（fusionFallback=block）/,
+    )
   })
 
   it('两级失败 + fusionFallback=allow：文生兜底 + face restore + 自检降级跳过', async () => {
@@ -597,9 +755,9 @@ describe('generateShotFirstFrameImpl', () => {
     await generateShotFirstFrameImpl(agent, 'p1', d, sc, neverAbort, ['林川'])
     expect(d.firstFramePath).toBe('projects/p1/shots/shot_x_first.png')
     expect(image.generate).toHaveBeenCalledTimes(2)
-    expect(image.generate.mock.calls[1][2].workflowName).toBe('klein_t2i_clean')
+    expect(image.generate.mock.calls[1]?.[2].workflowName).toBe('klein_t2i_clean')
     expect(image.restoreFace).toHaveBeenCalledTimes(1)
-    expect(state.fsCalls.some(c => c.fn === 'rename')).toBe(true)
+    expect(state.fsCalls.some((c) => c.fn === 'rename')).toBe(true)
   })
 
   it('无定妆图（faceAbs 空）：跳过融合直达文生兜底，无可恢复参照故不做 face restore', async () => {
@@ -608,7 +766,7 @@ describe('generateShotFirstFrameImpl', () => {
     await generateShotFirstFrameImpl(agent, 'p1', d, sc, neverAbort, ['林川'])
     expect(d.firstFramePath).toBe('projects/p1/shots/shot_x_first.png')
     expect(image.generate).toHaveBeenCalledTimes(1)
-    expect(image.generate.mock.calls[0][2].workflowName).toBe('klein_t2i_clean')
+    expect(image.generate.mock.calls[0]?.[2].workflowName).toBe('klein_t2i_clean')
     expect(image.restoreFace).not.toHaveBeenCalled()
   })
 
@@ -619,7 +777,7 @@ describe('generateShotFirstFrameImpl', () => {
     const d = mkFrameD()
     await generateShotFirstFrameImpl(agent, 'p1', d, sc, neverAbort, ['林川'])
     expect(d.firstFramePath).toBe('projects/p1/shots/shot_x_first.png')
-    const cp = state.fsCalls.find(c => c.fn === 'copyFile')
+    const cp = state.fsCalls.find((c) => c.fn === 'copyFile')
     expect(cp).toBeDefined()
     expect(cp!.args[0]).toContain('c1_face.png')
     expect(cp!.args[1]).toContain('shot_x_first.png')
@@ -631,8 +789,7 @@ describe('generateShotFirstFrameImpl', () => {
     image.generate.mockRejectedValueOnce(new Error('fusion down')).mockResolvedValueOnce(undefined)
     image.restoreFace.mockRejectedValueOnce(new Error('codeformer down'))
     const d = mkFrameD()
-    await expect(generateShotFirstFrameImpl(agent, 'p1', d, sc, neverAbort, ['林川']))
-      .resolves.toBeUndefined()
+    await expect(generateShotFirstFrameImpl(agent, 'p1', d, sc, neverAbort, ['林川'])).resolves.toBeUndefined()
     expect(d.firstFramePath).toBe('projects/p1/shots/shot_x_first.png')
   })
 
@@ -640,15 +797,16 @@ describe('generateShotFirstFrameImpl', () => {
     const { agent, image } = makeAgent()
     image.generate.mockRejectedValue(new ImageGenerateCancelled())
     const d = mkFrameD()
-    await expect(generateShotFirstFrameImpl(agent, 'p1', d, sc, neverAbort, ['林川']))
-      .rejects.toBeInstanceOf(ImageGenerateCancelled)
+    await expect(generateShotFirstFrameImpl(agent, 'p1', d, sc, neverAbort, ['林川'])).rejects.toBeInstanceOf(
+      ImageGenerateCancelled,
+    )
   })
 
   it('其他角色名与 escort 从句被 mask', async () => {
     const { agent, image } = makeAgent()
     const d = mkFrameD({ as: mkShot({ action: 'Lin escorts Su Wan to the door, the escort team follows' }) })
     await generateShotFirstFrameImpl(agent, 'p1', d, sc, neverAbort, ['林川', '苏晚'])
-    const prompt = image.generate.mock.calls[0][0] as string
+    const prompt = image.generate.mock.calls[0]?.[0] as string
     expect(prompt).not.toContain('Su Wan')
     expect(prompt).toContain('distant background silhouettes of the convoy') // escort 从句被替换
     // 全景双图/文生兜底未触发
@@ -661,23 +819,30 @@ describe('generateShotFirstFrameImpl', () => {
     const d = mkFrameD({
       characters: [
         mkChar('林川', { id: 'c1', faceImagePath: 'projects/p1/characters/c1_face.png' }),
-        mkChar('苏晚', { id: 'c2', faceImagePath: 'projects/p1/characters/c2_face.png' })
+        mkChar('苏晚', { id: 'c2', faceImagePath: 'projects/p1/characters/c2_face.png' }),
       ],
-      board: mkBoard({ panoViews: ['projects/p1/scenes/v0.png', 'projects/p1/scenes/v1.png', 'projects/p1/scenes/v2.png', 'projects/p1/scenes/v3.png'] }),
-      as: mkShot({ camera: 'left side, medium eye level' })
+      board: mkBoard({
+        panoViews: [
+          'projects/p1/scenes/v0.png',
+          'projects/p1/scenes/v1.png',
+          'projects/p1/scenes/v2.png',
+          'projects/p1/scenes/v3.png',
+        ],
+      }),
+      as: mkShot({ camera: 'left side, medium eye level' }),
     })
     await generateShotFirstFrameImpl(agent, 'p1', d, sc, neverAbort, ['林川', '苏晚'])
     expect(d.firstFramePath).toBe('projects/p1/shots/shot_x_first.png')
     expect(image.generate).toHaveBeenCalledTimes(1)
-    expect(image.generate.mock.calls[0][2].workflowName).toBe('qwen2511_i2i_multi')
-    expect(image.generate.mock.calls[0][2].referenceImagePaths).toEqual([
+    expect(image.generate.mock.calls[0]?.[2].workflowName).toBe('qwen2511_i2i_multi')
+    expect(image.generate.mock.calls[0]?.[2].referenceImagePaths).toEqual([
       path.join(baseDir, 'projects/p1/scenes/v3.png'),
       path.join(baseDir, 'projects/p1/characters/c1_face.png'),
-      path.join(baseDir, 'projects/p1/characters/c2_face.png')
+      path.join(baseDir, 'projects/p1/characters/c2_face.png'),
     ])
     // 图1=场景板，人物在图2、图3
-    expect(image.generate.mock.calls[0][0]).toContain('图2、图3')
-    expect(image.generate.mock.calls[0][0]).toContain('放进图1的场景')
+    expect(image.generate.mock.calls[0]?.[0]).toContain('图2、图3')
+    expect(image.generate.mock.calls[0]?.[0]).toContain('放进图1的场景')
   })
 
   it('无场景板的多角色：图1、图2 直接取两位定妆图', async () => {
@@ -685,16 +850,16 @@ describe('generateShotFirstFrameImpl', () => {
     const d = mkFrameD({
       characters: [
         mkChar('林川', { id: 'c1', faceImagePath: 'projects/p1/characters/c1_face.png' }),
-        mkChar('苏晚', { id: 'c2', faceImagePath: 'projects/p1/characters/c2_face.png' })
+        mkChar('苏晚', { id: 'c2', faceImagePath: 'projects/p1/characters/c2_face.png' }),
       ],
-      board: mkBoard({ panoViews: [] })
+      board: mkBoard({ panoViews: [] }),
     })
     await generateShotFirstFrameImpl(agent, 'p1', d, sc, neverAbort, ['林川', '苏晚'])
-    expect(image.generate.mock.calls[0][2].referenceImagePaths).toEqual([
+    expect(image.generate.mock.calls[0]?.[2].referenceImagePaths).toEqual([
       path.join(baseDir, 'projects/p1/characters/c1_face.png'),
-      path.join(baseDir, 'projects/p1/characters/c2_face.png')
+      path.join(baseDir, 'projects/p1/characters/c2_face.png'),
     ])
-    expect(image.generate.mock.calls[0][0]).toContain('把图1、图2中的 2 位人物一起放在场景')
+    expect(image.generate.mock.calls[0]?.[0]).toContain('把图1、图2中的 2 位人物一起放在场景')
   })
 
   it('多角色融合失败 → 回退单角色融合', async () => {
@@ -703,27 +868,30 @@ describe('generateShotFirstFrameImpl', () => {
     const d = mkFrameD({
       characters: [
         mkChar('林川', { id: 'c1', faceImagePath: 'projects/p1/characters/c1_face.png' }),
-        mkChar('苏晚', { id: 'c2', faceImagePath: 'projects/p1/characters/c2_face.png' })
-      ]
+        mkChar('苏晚', { id: 'c2', faceImagePath: 'projects/p1/characters/c2_face.png' }),
+      ],
     })
     await generateShotFirstFrameImpl(agent, 'p1', d, sc, neverAbort, ['林川', '苏晚'])
     expect(d.firstFramePath).toBe('projects/p1/shots/shot_x_first.png')
     expect(image.generate).toHaveBeenCalledTimes(2)
-    expect(image.generate.mock.calls[1][2].workflowName).toBe('qwen2511_i2i_edit')
+    expect(image.generate.mock.calls[1]?.[2].workflowName).toBe('qwen2511_i2i_edit')
   })
 
   // —— P1-1 首帧人脸相似度自检 + 自动重抽 ——
   it('相似度达标：只记录 info，不重抽', async () => {
-    const { agent, image } = makeAgent({ queue: { compareImages: vi.fn(async () => ({ score: 0.9, method: 'face' })) } })
+    const { agent, image } = makeAgent({
+      queue: { compareImages: vi.fn(async () => ({ score: 0.9, method: 'face' })) },
+    })
     const d = mkFrameD()
     await generateShotFirstFrameImpl(agent, 'p1', d, sc, neverAbort, ['林川'])
     expect(image.generate).toHaveBeenCalledTimes(1)
-    expect(agent.states.get('p1')!.logs.some(l => l.message.includes('首帧人脸相似度 0.900'))).toBe(true)
+    expect(agent.states.get('p1')!.logs.some((l) => l.message.includes('首帧人脸相似度 0.900'))).toBe(true)
   })
 
   it('相似度偏低：自动重抽 1 次，恢复达标记录 info', async () => {
     const { agent, image } = makeAgent()
-    const compareImages = vi.fn()
+    const compareImages = vi
+      .fn()
       .mockResolvedValueOnce({ score: 0.45, method: 'face' })
       .mockResolvedValueOnce({ score: 0.82, method: 'face' })
     ;(agent as unknown as { queue: unknown }).queue = { compareImages }
@@ -732,8 +900,8 @@ describe('generateShotFirstFrameImpl', () => {
     expect(image.generate).toHaveBeenCalledTimes(2)
     expect(d.firstFramePath).toBe('projects/p1/shots/shot_x_first.png')
     const logs = agent.states.get('p1')!.logs
-    expect(logs.some(l => l.message.includes('自动重抽 1 次'))).toBe(true)
-    expect(logs.some(l => l.message.includes('重抽后相似度 0.820'))).toBe(true)
+    expect(logs.some((l) => l.message.includes('自动重抽 1 次'))).toBe(true)
+    expect(logs.some((l) => l.message.includes('重抽后相似度 0.820'))).toBe(true)
   })
 
   it('重抽后仍偏低：只告警放行，不再重抽', async () => {
@@ -744,7 +912,7 @@ describe('generateShotFirstFrameImpl', () => {
     await generateShotFirstFrameImpl(agent, 'p1', d, sc, neverAbort, ['林川'])
     expect(image.generate).toHaveBeenCalledTimes(2)
     expect(compareImages).toHaveBeenCalledTimes(2)
-    expect(agent.states.get('p1')!.logs.some(l => l.message.includes('重抽后相似度仍偏低'))).toBe(true)
+    expect(agent.states.get('p1')!.logs.some((l) => l.message.includes('重抽后相似度仍偏低'))).toBe(true)
   })
 
   it('相似度依赖不可用（返回 null）：静默跳过，不重抽', async () => {
@@ -757,7 +925,8 @@ describe('generateShotFirstFrameImpl', () => {
 
   it('多人同框取最低相似度作为判定分', async () => {
     const { agent, image } = makeAgent()
-    const compareImages = vi.fn()
+    const compareImages = vi
+      .fn()
       .mockResolvedValueOnce({ score: 0.9, method: 'face' })
       .mockResolvedValueOnce({ score: 0.4, method: 'face' })
       .mockResolvedValueOnce({ score: 0.9, method: 'face' })
@@ -766,8 +935,8 @@ describe('generateShotFirstFrameImpl', () => {
     const d = mkFrameD({
       characters: [
         mkChar('林川', { id: 'c1', faceImagePath: 'projects/p1/characters/c1_face.png' }),
-        mkChar('苏晚', { id: 'c2', faceImagePath: 'projects/p1/characters/c2_face.png' })
-      ]
+        mkChar('苏晚', { id: 'c2', faceImagePath: 'projects/p1/characters/c2_face.png' }),
+      ],
     })
     await generateShotFirstFrameImpl(agent, 'p1', d, sc, neverAbort, ['林川', '苏晚'])
     // 第一轮最低 0.4 → 重抽；第二轮 0.9 → 放行
@@ -781,6 +950,12 @@ describe('generateShotFirstFrameImpl', () => {
 describe('buildShotsImpl', () => {
   const char = mkChar('林川', { faceImagePath: 'projects/p1/characters/c1_face.png' })
   const charMap = new Map<string, Character>([['林川', char]])
+  /** 覆盖 mkShot 默认主角名：显式构造「无 characterName」的空镜 */
+  const noCharacterName = (over: Parameters<typeof mkShot>[0] = {}) => {
+    const s = mkShot(over)
+    delete s.characterName
+    return s
+  }
 
   it('pano 全景板 + i2v 融合首帧 + 尾帧串行：全部落盘', async () => {
     const { agent, image, ffmpeg, store } = makeAgent()
@@ -788,83 +963,92 @@ describe('buildShotsImpl', () => {
     const analysis: AnalyzeResult = { characters: [], shots: [mkShot()] }
     await buildShotsImpl(agent, 'p1', analysis, charMap)
     // 1) pano 全景板
-    expect(image.generate.mock.calls[0][2].workflowName).toBe('klein_t2i_clean')
+    expect(image.generate.mock.calls[0]?.[2].workflowName).toBe('klein_t2i_clean')
     expect(ffmpeg.cropPanoramaViews).toHaveBeenCalledTimes(1)
     expect(ffmpeg.tileImages).toHaveBeenCalledTimes(1)
     // 2) i2v 融合首帧（qwen2511_i2i_edit）
-    expect(image.generate.mock.calls[1][2].workflowName).toBe('qwen2511_i2i_edit')
+    expect(image.generate.mock.calls[1]?.[2].workflowName).toBe('qwen2511_i2i_edit')
     // 3) 尾帧
     expect(image.generate).toHaveBeenCalledTimes(3)
-    expect(image.generate.mock.calls[2][0]).toContain('end')
-    const saved = store.save.mock.calls[store.save.mock.calls.length - 1][0] as Project
+    expect(image.generate.mock.calls[2]?.[0]).toContain('end')
+    const saved = store.save.mock.calls[store.save.mock.calls.length - 1]?.[0] as Project
     expect(saved.shots).toHaveLength(1)
-    expect(saved.shots[0].type).toBe('i2v')
-    expect(saved.shots[0].status).toBe('pending')
-    expect(saved.shots[0].shotSize).toBe('medium')
-    expect(saved.shots[0].firstFramePath).toMatch(/_first\.png$/)
-    expect(saved.shots[0].lastFramePath).toMatch(/_last\.png$/)
-    expect(saved.sceneBoards[0].emptyPlatePath).toMatch(/v\d\.png$/)
+    expect(saved.shots[0]?.type).toBe('i2v')
+    expect(saved.shots[0]?.status).toBe('pending')
+    expect(saved.shots[0]?.shotSize).toBe('medium')
+    expect(saved.shots[0]?.firstFramePath).toMatch(/_first\.png$/)
+    expect(saved.shots[0]?.lastFramePath).toMatch(/_last\.png$/)
+    expect(saved.sceneBoards?.[0]?.emptyPlatePath).toMatch(/v\d\.png$/)
     expect(agent.states.get('p1')!.totalShots).toBe(1)
     expect(agent.states.get('p1')!.stages.scenes.status).toBe('done')
   })
 
   it('panorama=false + candidates=1：单张场景板，t2v 空镜复用板', async () => {
     const { agent, image, store } = makeAgent()
-    agent.settings.get.mockImplementation(async () => mkSettings({
-      creation: { scene: { panorama: false, candidates: 1 } }
-    }))
+    agent.settings.get.mockImplementation(async () =>
+      mkSettings({
+        creation: { scene: { panorama: false, candidates: 1 } },
+      }),
+    )
     agent.store.get.mockImplementation(async () => mkProject({ characters: [char] }))
-    const t2vShot = mkShot({ type: 't2v', characterName: undefined, characters: [] })
+    const t2vShot = noCharacterName({ type: 't2v', characters: [] })
     const analysis: AnalyzeResult = { characters: [], shots: [t2vShot] }
     await buildShotsImpl(agent, 'p1', analysis, charMap)
     expect(image.generate).toHaveBeenCalledTimes(1) // 场景板；t2v 复用板、无尾帧
-    expect(image.generate.mock.calls[0][2].workflowName).toBe('klein_t2i_clean')
-    const saved = store.save.mock.calls[store.save.mock.calls.length - 1][0] as Project
-    expect(saved.shots[0].type).toBe('t2v')
-    expect(saved.shots[0].sceneImagePath).toBe(saved.sceneBoards[0].emptyPlatePath)
-    expect(saved.sceneBoards[0].emptyPlatePath).toMatch(/_plate\.png$/)
+    expect(image.generate.mock.calls[0]?.[2].workflowName).toBe('klein_t2i_clean')
+    const saved = store.save.mock.calls[store.save.mock.calls.length - 1]?.[0] as Project
+    expect(saved.shots[0]?.type).toBe('t2v')
+    expect(saved.shots[0]?.sceneImagePath).toBe(saved.sceneBoards?.[0]?.emptyPlatePath)
+    expect(saved.sceneBoards?.[0]?.emptyPlatePath).toMatch(/_plate\.png$/)
   })
 
   it('场景板失败 → 资产库复用成功（题材一致），t2v 空镜复用复用板', async () => {
     const { agent, image, store } = makeAgent()
-    agent.settings.get.mockImplementation(async () => mkSettings({
-      render: { assetFallbackProjectId: 'fb1' }
-    }))
+    agent.settings.get.mockImplementation(async () =>
+      mkSettings({
+        render: { assetFallbackProjectId: 'fb1' },
+      }),
+    )
     const fb = mkProject({
-      id: 'fb1', genre: '悬疑',
-      sceneBoards: [mkBoard({ id: 'fb_b', emptyPlatePath: 'projects/fb1/scenes/old_plate.png' })]
+      id: 'fb1',
+      genre: '悬疑',
+      sceneBoards: [mkBoard({ id: 'fb_b', emptyPlatePath: 'projects/fb1/scenes/old_plate.png' })],
     })
-    agent.store.get.mockImplementation(async (id) => id === 'fb1' ? fb : mkProject({ characters: [char] }))
+    agent.store.get.mockImplementation(async (id) => (id === 'fb1' ? fb : mkProject({ characters: [char] })))
     image.generate.mockRejectedValueOnce(new Error('pano down')) // 场景板失败
-    const t2vShot = mkShot({ type: 't2v', characterName: undefined, characters: [] })
+    const t2vShot = noCharacterName({ type: 't2v', characters: [] })
     await buildShotsImpl(agent, 'p1', { characters: [], shots: [t2vShot] }, charMap)
-    const saved = store.save.mock.calls[store.save.mock.calls.length - 1][0] as Project
-    expect(saved.sceneBoards[0].emptyPlatePath).toBe('projects/p1/scenes/' + saved.sceneBoards[0].id + '_plate.png')
-    expect(saved.shots[0].sceneImagePath).toBe(saved.sceneBoards[0].emptyPlatePath)
+    const saved = store.save.mock.calls[store.save.mock.calls.length - 1]?.[0] as Project
+    expect(saved.sceneBoards?.[0]?.emptyPlatePath).toBe(
+      'projects/p1/scenes/' + saved.sceneBoards?.[0]?.id + '_plate.png',
+    )
+    expect(saved.shots[0]?.sceneImagePath).toBe(saved.sceneBoards?.[0]?.emptyPlatePath)
     const logs = agent.states.get('p1')!.logs
-    expect(logs.some(l => l.message.includes('已从资产库项目 fb1 复用场景板'))).toBe(true)
+    expect(logs.some((l) => l.message.includes('已从资产库项目 fb1 复用场景板'))).toBe(true)
   })
 
   it('尾帧生成失败：frameFailed 计数并回退，阶段仍 done', async () => {
     const { agent, image, store } = makeAgent()
     agent.store.get.mockImplementation(async () => mkProject({ characters: [char] }))
     // 场景板(i2v 无 fusion 需 2 次)……简化：pano 板 1 次、首帧 fusion 1 次、尾帧失败
-    image.generate.mockResolvedValueOnce(undefined) // pano 板
-      .mockResolvedValueOnce(undefined)             // 首帧 fusion
+    image.generate
+      .mockResolvedValueOnce(undefined) // pano 板
+      .mockResolvedValueOnce(undefined) // 首帧 fusion
       .mockRejectedValueOnce(new Error('tail boom')) // 尾帧
     await buildShotsImpl(agent, 'p1', { characters: [], shots: [mkShot()] }, charMap)
-    const saved = store.save.mock.calls[store.save.mock.calls.length - 1][0] as Project
-    expect(saved.shots[0].lastFramePath).toBeUndefined()
+    const saved = store.save.mock.calls[store.save.mock.calls.length - 1]?.[0] as Project
+    expect(saved.shots[0]?.lastFramePath).toBeUndefined()
     expect(agent.states.get('p1')!.stages.scenes.status).toBe('done')
     const logs = agent.states.get('p1')!.logs
-    expect(logs.some(l => l.message.includes('尾帧失败'))).toBe(true)
-    expect(logs.some(l => l.message.includes('1 镜帧失败已回退'))).toBe(true)
+    expect(logs.some((l) => l.message.includes('尾帧失败'))).toBe(true)
+    expect(logs.some((l) => l.message.includes('1 镜帧失败已回退'))).toBe(true)
   })
 
   it('取消：buildShots 拒绝 CANCELLED', async () => {
     const { agent } = makeAgent()
     agent.cancelled.add('p1')
-    await expect(buildShotsImpl(agent, 'p1', { characters: [], shots: [mkShot()] }, charMap))
-      .rejects.toThrow('CANCELLED')
+    await expect(buildShotsImpl(agent, 'p1', { characters: [], shots: [mkShot()] }, charMap)).rejects.toThrow(
+      'CANCELLED',
+    )
   })
 })

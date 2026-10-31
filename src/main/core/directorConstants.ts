@@ -6,8 +6,15 @@ import type { DirectorStage, AppSettings } from '../../shared/ipcTypes'
  */
 
 export const STAGE_ORDER: DirectorStage[] = [
-  'analyze', 'casting', 'scenes', 'render',
-  'combine', 'subtitle', 'review', 'bgm', 'done'
+  'analyze',
+  'casting',
+  'scenes',
+  'render',
+  'combine',
+  'subtitle',
+  'review',
+  'bgm',
+  'done',
 ]
 
 export const STAGE_LABELS: Record<DirectorStage, string> = {
@@ -19,7 +26,7 @@ export const STAGE_LABELS: Record<DirectorStage, string> = {
   subtitle: '烧录字幕',
   review: '成片复审',
   bgm: 'BGM 混音',
-  done: '完成'
+  done: '完成',
 }
 
 /** 阶段序号（断点续跑的先后比较用） */
@@ -34,7 +41,7 @@ export function stageIndexOf(stage: DirectorStage): number {
  */
 export function stageWorkflowOverride(
   settings: AppSettings | undefined | null,
-  stage: 'casting' | 'scene' | 'shot' | 'prop'
+  stage: 'casting' | 'scene' | 'shot' | 'prop',
 ): string | undefined {
   const v = settings?.workflow?.[stage]
   return typeof v === 'string' && v.trim() ? v.trim() : undefined
@@ -60,6 +67,10 @@ export function pickPanoView(camera: string | undefined, views: string[] | undef
   return views[idx]
 }
 
-// 按性别轮转分配音色
-export const FEMALE_VOICES = ['zh-CN-XiaoxiaoNeural', 'zh-CN-XiaoyiNeural']
-export const MALE_VOICES = ['zh-CN-YunjianNeural', 'zh-CN-YunyeNeural', 'zh-CN-YunjieNeural']
+// 按性别轮转分配音色（非空元组：首项可作兜底，轮转取模后必为 string）
+export const FEMALE_VOICES: readonly [string, ...string[]] = ['zh-CN-XiaoxiaoNeural', 'zh-CN-XiaoyiNeural']
+export const MALE_VOICES: readonly [string, ...string[]] = [
+  'zh-CN-YunjianNeural',
+  'zh-CN-YunyeNeural',
+  'zh-CN-YunjieNeural',
+]

@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import {
-  hardenLookWeapons, lookEnStructureIssues, differentiateLooks, hardenLookEnList
+  hardenLookWeapons,
+  lookEnStructureIssues,
+  differentiateLooks,
+  hardenLookEnList,
 } from '../../src/shared/castAppearance'
 
 describe('lookEn 硬门禁 v2：武器单械中式 + 结构校验 + 三角色趋同', () => {
@@ -8,7 +11,9 @@ describe('lookEn 硬门禁 v2：武器单械中式 + 结构校验 + 三角色趋
     const dirty = 'chinese man, black cloth jacket, topknot, holding a katana'
     const out = hardenLookWeapons(dirty)
     // 违禁持械用法被清除（负向锁词 no katana 允许出现）
-    expect(out.toLowerCase()).not.toMatch(/holding a katana|wielding a katana|with a katana|katana in (?:hand|his hand)/)
+    expect(out.toLowerCase()).not.toMatch(
+      /holding a katana|wielding a katana|with a katana|katana in (?:hand|his hand)/,
+    )
     expect(out.toLowerCase()).toMatch(/exactly one weapon/)
     expect(out.toLowerCase()).toMatch(/no katana/)
     expect(out.toLowerCase()).toMatch(/jian sword/)
@@ -47,18 +52,18 @@ describe('lookEn 硬门禁 v2：武器单械中式 + 结构校验 + 三角色趋
   it('趋同检测：色系+发型+脸型多维相同 → 差异化条款追加', () => {
     const looks = [
       'chinese man, black hair topknot, black hanfu robe, square face, long sword',
-      'chinese man, black hair topknot, black hanfu robe, square face, long sword'
+      'chinese man, black hair topknot, black hanfu robe, square face, long sword',
     ]
     const { looks: out, notes } = differentiateLooks(looks)
     expect(notes.length).toBeGreaterThanOrEqual(1)
-    expect(out[1].toLowerCase()).toMatch(/different (?:face|hair|outfit)|distinct/)
+    expect(out[1]?.toLowerCase()).toMatch(/different (?:face|hair|outfit)|distinct/)
   })
 
   it('差异明显的角色不被误伤', () => {
     const looks = [
       'chinese man, blue ponytail, deep blue robe, square face, long sword',
       'chinese woman, lavender double buns, lavender jacket, round face, short sword',
-      'chinese man, black topknot, black coarse cloth outfit, thick beard, pudao'
+      'chinese man, black topknot, black coarse cloth outfit, thick beard, pudao',
     ]
     const { looks: out, notes } = differentiateLooks(looks)
     expect(notes).toEqual([])
@@ -68,7 +73,7 @@ describe('lookEn 硬门禁 v2：武器单械中式 + 结构校验 + 三角色趋
   it('hardenLookEnList 组合：时代清洗+武器+趋同一次完成', () => {
     const looks = [
       'chinese man, black topknot, black tactical uniform, holding a katana',
-      'chinese man, black topknot, black tactical uniform, holding a katana'
+      'chinese man, black topknot, black tactical uniform, holding a katana',
     ]
     const { looks: out, notes } = hardenLookEnList(looks, '古装')
     expect(notes.length).toBeGreaterThanOrEqual(1)
@@ -79,11 +84,9 @@ describe('lookEn 硬门禁 v2：武器单械中式 + 结构校验 + 三角色趋
   })
 
   it('现代剧不被强加武器条款（医生/白领不应持剑）', () => {
-    const looks = [
-      'chinese man in his early 30s, short black hair, white doctor coat, stethoscope around neck'
-    ]
+    const looks = ['chinese man in his early 30s, short black hair, white doctor coat, stethoscope around neck']
     const { looks: out } = hardenLookEnList(looks, '现代')
-    expect(out[0].toLowerCase()).not.toMatch(/weapon|sword|jian|dao|blade/)
+    expect(out[0]?.toLowerCase()).not.toMatch(/weapon|sword|jian|dao|blade/)
     // 原文保留
     expect(out[0]).toContain('white doctor coat')
   })

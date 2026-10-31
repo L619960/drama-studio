@@ -1,12 +1,6 @@
 <template>
   <teleport to="body">
-    <div
-      v-if="visible"
-      class="input-ctx"
-      :style="{ left: x + 'px', top: y + 'px' }"
-      @click.stop
-      @contextmenu.prevent
-    >
+    <div v-if="visible" class="input-ctx" :style="{ left: x + 'px', top: y + 'px' }" @click.stop @contextmenu.prevent>
       <div class="ctx-item" @click="doEdit('cut')">剪切</div>
       <div class="ctx-item" @click="doEdit('copy')">复制</div>
       <div class="ctx-item" @click="doEdit('paste')">粘贴</div>
@@ -23,8 +17,8 @@
           :title="item"
           @click="pickHistory(item)"
         >
-{{ item }}
-</div>
+          {{ item }}
+        </div>
         <div class="ctx-item ctx-muted" @click="clearHistory">清除本框历史</div>
       </template>
     </div>
@@ -38,11 +32,11 @@ import { ElMessage } from 'element-plus'
 interface CtxTarget {
   el: HTMLInputElement | HTMLTextAreaElement
   /** 清空时的额外钩子（受控组件需要同步外部值） */
-  onClear?: () => void
+  onClear?: (() => void) | undefined
   /** 从历史点选填入时的额外钩子（默认：写入目标并触发 input 事件） */
-  onPick?: (value: string) => void
-  history?: string[]
-  clearHistory?: () => void
+  onPick?: ((value: string) => void) | undefined
+  history?: string[] | undefined
+  clearHistory?: (() => void) | undefined
 }
 
 const visible = ref(false)
@@ -86,17 +80,20 @@ function doEdit(action: 'cut' | 'copy' | 'paste' | 'selectAll'): void {
       document.execCommand('copy')
     } else if (action === 'paste') {
       // execCommand('paste') 多数环境被禁，用剪贴板读取 + insertText
-      navigator.clipboard.readText().then(text => {
-        el.focus()
-        const ok = document.execCommand('insertText', false, text)
-        if (!ok) {
-          // 兜底：手动写入并派发 input 事件同步 v-model
-          const start = el.selectionStart ?? el.value.length
-          const end = el.selectionEnd ?? el.value.length
-          el.value = el.value.slice(0, start) + text + el.value.slice(end)
-          el.dispatchEvent(new Event('input', { bubbles: true }))
-        }
-      }).catch(() => ElMessage.warning('无法读取剪贴板'))
+      navigator.clipboard
+        .readText()
+        .then((text) => {
+          el.focus()
+          const ok = document.execCommand('insertText', false, text)
+          if (!ok) {
+            // 兜底：手动写入并派发 input 事件同步 v-model
+            const start = el.selectionStart ?? el.value.length
+            const end = el.selectionEnd ?? el.value.length
+            el.value = el.value.slice(0, start) + text + el.value.slice(end)
+            el.dispatchEvent(new Event('input', { bubbles: true }))
+          }
+        })
+        .catch(() => ElMessage.warning('无法读取剪贴板'))
     }
   } catch {
     ElMessage.warning('该操作当前环境不支持')
@@ -144,7 +141,9 @@ function clearHistory(): void {
 }
 
 // 点击外部 / Esc 关闭
-function onGlobalClick(): void { close() }
+function onGlobalClick(): void {
+  close()
+}
 function onKey(e: KeyboardEvent): void {
   if (e.key === 'Escape') close()
 }
@@ -184,15 +183,29 @@ defineExpose({ open })
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.ctx-item:hover { background: var(--bg-hover, rgba(255, 255, 255, 0.08)); }
-.ctx-danger { color: #f07178; }
-.ctx-muted { color: var(--text-muted, #9fb0c0); font-size: 12px; }
-.ctx-divider { height: 1px; background: var(--border-weak, rgba(255, 255, 255, 0.1)); margin: 5px 8px; }
+.ctx-item:hover {
+  background: var(--bg-hover, rgba(255, 255, 255, 0.08));
+}
+.ctx-danger {
+  color: #f07178;
+}
+.ctx-muted {
+  color: var(--text-muted, #9fb0c0);
+  font-size: 12px;
+}
+.ctx-divider {
+  height: 1px;
+  background: var(--border-weak, rgba(255, 255, 255, 0.1));
+  margin: 5px 8px;
+}
 .ctx-group-title {
   padding: 6px 10px 2px;
   font-size: 11px;
   color: var(--text-muted, #9fb0c0);
   user-select: none;
 }
-.ctx-history { font-size: 12px; color: var(--text-secondary, #c8d2dc); }
+.ctx-history {
+  font-size: 12px;
+  color: var(--text-secondary, #c8d2dc);
+}
 </style>

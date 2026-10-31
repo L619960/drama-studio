@@ -8,7 +8,10 @@ import { SHOT_TIMING, type Project } from '../../shared/ipcTypes'
  * 优先使用 segment 实际时长；未渲染时按 frames 估算（16fps）。
  */
 export class SubtitleService {
-  constructor(private ffmpeg: FFmpegService, private baseDir: string) {}
+  constructor(
+    private ffmpeg: FFmpegService,
+    private baseDir: string,
+  ) {}
 
   async generate(project: Project, includedShotIds?: string[]): Promise<string> {
     let currentTime = 0
@@ -17,7 +20,7 @@ export class SubtitleService {
     // AI 导演模式：失败镜头已被排除出成片，字幕时间轴只按实际参与拼接的镜头累计
     const shots = includedShotIds
       ? includedShotIds
-          .map(id => project.shots.find(s => s.id === id))
+          .map((id) => project.shots.find((s) => s.id === id))
           .filter((s): s is Project['shots'][number] => Boolean(s))
       : project.shots
 
@@ -46,7 +49,7 @@ export class SubtitleService {
         index: entries.length + 1,
         start,
         end,
-        text: shot.dialogue.trim()
+        text: shot.dialogue.trim(),
       })
       currentTime += dur
     }
@@ -57,7 +60,7 @@ export class SubtitleService {
     }
 
     const srtContent = entries
-      .map(e => `${e.index}\n${this.fmt(e.start)} --> ${this.fmt(e.end)}\n${e.text}\n`)
+      .map((e) => `${e.index}\n${this.fmt(e.start)} --> ${this.fmt(e.end)}\n${e.text}\n`)
       .join('\n')
 
     const srtPath = path.join(this.baseDir, 'projects', project.id, 'subtitles.srt')
@@ -67,7 +70,7 @@ export class SubtitleService {
     return `projects/${project.id}/subtitles.srt`
   }
 
-  private async estimateDuration(shot: { segmentPath?: string; frames: number }): Promise<number> {
+  private async estimateDuration(shot: { segmentPath?: string | undefined; frames: number }): Promise<number> {
     if (shot.segmentPath) {
       try {
         return await this.ffmpeg.getDuration(path.join(this.baseDir, shot.segmentPath))
@@ -89,7 +92,9 @@ export class SubtitleService {
   }
 }
 
-function pad(n: number): string { return String(n).padStart(2, '0') }
+function pad(n: number): string {
+  return String(n).padStart(2, '0')
+}
 
 /**
  * 占位台词判定：分镜里常见「（无台词）」「（无对白）」「none」等占位写法。

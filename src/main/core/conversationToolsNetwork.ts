@@ -12,11 +12,12 @@ export async function tWebSearch(args: Record<string, unknown>): Promise<ToolRes
   const url = `https://www.bing.com/search?q=${encodeURIComponent(query)}&count=10&mkt=zh-CN`
   const resp = await axios.get<string>(url, {
     headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
-      'Accept-Language': 'zh-CN,zh;q=0.9'
+      'User-Agent':
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
+      'Accept-Language': 'zh-CN,zh;q=0.9',
     },
     timeout: 15000,
-    responseType: 'text'
+    responseType: 'text',
   })
   const html = typeof resp.data === 'string' ? resp.data : ''
   const results: Array<{ title: string; url: string; snippet: string }> = []
@@ -39,25 +40,15 @@ export async function tFetchUrl(args: Record<string, unknown>): Promise<ToolResu
   const url = String(args.url || '').trim()
   if (!/^https?:\/\//i.test(url)) return { ok: false, text: 'url 必须以 http/https 开头' }
   // P3 SSRF 受限防护：拒绝回环/私网/链路本地/未指定地址（含云元数据 169.254.169.254）。
-  // 仅校验初始 URL 的主机名；跟随重定向后的目标不复查（普通域名不做 DNS 解析，
-  // DNS rebinding 属深度防御未覆盖）。URL 解析失败时放行给 axios 报错，行为与原来一致。
-  let blocked: boolean
-  try {
-    blocked = isBlockedFetchHost(new URL(url).hostname)
-  } catch {
-    blocked = false
-  }
-  if (blocked) {
-    return { ok: false, text: '该地址被禁止访问：仅允许公网 http/https 目标（回环/内网/链路本地地址不支持）' }
-  }
-  const resp = await axios.get<string>(url, {
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36'
-    },
-    timeout: 20000,
-    maxContentLength: 1024 * 1024,
-    responseType: 'text'
-  })
+  // SEC-06：重定向逐跳复检——不再让 axios 自动跟随（maxRedirects: 0），
+  // 每一跳都校验协议 + 主机名，避免经 302 跳进内网/本机服务。
+  const firstBlocked = isBlockedFetchHostSafe(url)
+  if (firstBlocked) return { ok: false, text: BLOCKED_HOST_TEXT }
+  const result = await fetchWithGuardedRedirect(url)
+  if (result.blocked) return { ok: false, text: BLOCKED_HOST_TEXT }
+  if (result.tooMany) return { ok: false, text: `重定向次数过多（上限 ${MAX_REDIRECTS} 次），已停止抓取` }
+  const resp = result.response
+  if (!resp) return { ok: false, text: '页面没有可读文本' }
   const ct = String(resp.headers?.['content-type'] || '')
   let text: string
   if (ct.includes('html')) {
@@ -66,15 +57,76 @@ export async function tFetchUrl(args: Record<string, unknown>): Promise<ToolResu
         String(resp.data)
           .replace(/<script[\s\S]*?<\/script>/gi, ' ')
           .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-          .replace(/<(br|\/p|\/div|\/li|\/h[1-6])[^>]*>/gi, '\n')
-      )
-    ).replace(/\n{3,}/g, '\n\n').trim()
+          .replace(/<(br|\/p|\/div|\/li|\/h[1-6])[^>]*>/gi, '\n'),
+      ),
+    )
+      .replace(/\n{3,}/g, '\n\n')
+      .trim()
   } else {
     text = String(resp.data)
   }
   if (!text) return { ok: false, text: '页面没有可读文本' }
   const truncated = text.length > RESULT_LIMIT
-  return { ok: true, text: `【${url} 的正文${truncated ? '（已截断）' : ''}】\n${text.slice(0, RESULT_LIMIT)}` }
+  return {
+    ok: true,
+    text: `【${result.finalUrl ?? url} 的正文${truncated ? '（已截断）' : ''}】\n${text.slice(0, RESULT_LIMIT)}`,
+  }
+}
+
+const BLOCKED_HOST_TEXT = '该地址被禁止访问：仅允许公网 http/https 目标（回环/内网/链路本地地址不支持）'
+const MAX_REDIRECTS = 3
+
+/** URL 解析失败时放行给 axios 报错（保持原有行为） */
+function isBlockedFetchHostSafe(url: string): boolean {
+  try {
+    return isBlockedFetchHost(new URL(url).hostname)
+  } catch {
+    return false
+  }
+}
+
+interface GuardedFetchResult {
+  response?: { data: unknown; headers?: Record<string, unknown> }
+  finalUrl?: string
+  blocked?: boolean
+  tooMany?: boolean
+}
+
+/**
+ * SEC-06：手动跟随重定向（最多 MAX_REDIRECTS 跳），每跳复检协议与主机名。
+ * 非 3xx 响应交给调用方解析；4xx/5xx 仍按 axios 语义抛错（与原行为一致）。
+ */
+async function fetchWithGuardedRedirect(initialUrl: string): Promise<GuardedFetchResult> {
+  let current = initialUrl
+  for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+    const resp = await axios.get<string>(current, {
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
+      },
+      timeout: 20000,
+      maxContentLength: 1024 * 1024,
+      responseType: 'text',
+      maxRedirects: 0,
+      validateStatus: (s) => s < 300,
+    })
+    if (resp.status >= 300 && resp.status < 400) {
+      const loc = String(resp.headers?.location ?? '')
+      if (!loc) return { response: resp, finalUrl: current }
+      let next: URL
+      try {
+        next = new URL(loc, current)
+      } catch {
+        return { response: resp, finalUrl: current }
+      }
+      if (!/^https?:/i.test(next.protocol)) return { blocked: true }
+      if (isBlockedFetchHost(next.hostname)) return { blocked: true }
+      current = next.toString()
+      continue
+    }
+    return { response: resp, finalUrl: current }
+  }
+  return { tooMany: true }
 }
 
 // ---------------------------------------------------------------- HTML 工具函数（网页正文提取用，不涉及安全转义场景）
@@ -86,8 +138,16 @@ function stripHtmlTags(html: string): string {
 /** 解码常见 HTML 实体与数字引用 */
 function decodeEntities(text: string): string {
   const named: Record<string, string> = {
-    amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ',
-    '#39': "'", '#x27': "'", '#x2F': '/', '#160': ' '
+    amp: '&',
+    lt: '<',
+    gt: '>',
+    quot: '"',
+    apos: "'",
+    nbsp: ' ',
+    '#39': "'",
+    '#x27': "'",
+    '#x2F': '/',
+    '#160': ' ',
   }
   return text
     .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
@@ -100,10 +160,11 @@ function decodeEntities(text: string): string {
 /** 展开 IPv6 压缩地址为 8 段补齐 hex；非法输入返回 null（交由 axios 报 URL 错） */
 function normalizeIpv6(addr: string): string[] | null {
   const body = addr.split('%')[0] // 去掉 zone id（fe80::1%eth0）
+  if (!body) return null
   if (!body.includes(':')) return null
   let parts: string[]
   if (body.includes('::')) {
-    const [a, b] = body.split('::')
+    const [a = '', b = ''] = body.split('::')
     const left = a ? a.split(':') : []
     const right = b ? b.split(':') : []
     if (left.length + right.length >= 8) return null
@@ -112,8 +173,8 @@ function normalizeIpv6(addr: string): string[] | null {
     parts = body.split(':')
     if (parts.length !== 8) return null
   }
-  if (!parts.every(g => /^[0-9a-fA-F]{1,4}$/.test(g))) return null
-  return parts.map(g => g.padStart(4, '0'))
+  if (!parts.every((g) => /^[0-9a-fA-F]{1,4}$/.test(g))) return null
+  return parts.map((g) => g.padStart(4, '0'))
 }
 
 /**
@@ -131,8 +192,8 @@ export function isBlockedFetchHost(hostname: string): boolean {
   // IPv4 字面量
   const v4 = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/)
   if (v4) {
-    const o = [Number(v4[1]), Number(v4[2]), Number(v4[3]), Number(v4[4])]
-    if (o.some(n => n > 255)) return false // 非法字面量：放行给 axios 报错
+    const o: [number, number, number, number] = [Number(v4[1]), Number(v4[2]), Number(v4[3]), Number(v4[4])]
+    if (o.some((n) => n > 255)) return false // 非法字面量：放行给 axios 报错
     const [a, b] = o
     if (a === 0) return true // 0.0.0.0/8 未指定
     if (a === 127) return true // 127.0.0.0/8 回环
@@ -146,9 +207,11 @@ export function isBlockedFetchHost(hostname: string): boolean {
   if (h.includes(':')) {
     const g = normalizeIpv6(h)
     if (!g) return false // 非法 IPv6：放行给 axios 报错
-    if (g.every(x => x === '0000')) return true // :: 未指定
-    if (g.slice(0, 7).every(x => x === '0000') && g[7] === '0001') return true // ::1 回环
-    const first = parseInt(g[0], 16)
+    if (g.every((x) => x === '0000')) return true // :: 未指定
+    if (g.slice(0, 7).every((x) => x === '0000') && g[7] === '0001') return true // ::1 回环
+    const firstGroup = g[0]
+    if (firstGroup === undefined) return false
+    const first = parseInt(firstGroup, 16)
     if (first >= 0xfe80 && first <= 0xfebf) return true // fe80::/10 链路本地
     return false
   }

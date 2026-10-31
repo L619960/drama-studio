@@ -101,7 +101,7 @@ export class WorkflowLibrary {
             format: 'ui',
             nodeCount: 0,
             hasImageInput: false,
-            error: '无法解析 JSON'
+            error: '无法解析 JSON',
           })
         }
       }
@@ -109,25 +109,33 @@ export class WorkflowLibrary {
   }
 
   private describe(relPath: string, parsed: unknown): LibraryWorkflowItem {
-    const isApi = parsed !== null && typeof parsed === 'object'
-      && !Array.isArray(parsed)
-      && Object.keys(parsed as Record<string, unknown>).every(k => /^\d+$/.test(k))
-      && !('nodes' in (parsed as Record<string, unknown>))
+    const isApi =
+      parsed !== null &&
+      typeof parsed === 'object' &&
+      !Array.isArray(parsed) &&
+      Object.keys(parsed as Record<string, unknown>).every((k) => /^\d+$/.test(k)) &&
+      !('nodes' in (parsed as Record<string, unknown>))
     const nodes = (parsed as UiWorkflow)?.nodes
-    const nodeCount = Array.isArray(nodes) ? nodes.length : isApi ? Object.keys(parsed as Record<string, unknown>).length : 0
-    const hasImageInput = Array.isArray(nodes)
-      ? nodes.some(n => IMAGE_INPUT_NODE_RE.test(n.type))
+    const nodeCount = Array.isArray(nodes)
+      ? nodes.length
       : isApi
-        ? Object.values(parsed as Record<string, { class_type?: string }>).some(n => IMAGE_INPUT_NODE_RE.test(n?.class_type ?? ''))
+        ? Object.keys(parsed as Record<string, unknown>).length
+        : 0
+    const hasImageInput = Array.isArray(nodes)
+      ? nodes.some((n) => IMAGE_INPUT_NODE_RE.test(n.type))
+      : isApi
+        ? Object.values(parsed as Record<string, { class_type?: string }>).some((n) =>
+            IMAGE_INPUT_NODE_RE.test(n?.class_type ?? ''),
+          )
         : false
     const parts = relPath.split('/')
     return {
       relPath,
-      category: parts.length > 1 ? parts[0] : '未分类',
-      fileName: parts[parts.length - 1].replace(/\.json$/i, ''),
+      category: parts.length > 1 ? (parts[0] ?? '未分类') : '未分类',
+      fileName: (parts[parts.length - 1] ?? relPath).replace(/\.json$/i, ''),
       format: isApi ? 'api' : 'ui',
       nodeCount,
-      hasImageInput
+      hasImageInput,
     }
   }
 
@@ -155,11 +163,11 @@ export class WorkflowLibrary {
 
     // 判断已是 API 格式：直接返回
     const keys = Object.keys(ui)
-    if (keys.length && keys.every(k => /^\d+$/.test(k)) && !('nodes' in ui)) {
+    if (keys.length && keys.every((k) => /^\d+$/.test(k)) && !('nodes' in ui)) {
       return {
         graph: ui as unknown as Record<string, unknown>,
         nodeCount: keys.length,
-        unknownNodeTypes: []
+        unknownNodeTypes: [],
       }
     }
 
@@ -170,7 +178,7 @@ export class WorkflowLibrary {
     for (const node of nodes) {
       const apiNode: { class_type: string; inputs: Record<string, unknown> } = {
         class_type: node.type,
-        inputs: {}
+        inputs: {},
       }
       graph[String(node.id)] = apiNode
       if (!objectInfo[node.type]) unknownNodeTypes.push(node.type)
@@ -180,7 +188,7 @@ export class WorkflowLibrary {
       const connected = new Set<string>()
       for (const input of node.inputs ?? []) {
         if (input.link == null) continue
-        const link = links.find(l => l[0] === input.link)
+        const link = links.find((l) => l[0] === input.link)
         if (!link) continue
         target.inputs[input.name] = [String(link[1]), link[2]]
         connected.add(input.name)
@@ -191,7 +199,7 @@ export class WorkflowLibrary {
       const values = node.widgets_values ?? []
       let vi = 0
       for (const key of requiredKeys) {
-        if (connected.has(key) || (key in target.inputs)) continue
+        if (connected.has(key) || key in target.inputs) continue
         if (vi >= values.length) break
         target.inputs[key] = values[vi]
         vi++

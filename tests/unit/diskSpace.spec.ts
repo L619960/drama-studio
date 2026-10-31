@@ -46,7 +46,7 @@ describe('主进程磁盘统计：数据目录不存在时的回退（P2-01）',
       .mockRejectedValueOnce(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }))
       .mockResolvedValueOnce(st as never)
     const r = await getDiskSpace(child)
-    expect(vi.mocked(statfs).mock.calls[1][0]).toBe(dirname(child))
+    expect(vi.mocked(statfs).mock.calls[1]?.[0]).toBe(dirname(child))
     expect(r.freeBytes).toBe(100 * 4096)
   })
 

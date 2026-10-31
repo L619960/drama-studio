@@ -35,19 +35,23 @@ const state = vi.hoisted(() => ({
   saveBehaviors: [] as Array<(cmd: { emit: (e: string, a?: unknown) => void }, p: string) => void>,
   ffprobeImpl: null as ((file: string) => { err?: Error; data?: unknown }) | null,
   fsCalls: [] as Array<{ fn: string; args: unknown[] }>,
-  cpm: { execFile: vi.fn(), spawn: vi.fn(), killAll: vi.fn(), getActiveHandles: vi.fn() }
+  cpm: { execFile: vi.fn(), spawn: vi.fn(), killAll: vi.fn(), getActiveHandles: vi.fn() },
 }))
 
 vi.mock('ffmpeg-static', () => ({
-  get default() { return state.ffmpegStatic }
+  get default() {
+    return state.ffmpegStatic
+  },
 }))
 
 vi.mock('ffprobe-static', () => ({
-  get default() { return state.ffprobeStatic }
+  get default() {
+    return state.ffprobeStatic
+  },
 }))
 
 vi.mock('../../src/main/core/childProcessManager', () => ({
-  childProcessManager: state.cpm
+  childProcessManager: state.cpm,
 }))
 
 vi.mock('fluent-ffmpeg', async () => {
@@ -62,49 +66,105 @@ vi.mock('fluent-ffmpeg', async () => {
     seekVal: number | null = null
     savedPaths: string[] = []
     handlers: Record<string, Array<(arg?: unknown) => void>> = {}
-    input(p: string) { this.inputs.push(p); return this }
-    inputOptions(o: string | string[]) { this.inputOpts.push(...(Array.isArray(o) ? o : [o])); return this }
-    outputOptions(o: string | string[]) { this.outputOpts.push(...(Array.isArray(o) ? o : [o])); return this }
-    complexFilter(a: string[]) { this.complexFilters.push(...a); return this }
-    audioFilter(f: string) { this.audioFilterVal = f; return this }
-    frames(n: number) { this.framesVal = n; return this }
-    seekInput(t: number) { this.seekVal = t; return this }
-    on(e: string, cb: (arg?: unknown) => void) { (this.handlers[e] ||= []).push(cb); return this }
-    emit(e: string, arg?: unknown) { (this.handlers[e] || []).forEach(h => h(arg)) }
+    input(p: string) {
+      this.inputs.push(p)
+      return this
+    }
+    inputOptions(o: string | string[]) {
+      this.inputOpts.push(...(Array.isArray(o) ? o : [o]))
+      return this
+    }
+    outputOptions(o: string | string[]) {
+      this.outputOpts.push(...(Array.isArray(o) ? o : [o]))
+      return this
+    }
+    complexFilter(a: string[]) {
+      this.complexFilters.push(...a)
+      return this
+    }
+    audioFilter(f: string) {
+      this.audioFilterVal = f
+      return this
+    }
+    frames(n: number) {
+      this.framesVal = n
+      return this
+    }
+    seekInput(t: number) {
+      this.seekVal = t
+      return this
+    }
+    on(e: string, cb: (arg?: unknown) => void) {
+      ;(this.handlers[e] ||= []).push(cb)
+      return this
+    }
+    emit(e: string, arg?: unknown) {
+      ;(this.handlers[e] || []).forEach((h) => h(arg))
+    }
     save(p: string) {
       this.savedPaths.push(p)
       const behavior = state.saveBehaviors.shift()
-      if (behavior) { behavior(this as unknown as never, p); return }
+      if (behavior) {
+        behavior(this as unknown as never, p)
+        return
+      }
       realFs.writeFileSync(p, 'fake-output')
       this.emit('end')
     }
   }
-  const fake = Object.assign((seed?: string) => {
-    const c = new FakeCommand()
-    if (seed !== undefined) c.inputs.push(seed)
-    state.commands.push(c)
-    return c
-  }, {
-    setFfmpegPath: (p: string) => { state.setFfmpegCalls.push(p) },
-    setFfprobePath: (p: string) => { state.setFfprobeCalls.push(p) },
-    ffprobe: (file: string, cb: (err: unknown, data: unknown) => void) => {
-      const r = state.ffprobeImpl
-        ? state.ffprobeImpl(file)
-        : { data: { format: { duration: '5' }, streams: [{ codec_type: 'video', width: 480, height: 864 }, { codec_type: 'audio' }] } }
-      setTimeout(() => (r.err ? cb(r.err, undefined) : cb(null, r.data)), 0)
-    }
-  })
+  const fake = Object.assign(
+    (seed?: string) => {
+      const c = new FakeCommand()
+      if (seed !== undefined) c.inputs.push(seed)
+      state.commands.push(c)
+      return c
+    },
+    {
+      setFfmpegPath: (p: string) => {
+        state.setFfmpegCalls.push(p)
+      },
+      setFfprobePath: (p: string) => {
+        state.setFfprobeCalls.push(p)
+      },
+      ffprobe: (file: string, cb: (err: unknown, data: unknown) => void) => {
+        const r = state.ffprobeImpl
+          ? state.ffprobeImpl(file)
+          : {
+              data: {
+                format: { duration: '5' },
+                streams: [{ codec_type: 'video', width: 480, height: 864 }, { codec_type: 'audio' }],
+              },
+            }
+        setTimeout(() => (r.err ? cb(r.err, undefined) : cb(null, r.data)), 0)
+      },
+    },
+  )
   return { default: fake }
 })
 
 vi.mock('fs/promises', async (importOriginal) => {
   const actual = (await importOriginal()) as Record<string, (...a: unknown[]) => unknown>
-  const wrap = (name: string) => (...args: unknown[]) => {
-    state.fsCalls.push({ fn: name, args })
-    return actual[name](...args)
-  }
+  const wrap =
+    (name: string) =>
+    (...args: unknown[]) => {
+      state.fsCalls.push({ fn: name, args })
+      const fn = actual[name]
+      if (!fn) throw new Error(`测试夹具缺少 fs 方法：${name}`)
+      return fn(...args)
+    }
   const out: Record<string, unknown> = { ...actual }
-  for (const n of ['mkdir', 'mkdtemp', 'writeFile', 'readFile', 'rename', 'unlink', 'rm', 'readdir', 'access', 'stat']) {
+  for (const n of [
+    'mkdir',
+    'mkdtemp',
+    'writeFile',
+    'readFile',
+    'rename',
+    'unlink',
+    'rm',
+    'readdir',
+    'access',
+    'stat',
+  ]) {
     out[n] = wrap(n)
   }
   out.default = out
@@ -128,15 +188,16 @@ function cmd(i = state.commands.length - 1): FakeCmd {
   return state.commands[i] as unknown as FakeCmd
 }
 function execCalls(label?: string) {
-  return state.cpm.execFile.mock.calls.filter(c => !label || (c[2] as { label?: string })?.label === label)
+  return state.cpm.execFile.mock.calls.filter((c) => !label || (c[2] as { label?: string })?.label === label)
 }
 function lastExecArgs(label?: string): { bin: string; args: string[]; opts: Record<string, unknown> } {
   const calls = execCalls(label)
   const c = calls[calls.length - 1]
+  if (!c) throw new Error('测试夹具缺少最近的 execFile 调用')
   return { bin: c[0] as string, args: c[1] as string[], opts: c[2] as Record<string, unknown> }
 }
 function writeFileContent(match: (p: unknown) => boolean): string | undefined {
-  const call = [...state.fsCalls].reverse().find(c => c.fn === 'writeFile' && match(c.args[0]))
+  const call = [...state.fsCalls].reverse().find((c) => c.fn === 'writeFile' && match(c.args[0]))
   return call ? String(call.args[1]) : undefined
 }
 
@@ -148,7 +209,9 @@ async function readyService(): Promise<FFmpegService> {
 
 beforeEach(() => {
   state.ffmpegStatic = BUNDLED_FFMPEG_ASAR
-  state.ffprobeStatic = { path: BUNDLED_FFMPEG_ASAR.replace('ffmpeg-static/ffmpeg.exe', 'ffprobe-static/bin/win32/ffprobe.exe') }
+  state.ffprobeStatic = {
+    path: BUNDLED_FFMPEG_ASAR.replace('ffmpeg-static/ffmpeg.exe', 'ffprobe-static/bin/win32/ffprobe.exe'),
+  }
   state.setFfmpegCalls.length = 0
   state.setFfprobeCalls.length = 0
   state.commands.length = 0
@@ -160,7 +223,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  tmpDirs.splice(0).forEach(d => nodeFs.rmSync(d, { recursive: true, force: true }))
+  tmpDirs.splice(0).forEach((d) => nodeFs.rmSync(d, { recursive: true, force: true }))
   vi.unstubAllEnvs()
 })
 
@@ -173,8 +236,8 @@ describe('detectBinaries 与 ready', () => {
     // ffprobeStatic.path 含 app.asar（非 unpacked）→ 同样被映射
     expect(state.setFfprobeCalls).toEqual([BUNDLED_FFPROBE])
     const canRun = execCalls('ffmpeg-canrun')
-    expect(canRun[0][1]).toEqual(['-version'])
-    expect(canRun[0][2]).toMatchObject({ timeout: 10000, windowsHide: true })
+    expect(canRun[0]?.[1]).toEqual(['-version'])
+    expect(canRun[0]?.[2]).toMatchObject({ timeout: 10000, windowsHide: true })
   })
 
   it('二进制路径为非字符串对象/空串 → unpackedPath 返回 null，跳过内置检测', async () => {
@@ -238,7 +301,7 @@ describe('detectBinaries 与 ready', () => {
     const svc = new FFmpegService()
     await svc.ready()
     expect(state.setFfmpegCalls).toEqual([])
-    const run = await svc.trimClip('in.mp4', 0, 1, nodePath.join(mkTmp(), 'o.mp4')).catch(e => (e as Error).message)
+    const run = await svc.trimClip('in.mp4', 0, 1, nodePath.join(mkTmp(), 'o.mp4')).catch((e) => (e as Error).message)
     // trimClip 走 run()：save 默认行为写文件成功
     expect(run).toBeDefined()
   })
@@ -246,7 +309,9 @@ describe('detectBinaries 与 ready', () => {
   it('全部探测失败 → ready() 抛「未找到 ffmpeg」', async () => {
     state.ffmpegStatic = null
     state.ffprobeStatic = null
-    state.cpm.execFile.mockImplementation(async () => { throw new Error('ENOENT') })
+    state.cpm.execFile.mockImplementation(async () => {
+      throw new Error('ENOENT')
+    })
     const svc = new FFmpegService()
     await expect(svc.ready()).rejects.toThrow(/未找到 ffmpeg/)
   })
@@ -272,13 +337,18 @@ describe('cropPanoramaViews', () => {
     expect(outs[0]).toBe(nodePath.join(outDir, 'sc_01_view_0.png'))
     const calls = execCalls('ffmpeg-run')
     expect(calls).toHaveLength(4)
-    expect(calls[0][1]).toEqual([
-      '-y', '-i', 'E:/pano.png', '-vf',
+    expect(calls[0]?.[1]).toEqual([
+      '-y',
+      '-i',
+      'E:/pano.png',
+      '-vf',
       'crop=iw/4:iw/4*960/540:iw*0/4:0,scale=540:960:flags=lanczos',
-      outs[0]
+      outs[0],
     ])
-    expect(calls[3][1][4]).toContain('iw*3/4')
-    expect((calls[0][2] as { timeout: number }).timeout).toBe(600_000)
+    expect(calls[3]?.[1]?.[4]).toContain('iw*3/4')
+    const firstCall = calls[0]
+    if (!firstCall) throw new Error('测试夹具缺少 ffmpeg-run 调用')
+    expect((firstCall[2] as { timeout: number }).timeout).toBe(600_000)
   })
 
   it('参数钳制：count 0→4 / 9→6 / 1→2，outW 10→64，前缀非法字符剔除', async () => {
@@ -300,7 +370,7 @@ describe('cropPanoramaViews', () => {
 // ================================================================ extractFrames
 describe('extractFrames', () => {
   function seedFrames(dir: string, names: string[]) {
-    names.forEach(n => nodeFs.writeFileSync(nodePath.join(dir, n), 'x'))
+    names.forEach((n) => nodeFs.writeFileSync(nodePath.join(dir, n), 'x'))
   }
 
   it('探测到时长 30s：fps 间隔=10.000，返回排序裁切的 frame 路径', async () => {
@@ -314,21 +384,36 @@ describe('extractFrames', () => {
       return { stdout: '', stderr: '' }
     })
     const files = await svc.extractFrames('E:/v.mp4', outDir, 3)
-    expect(files).toEqual([1, 2, 3].map(i => nodePath.join(outDir, `frame_0${i}.jpg`)))
+    expect(files).toEqual([1, 2, 3].map((i) => nodePath.join(outDir, `frame_0${i}.jpg`)))
     const run = lastExecArgs('ffmpeg-run')
     expect(run.args).toEqual([
-      '-hide_banner', '-loglevel', 'error', '-i', 'E:/v.mp4',
-      '-vf', 'fps=1/10.000,scale=-2:480', '-frames:v', '3', '-q:v', '4', '-y',
-      nodePath.join(outDir, 'frame_%02d.jpg')
+      '-hide_banner',
+      '-loglevel',
+      'error',
+      '-i',
+      'E:/v.mp4',
+      '-vf',
+      'fps=1/10.000,scale=-2:480',
+      '-frames:v',
+      '3',
+      '-q:v',
+      '4',
+      '-y',
+      nodePath.join(outDir, 'frame_%02d.jpg'),
     ])
-    expect(state.fsCalls.some(c => c.fn === 'mkdir' && c.args[0] === outDir && (c.args[1] as { recursive: boolean }).recursive)).toBe(true)
+    expect(
+      state.fsCalls.some(
+        (c) => c.fn === 'mkdir' && c.args[0] === outDir && (c.args[1] as { recursive: boolean }).recursive,
+      ),
+    ).toBe(true)
   })
 
   it('stdout 无 Duration → 间隔钳到下限 0.500', async () => {
     const svc = await readyService()
     const outDir = mkTmp('frames')
     state.cpm.execFile.mockImplementation(async (_b: string, _a: string[], opts: { label?: string }) =>
-      opts?.label === 'ffmpeg-probe' ? { stdout: 'no duration here', stderr: '' } : { stdout: '', stderr: '' })
+      opts?.label === 'ffmpeg-probe' ? { stdout: 'no duration here', stderr: '' } : { stdout: '', stderr: '' },
+    )
     await svc.extractFrames('v.mp4', outDir, 4)
     expect(lastExecArgs('ffmpeg-run').args[6]).toBe('fps=1/0.500,scale=-2:480')
   })
@@ -348,7 +433,10 @@ describe('extractFrames', () => {
   it('count 钳制 1→2、100→12，结果超出 n 时裁切', async () => {
     const svc = await readyService()
     const outDir = mkTmp('frames')
-    seedFrames(outDir, Array.from({ length: 15 }, (_, i) => `frame_${String(i + 1).padStart(2, '0')}.jpg`))
+    seedFrames(
+      outDir,
+      Array.from({ length: 15 }, (_, i) => `frame_${String(i + 1).padStart(2, '0')}.jpg`),
+    )
     const files = await svc.extractFrames('v.mp4', outDir, 100)
     expect(files).toHaveLength(12)
     expect(lastExecArgs('ffmpeg-run').args).toContain('12')
@@ -366,8 +454,19 @@ describe('extractFrameAt', () => {
     await svc.extractFrameAt('E:/v.mp4', nodePath.join(dir, 'sub', 'f.jpg'), 5)
     const run = lastExecArgs('ffmpeg-run')
     expect(run.args).toEqual([
-      '-hide_banner', '-loglevel', 'error', '-ss', '5.000', '-i', 'E:/v.mp4',
-      '-frames:v', '1', '-q:v', '3', '-y', nodePath.join(dir, 'sub', 'f.jpg')
+      '-hide_banner',
+      '-loglevel',
+      'error',
+      '-ss',
+      '5.000',
+      '-i',
+      'E:/v.mp4',
+      '-frames:v',
+      '1',
+      '-q:v',
+      '3',
+      '-y',
+      nodePath.join(dir, 'sub', 'f.jpg'),
     ])
   })
 
@@ -391,7 +490,7 @@ describe('tileImages', () => {
     await svc.tileImages(imgs, 'E:/grid.png', { cols: 2, cellW: 512, cellH: 512 })
     const run = lastExecArgs('ffmpeg-run')
     expect(run.args[0]).toBe('-y')
-    expect(run.args.filter(x => x === '-i')).toHaveLength(4)
+    expect(run.args.filter((x) => x === '-i')).toHaveLength(4)
     const fc = run.args[run.args.indexOf('-filter_complex') + 1]
     expect(fc).toContain('[0:v]scale=512:512:flags=lanczos[a0]')
     expect(fc).toContain('[a0][a1][a2][a3]xstack=inputs=4:layout=0_0|512_0|0_512|512_512[out]')
@@ -437,7 +536,7 @@ describe('getDuration', () => {
     })
     const svc = new FFmpegService()
     await svc.ready()
-    state.saveBehaviors.push(c => c.emit('end'))
+    state.saveBehaviors.push((c) => c.emit('end'))
     const nullTarget = process.platform === 'win32' ? 'NUL' : '/dev/null'
     await expect(svc.getDuration('v.mp4')).resolves.toBe(0)
     const c = cmd()
@@ -454,7 +553,7 @@ describe('getDuration', () => {
     })
     const svc = new FFmpegService()
     await svc.ready()
-    state.saveBehaviors.push(c => c.emit('error', new Error('ffmpeg died: Duration: 00:02:30.25, bitrate: 99 kb/s')))
+    state.saveBehaviors.push((c) => c.emit('error', new Error('ffmpeg died: Duration: 00:02:30.25, bitrate: 99 kb/s')))
     await expect(svc.getDuration('v.mp4')).resolves.toBe(150.25)
   })
 
@@ -466,7 +565,7 @@ describe('getDuration', () => {
     })
     const svc = new FFmpegService()
     await svc.ready()
-    state.saveBehaviors.push(c => c.emit('error', new Error('unknown failure')))
+    state.saveBehaviors.push((c) => c.emit('error', new Error('unknown failure')))
     await expect(svc.getDuration('v.mp4')).rejects.toThrow(/unknown failure/)
   })
 })
@@ -478,10 +577,10 @@ describe('prepareSegment（有音频）', () => {
     const dir = mkTmp()
     const out = nodePath.join(dir, 'seg.mp4')
     state.ffprobeImpl = (f) => ({
-      data: { format: { duration: f === 'v.mp4' ? '4' : '6' }, streams: [] }
+      data: { format: { duration: f === 'v.mp4' ? '4' : '6' }, streams: [] },
     })
     const progress: number[] = []
-    state.saveBehaviors.push(c => {
+    state.saveBehaviors.push((c) => {
       c.emit('progress', { percent: 150 })
       c.emit('progress', { percent: -3 })
       c.emit('progress', { percent: 42.7 })
@@ -489,14 +588,14 @@ describe('prepareSegment（有音频）', () => {
       nodeFs.writeFileSync(out + '.part.mp4', 'fake')
       c.emit('end')
     })
-    const res = await svc.prepareSegment('v.mp4', 'a.mp3', out, p => progress.push(p), 1)
+    const res = await svc.prepareSegment('v.mp4', 'a.mp3', out, (p) => progress.push(p), 1)
     expect(res).toBe(out)
     expect(progress).toEqual([100, 0, 43, 0])
     const c = cmd()
     expect(c.inputs).toEqual(['v.mp4', 'a.mp3'])
     expect(c.complexFilters).toEqual([
       '[0:v]fps=25,tpad=stop_mode=clone:stop_duration=3.300[v]',
-      '[1:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,adelay=1000:all=1,apad[a]'
+      '[1:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,adelay=1000:all=1,apad[a]',
     ])
     const opts = c.outputOpts.join(' ')
     expect(opts).toContain('-map [v]')
@@ -523,12 +622,12 @@ describe('prepareSegment（有音频）', () => {
     const svc = await readyService()
     const out = nodePath.join(mkTmp(), 'silent.mp4')
     const seen: number[] = []
-    state.saveBehaviors.push(c => {
+    state.saveBehaviors.push((c) => {
       c.emit('progress', { percent: 88 })
       nodeFs.writeFileSync(out + '.part.mp4', 'f')
       c.emit('end')
     })
-    const res = await svc.prepareSegment('v.mp4', undefined, out, p => seen.push(p))
+    const res = await svc.prepareSegment('v.mp4', undefined, out, (p) => seen.push(p))
     expect(res).toBe(out)
     expect(seen).toEqual([88])
     const c = cmd()
@@ -549,30 +648,30 @@ describe('prepareSegment（有音频）', () => {
   it('error 事件：错误消息附 stderr 末尾日志（仅保留最后 200 行），临时文件被 unlink', async () => {
     const svc = await readyService()
     const out = nodePath.join(mkTmp(), 'err.mp4')
-    state.saveBehaviors.push(c => {
+    state.saveBehaviors.push((c) => {
       for (let i = 0; i < 205; i++) c.emit('stderr', `line-${i}`)
       c.emit('error', new Error('encode died'))
     })
-    const msg = await svc.prepareSegment('v.mp4', undefined, out).catch(e => (e as Error).message)
+    const msg = await svc.prepareSegment('v.mp4', undefined, out).catch((e) => (e as Error).message)
     expect(msg).toContain('encode died')
     expect(msg).toContain('--- ffmpeg 日志 ---')
     expect(msg).toContain('line-204')
     expect(msg).not.toContain('line-0')
-    expect(state.fsCalls.some(c => c.fn === 'unlink' && String(c.args[0]).endsWith('.part.mp4'))).toBe(true)
+    expect(state.fsCalls.some((c) => c.fn === 'unlink' && String(c.args[0]).endsWith('.part.mp4'))).toBe(true)
   })
 
   it('error 事件无 stderr 输出 → 消息不含日志段', async () => {
     const svc = await readyService()
     const out = nodePath.join(mkTmp(), 'err2.mp4')
-    state.saveBehaviors.push(c => c.emit('error', new Error('plain fail')))
-    const msg = await svc.prepareSegment('v.mp4', undefined, out).catch(e => (e as Error).message)
+    state.saveBehaviors.push((c) => c.emit('error', new Error('plain fail')))
+    const msg = await svc.prepareSegment('v.mp4', undefined, out).catch((e) => (e as Error).message)
     expect(msg).toBe('plain fail')
   })
 
   it('end 后 rename 失败 → 抛「写入最终文件失败」', async () => {
     const svc = await readyService()
     const out = nodePath.join(mkTmp(), 'renamefail.mp4')
-    state.saveBehaviors.push(c => c.emit('end')) // 不写 .part.mp4
+    state.saveBehaviors.push((c) => c.emit('end')) // 不写 .part.mp4
     await expect(svc.prepareSegment('v.mp4', undefined, out)).rejects.toThrow(/写入最终文件失败/)
   })
 
@@ -622,12 +721,12 @@ describe('normalizeSegment / padAudioLead / convertForLipSync', () => {
     const svc = await readyService()
     const out = nodePath.join(mkTmp(), 'n2.mp4')
     const seen: number[] = []
-    state.saveBehaviors.push(c => {
+    state.saveBehaviors.push((c) => {
       c.emit('progress', { percent: 55.4 })
       nodeFs.writeFileSync(out + '.part.mp4', 'f')
       c.emit('end')
     })
-    await svc.normalizeSegment('v.mp4', out, p => seen.push(p))
+    await svc.normalizeSegment('v.mp4', out, (p) => seen.push(p))
     expect(seen).toEqual([55])
   })
 })
@@ -643,9 +742,14 @@ describe('fitCover', () => {
     expect(res).toBe(dest)
     const run = lastExecArgs('ffmpeg-run')
     expect(run.args).toEqual([
-      '-y', '-i', 'src.png', '-vf',
+      '-y',
+      '-i',
+      'src.png',
+      '-vf',
       'scale=768:1024:force_original_aspect_ratio=increase,crop=768:1024',
-      '-frames:v', '1', dest + '.part.png'
+      '-frames:v',
+      '1',
+      dest + '.part.png',
     ])
     expect(nodeFs.existsSync(dest)).toBe(true)
   })
@@ -660,24 +764,22 @@ describe('concatSegments', () => {
     const segs = ["C:\\vids\\it's.mp4", 'D:\\a b\\x.mp4']
     const res = await svc.concatSegments(segs, out)
     expect(res).toBe(out)
-    const listWrite = state.fsCalls.find(c => c.fn === 'writeFile' && String(c.args[0]).includes('concat_'))
+    const listWrite = state.fsCalls.find((c) => c.fn === 'writeFile' && String(c.args[0]).includes('concat_'))
     expect(listWrite).toBeDefined()
-    expect(String(listWrite!.args[1])).toBe(
-      "file 'C:/vids/it'\\''s.mp4'\nfile 'D:/a b/x.mp4'"
-    )
+    expect(String(listWrite!.args[1])).toBe("file 'C:/vids/it'\\''s.mp4'\nfile 'D:/a b/x.mp4'")
     const c = cmd()
     expect(c.inputOpts).toEqual(['-f concat', '-safe 0'])
     expect(c.outputOpts).toEqual(['-c copy', '-movflags +faststart', '-fflags +genpts'])
     expect(String(c.inputs[0])).toContain('concat_')
-    expect(state.fsCalls.some(x => x.fn === 'unlink' && String(x.args[0]).includes('concat_'))).toBe(true)
-    expect(state.fsCalls.some(x => x.fn === 'rm' && (x.args[1] as { recursive: boolean }).recursive)).toBe(true)
+    expect(state.fsCalls.some((x) => x.fn === 'unlink' && String(x.args[0]).includes('concat_'))).toBe(true)
+    expect(state.fsCalls.some((x) => x.fn === 'rm' && (x.args[1] as { recursive: boolean }).recursive)).toBe(true)
   })
 
   it('流拷贝失败 → concat filter 重编码回退', async () => {
     const svc = await readyService()
     const out = nodePath.join(mkTmp(), 'final2.mp4')
     state.ffprobeImpl = () => ({ err: new Error('skip unify') })
-    state.saveBehaviors.push(c => c.emit('error', new Error('codec params differ')))
+    state.saveBehaviors.push((c) => c.emit('error', new Error('codec params differ')))
     const res = await svc.concatSegments(['s0.mp4', 's1.mp4'], out)
     expect(res).toBe(out)
     const fallback = cmd()
@@ -691,7 +793,9 @@ describe('concatSegments', () => {
     const svc = await readyService()
     const out = nodePath.join(mkTmp(), 'final3.mp4')
     const sizeMap: Record<string, [number, number]> = {
-      'a.mp4': [480, 864], 'b.mp4': [480, 864], 'c.mp4': [720, 1280]
+      'a.mp4': [480, 864],
+      'b.mp4': [480, 864],
+      'c.mp4': [720, 1280],
     }
     state.ffprobeImpl = (f) => {
       const s = sizeMap[f]
@@ -704,7 +808,7 @@ describe('concatSegments', () => {
     expect(run.args[run.args.length - 1]).toContain(nodePath.join('unify_2.mp4'))
     expect(run.args[4]).toContain('scale=480:864:force_original_aspect_ratio=increase,crop=480:864,setsar=1')
     expect(run.args).toContain('-crf')
-    const listWrite = state.fsCalls.find(c => c.fn === 'writeFile' && String(c.args[0]).includes('concat_'))
+    const listWrite = state.fsCalls.find((c) => c.fn === 'writeFile' && String(c.args[0]).includes('concat_'))
     expect(String(listWrite!.args[1])).toContain('unify_2.mp4')
     expect(String(listWrite!.args[1])).toContain("'a.mp4'")
   })
@@ -715,8 +819,8 @@ describe('concatSegments', () => {
     state.ffprobeImpl = (f) => ({
       data: {
         format: {},
-        streams: [{ codec_type: 'video', width: f === 'tall.mp4' ? 480 : 360, height: f === 'tall.mp4' ? 864 : 640 }]
-      }
+        streams: [{ codec_type: 'video', width: f === 'tall.mp4' ? 480 : 360, height: f === 'tall.mp4' ? 864 : 640 }],
+      },
     })
     await svc.concatSegments(['wide.mp4', 'tall.mp4'], out)
     expect(lastExecArgs('ffmpeg-run').args[4]).toContain('scale=480:864')
@@ -734,27 +838,21 @@ describe('smartConcatSegments', () => {
     const svc = await readyService()
     const out = nodePath.join(mkTmp(), 'sc1.mp4')
     state.ffprobeImpl = () => ({ data: { format: { duration: '5' }, streams: [] } })
-    const res = await svc.smartConcatSegments(
-      [{ path: 'C:/shots/s1.mp4' }, { path: 'C:/shots/s2.mp4' }],
-      out
-    )
+    const res = await svc.smartConcatSegments([{ path: 'C:/shots/s1.mp4' }, { path: 'C:/shots/s2.mp4' }], out)
     expect(res).toBe(out)
     expect(state.commands).toHaveLength(4) // 2×trimClip + 2×concatSegments(group→final)
     const trim0 = cmd(0)
     expect(trim0.inputOpts).toEqual(['-ss 0.20'])
     expect(trim0.outputOpts).toContain('-t 4.50')
     expect(trim0.inputs[0]).toBe('C:/shots/s1.mp4')
-    expect(state.fsCalls.some(c => c.fn === 'rm' && (c.args[1] as { force?: boolean })?.force)).toBe(true)
+    expect(state.fsCalls.some((c) => c.fn === 'rm' && (c.args[1] as { force?: boolean })?.force)).toBe(true)
   })
 
   it('skipped 镜头不裁剪', async () => {
     const svc = await readyService()
     const out = nodePath.join(mkTmp(), 'sc2.mp4')
     state.ffprobeImpl = () => ({ data: { format: { duration: '5' }, streams: [] } })
-    await svc.smartConcatSegments(
-      [{ path: 'C:/a.mp4', skipped: true }, { path: 'C:/b.mp4' }],
-      out
-    )
+    await svc.smartConcatSegments([{ path: 'C:/a.mp4', skipped: true }, { path: 'C:/b.mp4' }], out)
     expect(state.commands).toHaveLength(2) // 1×trimClip + 1×concat(单块直通)
     expect(cmd(0).inputs[0]).toBe('C:/b.mp4')
   })
@@ -816,7 +914,8 @@ describe('smartConcatSegments', () => {
     state.cpm.execFile.mockImplementation(async (_b: string, _a: string[], opts: { label?: string }) =>
       opts?.label === 'ffmpeg-silencedetect'
         ? { stdout: 'silence_end: 2.8\nsilence_start: 3.05', stderr: '' }
-        : { stdout: '', stderr: '' })
+        : { stdout: '', stderr: '' },
+    )
     await svc.smartConcatSegments([{ path: 'C:/d.mp4', hasDialogue: true }], out)
     expect(cmd(0).outputOpts).toContain('-t 6.00')
   })
@@ -846,10 +945,7 @@ describe('smartConcatSegments', () => {
     const out = nodePath.join(mkTmp(), 'sc11.mp4')
     state.ffprobeImpl = () => ({ data: { format: { duration: '5' }, streams: [] } })
     state.cpm.execFile.mockImplementation(async () => ({ stdout: '', stderr: '' }))
-    const res = await svc.smartConcatSegments(
-      [{ path: 'C:/a.mp4' }, { path: 'C:/b.mp4', transition: 'dissolve' }],
-      out
-    )
+    const res = await svc.smartConcatSegments([{ path: 'C:/a.mp4' }, { path: 'C:/b.mp4', transition: 'dissolve' }], out)
     expect(res).toBe(out)
     const x = lastExecArgs('ffmpeg-run')
     expect(x.opts).toMatchObject({ timeout: 600_000, label: 'ffmpeg-run' })
@@ -868,13 +964,13 @@ describe('smartConcatSegments', () => {
       [
         { path: 'C:/x.mp4', transition: 'hard' },
         { path: 'C:/y.mp4', transition: 'dissolve' },
-        { path: 'C:/z.mp4', transition: 'smash' }
+        { path: 'C:/z.mp4', transition: 'smash' },
       ],
-      out
+      out,
     )
     // 3 trimClip + 1 concat(y,z 成块，concat demuxer 单列表输入) + xfade runFfmpeg
     const concatCmd = cmd(3)
-    expect(concatCmd.complexFilters.some(f => f.includes('xfade'))).toBe(false)
+    expect(concatCmd.complexFilters.some((f) => f.includes('xfade'))).toBe(false)
     expect(concatCmd.inputOpts).toContain('-f concat')
     expect(concatCmd.inputs).toHaveLength(1)
     const x = lastExecArgs('ffmpeg-run')
@@ -889,8 +985,12 @@ describe('smartConcatSegments', () => {
     const out = nodePath.join(mkTmp(), 'sc13.mp4')
     state.ffprobeImpl = () => ({ data: { format: { duration: '5' }, streams: [] } })
     await svc.smartConcatSegments(
-      [{ path: 'C:/a.mp4' }, { path: 'C:/b.mp4', transition: 'dissolve' }, { path: 'C:/c.mp4', transition: 'dissolve' }],
-      out
+      [
+        { path: 'C:/a.mp4' },
+        { path: 'C:/b.mp4', transition: 'dissolve' },
+        { path: 'C:/c.mp4', transition: 'dissolve' },
+      ],
+      out,
     )
     expect(state.commands).toHaveLength(3) // 3 trimClip，各块单镜直通
     const args = lastExecArgs('ffmpeg-run').args
@@ -914,21 +1014,24 @@ describe('burnSubtitles', () => {
   it('正常烧录：SRT→ASS（分辨率缩放字号/边距、时间格式、标签清洗），滤镜路径转义', async () => {
     const svc = await readyService()
     const dir = mkTmp('sub')
-    const srt = makeSrt(dir, [
-      '1',
-      '00:00:01,500 --> 00:00:03,250',
-      '你好世界',
-      '',
-      '2',
-      '00:00:04,50 --> 00:00:06,00',
-      '<i>斜体</i> {test}',
-      '',
-      'bad block'
-    ].join('\n'))
+    const srt = makeSrt(
+      dir,
+      [
+        '1',
+        '00:00:01,500 --> 00:00:03,250',
+        '你好世界',
+        '',
+        '2',
+        '00:00:04,50 --> 00:00:06,00',
+        '<i>斜体</i> {test}',
+        '',
+        'bad block',
+      ].join('\n'),
+    )
     const out = nodePath.join(dir, 'burned.mp4')
     const res = await svc.burnSubtitles('v.mp4', srt, out, { fontSize: 16, marginV: 20 })
     expect(res).toBe(out)
-    const ass = writeFileContent(p => String(p).endsWith('.ass'))!
+    const ass = writeFileContent((p) => String(p).endsWith('.ass'))!
     expect(ass).toContain('PlayResX: 480')
     expect(ass).toContain('PlayResY: 864')
     expect(ass).toContain('WrapStyle: 0')
@@ -936,11 +1039,11 @@ describe('burnSubtitles', () => {
     expect(ass).toContain('Dialogue: 0,0:00:01.50,0:00:03.25,Default,,0,0,0,,你好世界')
     expect(ass).toContain('Dialogue: 0,0:00:04.50,0:00:06.00,Default,,0,0,0,,斜体 test')
     expect(ass).not.toContain('bad block')
-    const vf = cmd().outputOpts.find(o => o.startsWith('-vf subtitles='))!
+    const vf = cmd().outputOpts.find((o) => o.startsWith('-vf subtitles='))!
     expect(vf).toMatch(/^-vf subtitles='.*ds_sub_.*\.ass'$/)
     // 盘符冒号转义只存在于 Windows 路径；POSIX 下临时路径不含冒号
     if (process.platform === 'win32') expect(vf).toContain('\\:/')
-    expect(state.fsCalls.some(c => c.fn === 'unlink' && String(c.args[0]).endsWith('.ass'))).toBe(true)
+    expect(state.fsCalls.some((c) => c.fn === 'unlink' && String(c.args[0]).endsWith('.ass'))).toBe(true)
   })
 
   it('getVideoInfo 失败 → 竖屏默认 480x864；字号/边距按 288 基准放大并钳制', async () => {
@@ -949,7 +1052,7 @@ describe('burnSubtitles', () => {
     const srt = makeSrt(dir, '1\n00:00:00,000 --> 00:00:01,000\n短句\n')
     state.ffprobeImpl = () => ({ err: new Error('no info') })
     await svc.burnSubtitles('v.mp4', srt, nodePath.join(dir, 'o.mp4'), { fontSize: 100, marginV: 200 })
-    const ass = writeFileContent(p => String(p).endsWith('.ass'))!
+    const ass = writeFileContent((p) => String(p).endsWith('.ass'))!
     expect(ass).toContain('PlayResY: 864')
     expect(ass).toContain('Microsoft YaHei,96,')
     expect(ass).toContain('2,29,29,240,1')
@@ -963,7 +1066,7 @@ describe('burnSubtitles', () => {
     const srtBom = nodePath.join(dir, 'bom.srt')
     nodeFs.writeFileSync(srtBom, '\uFEFF' + nodeFs.readFileSync(srt, 'utf-8'), 'utf-8')
     await svc.burnSubtitles('v.mp4', srtBom, nodePath.join(dir, 'o.mp4'))
-    const ass = writeFileContent(p => String(p).endsWith('.ass'))!
+    const ass = writeFileContent((p) => String(p).endsWith('.ass'))!
     expect(ass).not.toContain('\uFEFF')
     expect(ass).toContain('{\\fs38}')
     expect(ass).toContain('啊\\N啊')
@@ -975,8 +1078,8 @@ describe('burnSubtitles', () => {
     const text = '字'.repeat(10) + '，' + 'x'.repeat(12)
     const srt = makeSrt(dir, `1\n00:00:00,000 --> 00:00:02,000\n${text}\n`)
     await svc.burnSubtitles('v.mp4', srt, nodePath.join(dir, 'o.mp4'))
-    const ass = writeFileContent(p => String(p).endsWith('.ass'))!
-    const dialogue = ass.split('\n').find(l => l.startsWith('Dialogue:'))!
+    const ass = writeFileContent((p) => String(p).endsWith('.ass'))!
+    const dialogue = ass.split('\n').find((l) => l.startsWith('Dialogue:'))!
     const body = dialogue.split(',').slice(9).join(',')
     expect(body.startsWith('字'.repeat(10) + '，')).toBe(true)
     expect(body).not.toMatch(/\\N，/)
@@ -986,9 +1089,9 @@ describe('burnSubtitles', () => {
     const svc = await readyService()
     const dir = mkTmp('sub')
     const srt = makeSrt(dir, '1\n00:00:00,000 --> 00:00:01,000\nx\n')
-    state.saveBehaviors.push(c => c.emit('error', new Error('sub burn failed')))
+    state.saveBehaviors.push((c) => c.emit('error', new Error('sub burn failed')))
     await expect(svc.burnSubtitles('v.mp4', srt, nodePath.join(dir, 'o.mp4'))).rejects.toThrow(/sub burn failed/)
-    expect(state.fsCalls.some(c => c.fn === 'unlink' && String(c.args[0]).endsWith('.ass'))).toBe(true)
+    expect(state.fsCalls.some((c) => c.fn === 'unlink' && String(c.args[0]).endsWith('.ass'))).toBe(true)
   })
 })
 
@@ -1031,7 +1134,7 @@ describe('extractFirstFrame / dumpRgb24', () => {
 
   it('extractFirstFrame error → reject', async () => {
     const svc = await readyService()
-    state.saveBehaviors.push(c => c.emit('error', new Error('thumb failed')))
+    state.saveBehaviors.push((c) => c.emit('error', new Error('thumb failed')))
     await expect(svc.extractFirstFrame('v.mp4', nodePath.join(mkTmp(), 't2.jpg'))).rejects.toThrow(/thumb failed/)
   })
 
@@ -1043,8 +1146,12 @@ describe('extractFirstFrame / dumpRgb24', () => {
     expect(c.seekVal).toBe(1.5)
     expect(c.framesVal).toBe(1)
     expect(c.outputOpts).toEqual([
-      '-pix_fmt', 'rgb24', '-f', 'rawvideo', '-vf',
-      'scale=224:224:force_original_aspect_ratio=decrease,pad=224:224:(ow-iw)/2:(oh-ih)/2:color=black'
+      '-pix_fmt',
+      'rgb24',
+      '-f',
+      'rawvideo',
+      '-vf',
+      'scale=224:224:force_original_aspect_ratio=decrease,pad=224:224:(ow-iw)/2:(oh-ih)/2:color=black',
     ])
   })
 
@@ -1060,7 +1167,7 @@ describe('extractFirstFrame / dumpRgb24', () => {
 
   it('dumpRgb24 error 事件 → reject', async () => {
     const svc = await readyService()
-    state.saveBehaviors.push(c => c.emit('error', new Error('raw dump failed')))
+    state.saveBehaviors.push((c) => c.emit('error', new Error('raw dump failed')))
     await expect(svc.dumpRgb24('v.mp4', nodePath.join(mkTmp(), 'e.rgb'))).rejects.toThrow(/raw dump failed/)
   })
 })
@@ -1090,22 +1197,28 @@ describe('fileExists / getFileSize / getVideoInfo / looksLikeBlankVideo', () => 
     state.ffprobeImpl = () => ({
       data: {
         format: { duration: '8.25' },
-        streams: [
-          { codec_type: 'video', width: 1080, height: 1920 },
-          { codec_type: 'audio' }
-        ]
-      }
+        streams: [{ codec_type: 'video', width: 1080, height: 1920 }, { codec_type: 'audio' }],
+      },
     })
     await expect(svc.getVideoInfo('v.mp4')).resolves.toEqual({
-      durationSec: 8.25, width: 1080, height: 1920, hasAudio: true
+      durationSec: 8.25,
+      width: 1080,
+      height: 1920,
+      hasAudio: true,
     })
     state.ffprobeImpl = () => ({ data: { streams: [{ codec_type: 'video', width: 0, height: 0 }] } })
     await expect(svc.getVideoInfo('v.mp4')).resolves.toEqual({
-      durationSec: 0, width: 0, height: 0, hasAudio: false
+      durationSec: 0,
+      width: 0,
+      height: 0,
+      hasAudio: false,
     })
     state.ffprobeImpl = () => ({ data: {} })
     await expect(svc.getVideoInfo('v.mp4')).resolves.toEqual({
-      durationSec: 0, width: 0, height: 0, hasAudio: false
+      durationSec: 0,
+      width: 0,
+      height: 0,
+      hasAudio: false,
     })
   })
 
@@ -1131,7 +1244,7 @@ describe('fileExists / getFileSize / getVideoInfo / looksLikeBlankVideo', () => 
       void (_c as { emit: (e: string) => void }).emit('end')
     })
     await expect(svc.looksLikeBlankVideo('v.mp4')).resolves.toBe(false)
-    state.saveBehaviors.push(c => c.emit('error', new Error('decode failed')))
+    state.saveBehaviors.push((c) => c.emit('error', new Error('decode failed')))
     await expect(svc.looksLikeBlankVideo('v.mp4')).resolves.toBe(false)
   })
 })

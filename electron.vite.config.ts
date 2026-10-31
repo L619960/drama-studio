@@ -1,9 +1,26 @@
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import vue from '@vitejs/plugin-vue'
 import { resolve } from 'node:path'
+import type { Plugin } from 'vite'
 import { visualizer } from 'rollup-plugin-visualizer'
 import Components from 'unplugin-vue-components/vite'
 import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
+
+/**
+ * SEC-07：仅开发态为 HMR 注入 ws://localhost:*，生产构建沿用 index.html 的收窄 CSP。
+ * CSP 写在 meta 标签里，无法用响应头覆盖，故在 index.html 转换阶段按模式改写。
+ */
+function devCspForHmr(): Plugin {
+  const devPolicy = "connect-src 'self' http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:*"
+  const prodPolicy = "connect-src 'self' http://127.0.0.1:* ws://127.0.0.1:*"
+  return {
+    name: 'drama-dev-csp-hmr',
+    apply: 'serve',
+    transformIndexHtml(html: string) {
+      return html.includes(prodPolicy) ? html.replace(prodPolicy, devPolicy) : html
+    },
+  }
+}
 
 export default defineConfig({
   main: {
@@ -11,41 +28,42 @@ export default defineConfig({
     build: {
       rollupOptions: {
         input: {
-          index: resolve(__dirname, 'src/main/index.ts')
-        }
-      }
-    }
+          index: resolve(__dirname, 'src/main/index.ts'),
+        },
+      },
+    },
   },
   preload: {
     plugins: [externalizeDepsPlugin()],
     build: {
       rollupOptions: {
         input: {
-          index: resolve(__dirname, 'src/preload/index.ts')
+          index: resolve(__dirname, 'src/preload/index.ts'),
         },
         output: {
           // sandbox 模式（main/index.ts I-5）下 Electron 仅支持 CommonJS preload，
           // package.json "type": "module" 会默认输出 ESM(.mjs) 导致 preload 加载失败、
           // window.api 未挂载（打包版 LLM/ComfyUI 全部"连不上"的根因），强制输出 .cjs
           format: 'cjs',
-          entryFileNames: '[name].cjs'
-        }
-      }
-    }
+          entryFileNames: '[name].cjs',
+        },
+      },
+    },
   },
   renderer: {
     resolve: {
       alias: {
-        '@': resolve('src/renderer/src')
-      }
+        '@': resolve('src/renderer/src'),
+      },
     },
     plugins: [
       vue(),
+      devCspForHmr(),
       // Element Plus 按需引入：模板里的 el-* 组件自动按需注册并注入对应样式，
       // 避免 app.use(ElementPlus) 全量打包（renderer 体积 54% 来自 element-plus）。
       // 程序化组件（ElMessage/ElMessageBox/ElLoading）样式在 renderer/src/main.ts 手动引入。
       Components({
-        resolvers: [ElementPlusResolver()]
+        resolvers: [ElementPlusResolver()],
       }),
       // 包体积分析：仅当 ANALYZE=1 时生成 renderer-stats.html，不影响常规 build
       ...(process.env.ANALYZE
@@ -54,10 +72,10 @@ export default defineConfig({
               filename: 'out/renderer-stats.html',
               open: false,
               gzipSize: true,
-              brotliSize: true
-            })
+              brotliSize: true,
+            }),
           ]
-        : [])
+        : []),
     ],
     build: {
       rollupOptions: {
@@ -79,9 +97,9 @@ export default defineConfig({
             if (id.includes('/lodash-es/')) return 'lodash-vendor'
             if (id.includes('/@vue/') || id.includes('/vue/') || id.includes('/vue-router/')) return 'vue-vendor'
             return undefined
-          }
-        }
-      }
-    }
-  }
+          },
+        },
+      },
+    },
+  },
 })

@@ -1,8 +1,6 @@
 import type { DirectorState } from '../../shared/ipcTypes'
 import type { DirectorAgent } from './directorAgent'
-import {
-  freshStateImpl, logImpl, setStageImpl
-} from './directorStateMachine'
+import { freshStateImpl, logImpl, setStageImpl } from './directorStateMachine'
 
 /**
  * 进度桥：非流水线直渲入队（分镜页点渲染、对话 agent 重渲）的影子任务进度上报，
@@ -28,7 +26,7 @@ export function ensureShadowStateImpl(agent: DirectorAgent, projectId: string): 
     if (state.running) return state
     // 上一轮已收尾（影子或流水线）：重开一轮渲染监控，历史日志保留
     state.running = true
-    state.finishedAt = undefined
+    delete state.finishedAt
     state.doneShots = 0
     state.failedShotIds = []
     agent.shadowSettledShots.set(projectId, new Set())
@@ -42,17 +40,22 @@ export function ensureShadowStateImpl(agent: DirectorAgent, projectId: string): 
   agent.states.set(projectId, state)
   agent.shadowSettledShots.set(projectId, new Set())
   agent.shadowRenders.add(projectId)
-  void agent.store.get(projectId).then((p) => {
-    state!.title = p.title
-    // 影子渲染无流水线计数：totalShots/doneShots 从项目实际分镜补齐，
-    // 避免概览误显示「镜头 0/0 完成 N 失败」（只统计流水线数字导致口径失真）
-    if (state!.totalShots === 0 && p.shots?.length) {
-      state!.totalShots = p.shots.length
-      state!.doneShots = p.shots.filter((s: { status?: string }) => s.status === 'done').length
-      state!.failedShotIds = p.shots.filter((s: { status?: string }) => s.status === 'failed').map((s: { id: string }) => s.id)
-    }
-    emitProgressEventImpl(agent, projectId)
-  }).catch(() => undefined)
+  void agent.store
+    .get(projectId)
+    .then((p) => {
+      state!.title = p.title
+      // 影子渲染无流水线计数：totalShots/doneShots 从项目实际分镜补齐，
+      // 避免概览误显示「镜头 0/0 完成 N 失败」（只统计流水线数字导致口径失真）
+      if (state!.totalShots === 0 && p.shots?.length) {
+        state!.totalShots = p.shots.length
+        state!.doneShots = p.shots.filter((s: { status?: string }) => s.status === 'done').length
+        state!.failedShotIds = p.shots
+          .filter((s: { status?: string }) => s.status === 'failed')
+          .map((s: { id: string }) => s.id)
+      }
+      emitProgressEventImpl(agent, projectId)
+    })
+    .catch(() => undefined)
   emitProgressEventImpl(agent, projectId)
   return state
 }
@@ -60,7 +63,7 @@ export function ensureShadowStateImpl(agent: DirectorAgent, projectId: string): 
 /** 非流水线直渲的进度 → 执行日志（关键节点记日志，percent 心跳不记防刷屏） */
 export function onExternalProgressImpl(
   agent: DirectorAgent,
-  e: { projectId?: string; shotId?: string; step?: string; percent?: number; message?: string }
+  e: { projectId?: string; shotId?: string; step?: string; percent?: number; message?: string },
 ): void {
   const projectId = e.projectId
   const shotId = e.shotId || ''
@@ -117,13 +120,23 @@ export function onExternalQueueFinishedImpl(agent: DirectorAgent, projectId: str
   const failed = state.failedShotIds.length
   state.stages.render = {
     status: failed > 0 ? 'error' : 'done',
-    message: failed > 0 ? `本批渲染完成：成功 ${state.doneShots} · 失败 ${failed}（可在分镜页重渲失败镜头）` : `本批渲染完成：成功 ${state.doneShots} 镜`,
-    percent: 100
+    message:
+      failed > 0
+        ? `本批渲染完成：成功 ${state.doneShots} · 失败 ${failed}（可在分镜页重渲失败镜头）`
+        : `本批渲染完成：成功 ${state.doneShots} 镜`,
+    percent: 100,
   }
   state.running = false
   state.finishedAt = Date.now()
-  logImpl(agent, projectId, 'render', failed > 0 ? 'warn' : 'success',
-    failed > 0 ? `渲染队列已排空（成功 ${state.doneShots} · 失败 ${failed}）` : `渲染队列已排空，成功 ${state.doneShots} 镜`)
+  logImpl(
+    agent,
+    projectId,
+    'render',
+    failed > 0 ? 'warn' : 'success',
+    failed > 0
+      ? `渲染队列已排空（成功 ${state.doneShots} · 失败 ${failed}）`
+      : `渲染队列已排空，成功 ${state.doneShots} 镜`,
+  )
   emitProgressEventImpl(agent, projectId)
 }
 
@@ -132,14 +145,22 @@ export function subscribeRenderProgressImpl(agent: DirectorAgent, projectId: str
   // 从磁盘按 shot.status 重算已完成数：heal/审批重渲会重复触发 done 事件，
   // 累计 ++ 会导致 doneShots 虚增（实测 16 镜重渲 4 镜后显示 20）。
   const refreshDone = (): void => {
-    void agent.store.get(projectId).then(p => {
-      const s = agent.states.get(projectId)
-      if (!s) return
-      s.doneShots = p.shots.filter(x => x.status === 'done').length
-      setStageImpl(agent, projectId, 'render', 'running',
-        `渲染中 ${s.doneShots}/${s.totalShots}...`,
-        Math.round((s.doneShots / Math.max(1, s.totalShots)) * 100))
-    }).catch(() => undefined)
+    void agent.store
+      .get(projectId)
+      .then((p) => {
+        const s = agent.states.get(projectId)
+        if (!s) return
+        s.doneShots = p.shots.filter((x) => x.status === 'done').length
+        setStageImpl(
+          agent,
+          projectId,
+          'render',
+          'running',
+          `渲染中 ${s.doneShots}/${s.totalShots}...`,
+          Math.round((s.doneShots / Math.max(1, s.totalShots)) * 100),
+        )
+      })
+      .catch(() => undefined)
   }
   const listener = (e: { projectId?: string; shotId?: string; step?: string }): void => {
     if (e.projectId !== projectId) return

@@ -2,9 +2,10 @@ import { describe, it, expect, vi } from 'vitest'
 import {
   rebuildShotFirstFrames,
   regenerateScenePano,
-  generateShotFirstFrame
+  generateShotFirstFrame,
 } from '../../src/main/core/directorStageShots'
 import type { DirectorStageRuntime } from '../../src/main/core/directorStageAssets'
+import type { Shot } from '../../src/shared/ipcTypes'
 
 /**
  * 分镜首帧维护入口单测（directorStageShots 首个 spec）：
@@ -19,13 +20,18 @@ function makeRt(project: Record<string, any>) {
       update: vi.fn(async (_pid: string, fn: (p: Record<string, any>) => void) => {
         fn(project)
         return project
-      })
+      }),
     },
     settings: { get: vi.fn(async () => ({})) },
     image: { generate: vi.fn(async () => undefined) },
     ffmpeg: {
-      cropPanoramaViews: vi.fn(async () => ['/tmp/pano/b1_v0.png', '/tmp/pano/b1_v1.png', '/tmp/pano/b1_v2.png', '/tmp/pano/b1_v3.png']),
-      tileImages: vi.fn(async () => undefined)
+      cropPanoramaViews: vi.fn(async () => [
+        '/tmp/pano/b1_v0.png',
+        '/tmp/pano/b1_v1.png',
+        '/tmp/pano/b1_v2.png',
+        '/tmp/pano/b1_v3.png',
+      ]),
+      tileImages: vi.fn(async () => undefined),
     },
     isCancelled: vi.fn(() => false),
     log: vi.fn(),
@@ -37,7 +43,7 @@ function makeRt(project: Record<string, any>) {
     unsubscribeRenderProgress: vi.fn(),
     ensureShadowState: vi.fn(() => ({ stages: {} })),
     emitProgressEvent: vi.fn(),
-    notifyProjectUpdated: vi.fn()
+    notifyProjectUpdated: vi.fn(),
   }
   return rt as DirectorStageRuntime & typeof rt
 }
@@ -50,12 +56,19 @@ function shotProject() {
     sceneBoards: [],
     shots: [
       {
-        id: 'shot_a', index: 1, scene: '天台', action: '回头', type: 'i2v',
-        characterIds: [], firstFramePath: 'projects/p1/shots/old_first.png',
-        reviewed: true, status: 'done', segmentPath: 'projects/p1/shots/old.mp4'
+        id: 'shot_a',
+        index: 1,
+        scene: '天台',
+        action: '回头',
+        type: 'i2v',
+        characterIds: [],
+        firstFramePath: 'projects/p1/shots/old_first.png',
+        reviewed: true,
+        status: 'done',
+        segmentPath: 'projects/p1/shots/old.mp4',
       },
-      { id: 'shot_b', index: 2, scene: '车内', action: '', type: 't2v', characterIds: [] }
-    ]
+      { id: 'shot_b', index: 2, scene: '车内', action: '', type: 't2v', characterIds: [] },
+    ] as unknown as Shot[],
   }
 }
 
@@ -75,6 +88,7 @@ describe('rebuildShotFirstFrames', () => {
     expect(r.ok).toBe(true)
     expect(r.text).toContain('1/1')
     const shot = project.shots[0]
+    if (!shot) throw new Error('测试夹具缺少 project.shots[0]')
     expect(shot.firstFramePath).toBe('projects/p1/shots/shot_a_first.png')
     expect(shot.reviewed).toBeUndefined()
     expect(shot.status).toBe('pending')
@@ -92,9 +106,9 @@ describe('rebuildShotFirstFrames', () => {
     rt.image.generate.mockRejectedValueOnce(new Error('ComfyUI 离线'))
     const r = await rebuildShotFirstFrames(rt, 'p1', [1])
     expect(r.text).toContain('0/1')
-    expect(project.shots[0].firstFramePath).toBe('projects/p1/shots/old_first.png')
-    expect(project.shots[0].status).toBe('done')
-    expect(project.shots[0].reviewed).toBe(true)
+    expect(project.shots[0]?.firstFramePath).toBe('projects/p1/shots/old_first.png')
+    expect(project.shots[0]?.status).toBe('done')
+    expect(project.shots[0]?.reviewed).toBe(true)
   })
 
   it('取消立即停止：返回「已取消」且不落盘', async () => {
@@ -111,8 +125,10 @@ describe('generateShotFirstFrame', () => {
   it('无人物定妆时走文生并写回首帧路径', async () => {
     const rt = makeRt(shotProject())
     const d = {
-      id: 'shot_x', index: 3, characterIds: [],
-      as: { type: 'i2v' as const, scene: '天台', action: '回头' }
+      id: 'shot_x',
+      index: 3,
+      characterIds: [],
+      as: { type: 'i2v' as const, scene: '天台', action: '回头' },
     }
     await generateShotFirstFrame(rt, 'p1', d as never, { frameWidth: 576, frameHeight: 1024 }, () => false)
     expect(d).toMatchObject({ firstFramePath: 'projects/p1/shots/shot_x_first.png' })
@@ -128,12 +144,15 @@ describe('generateShotFirstFrame', () => {
     const rt = makeRt(shotProject())
     rt.image.generate.mockRejectedValueOnce(new ImageGenerateCancelled())
     const d = {
-      id: 'shot_y', index: 4, characterIds: ['c1'],
+      id: 'shot_y',
+      index: 4,
+      characterIds: ['c1'],
       character: { id: 'c1', name: '林夏', faceImagePath: 'projects/p1/cast/c1.png' },
-      as: { type: 'i2v' as const, scene: '天台', action: '回头' }
+      as: { type: 'i2v' as const, scene: '天台', action: '回头' },
     }
-    await expect(generateShotFirstFrame(rt, 'p1', d as never, { frameWidth: 576, frameHeight: 1024 }, () => false))
-      .rejects.toBeInstanceOf(ImageGenerateCancelled)
+    await expect(
+      generateShotFirstFrame(rt, 'p1', d as never, { frameWidth: 576, frameHeight: 1024 }, () => false),
+    ).rejects.toBeInstanceOf(ImageGenerateCancelled)
     expect(rt.image.generate).toHaveBeenCalledTimes(1)
   })
 })
@@ -141,13 +160,15 @@ describe('generateShotFirstFrame', () => {
 describe('regenerateScenePano', () => {
   function panoProject() {
     return {
-      id: 'p1', title: 't', characters: [],
+      id: 'p1',
+      title: 't',
+      characters: [],
       sceneBoards: [{ id: 'b1', key: 'rooftop', name: '天台', description: 'rooftop', emptyPlatePath: 'old.png' }],
       shots: [
         { id: 's1', sceneBoardId: 'b1', type: 't2v', sceneImagePath: 'old.png' },
         { id: 's2', sceneBoardId: 'b1', type: 'i2v', sceneImagePath: 'keep.png' },
-        { id: 's3', sceneBoardId: 'b2', type: 't2v', sceneImagePath: 'other.png' }
-      ]
+        { id: 's3', sceneBoardId: 'b2', type: 't2v', sceneImagePath: 'other.png' },
+      ],
     }
   }
 
@@ -169,10 +190,10 @@ describe('regenerateScenePano', () => {
     expect(board.panoViews[0]).toBe('projects/p1/scenes/b1_v0.png')
     expect(board.emptyPlatePath).toBe('projects/p1/scenes/b1_v0.png')
     expect(board.panoGrid).toBe('projects/p1/scenes/b1_pano_grid.png')
-    expect(project.shots[0].sceneImagePath).toBe('projects/p1/scenes/b1_v0.png')
+    expect(project.shots[0]?.sceneImagePath).toBe('projects/p1/scenes/b1_v0.png')
     // i2v 与其他场景板不动
-    expect(project.shots[1].sceneImagePath).toBe('keep.png')
-    expect(project.shots[2].sceneImagePath).toBe('other.png')
+    expect(project.shots[1]?.sceneImagePath).toBe('keep.png')
+    expect(project.shots[2]?.sceneImagePath).toBe('other.png')
     expect(rt.ffmpeg.tileImages).toHaveBeenCalledTimes(1)
     expect(rt.notifyProjectUpdated).toHaveBeenCalledWith('p1')
   })

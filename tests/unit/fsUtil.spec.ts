@@ -6,8 +6,12 @@ import { atomicWriteJson } from '../../src/main/core/fsUtil'
 
 describe('fsUtil.atomicWriteJson', () => {
   let dir: string
-  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'fsutil-')) })
-  afterEach(() => { rmSync(dir, { recursive: true, force: true }) })
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'fsutil-'))
+  })
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true })
+  })
 
   it('正常写入 JSON 文件', async () => {
     const file = join(dir, 'x.json')
@@ -33,8 +37,7 @@ describe('fsUtil.atomicWriteJson', () => {
   it('写文件失败时 tmp 文件也应被清理（覆盖 rename 失败路径）', async () => {
     // 在只读目录写文件 → 应抛错
     const roDir = join(dir, 'ro')
-    // @ts-expect-error Windows 上 chmod 可能不生效，但测试仍然跑
-    await import('node:fs').then(fs => fs.promises.mkdir(roDir, { recursive: true }))
+    await import('node:fs').then((fs) => fs.promises.mkdir(roDir, { recursive: true }))
     // 不做实际权限测试，只确认函数签名
     expect(typeof atomicWriteJson).toBe('function')
   })

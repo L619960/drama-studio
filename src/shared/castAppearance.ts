@@ -1,18 +1,28 @@
 /**
  * 定妆外观/身份锁域：定妆皮肤清洗、发型/服装句抽取、身份硬锁块、OOC 服装清洗。
- * 依赖：promptUtils（joinParts）。
+ * 依赖：promptUtils（joinParts）、promptLexicon（共享词表）。
  */
 
 import { joinParts } from './promptUtils'
+import {
+  HAIR_RE,
+  OOC_WARDROBE_PREFIX_RE,
+  OOC_WARDROBE_STRIP_PATTERN_SOURCES,
+  PERIOD_GENRE_RE,
+  SKIN_FLAW_LOOK_RE,
+} from './promptLexicon'
 
-const HAIR_CLAUSE_RE = /\b(hair|bun|ponytail|topknot|braid|bangs|fringe|bald|hairline)\b/i
-const OUTFIT_CLAUSE_RE = /\b(robe|tunic|hanfu|outfit|uniform|belt|sash|hoodie|jacket|coat|cardigan|shirt|suit|dress|sweater|trousers|pants|jeans|skirt|cloak|armou?r|kimono)\b/i
+const OUTFIT_CLAUSE_RE =
+  /\b(robe|tunic|hanfu|outfit|uniform|belt|sash|hoodie|jacket|coat|cardigan|shirt|suit|dress|sweater|trousers|pants|jeans|skirt|cloak|armou?r|kimono)\b/i
 
 /** 从定妆英文里拆出发型句和服装句。按逗号分句，避免只认得 shirt 而丢掉 robe。 */
 export function extractAppearanceClauses(lookEn: string): { hair: string; outfit: string } {
-  const clauses = sanitizeCastLook(lookEn).split(/[,;]/).map(s => s.trim()).filter(Boolean)
-  const hair = clauses.filter(c => HAIR_CLAUSE_RE.test(c) && !OUTFIT_CLAUSE_RE.test(c))
-  const outfit = clauses.filter(c => OUTFIT_CLAUSE_RE.test(c) && !HAIR_CLAUSE_RE.test(c))
+  const clauses = sanitizeCastLook(lookEn)
+    .split(/[,;]/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+  const hair = clauses.filter((c) => HAIR_RE.test(c) && !OUTFIT_CLAUSE_RE.test(c))
+  const outfit = clauses.filter((c) => OUTFIT_CLAUSE_RE.test(c) && !HAIR_RE.test(c))
   return { hair: hair.join(', '), outfit: outfit.join(', ') }
 }
 
@@ -39,24 +49,8 @@ export function frameAppearanceLock(lookEn: string): string {
 export function stripOocWardrobe(prompt: string, lookEn: string): string {
   if (!prompt) return prompt
   const lock = (extractOutfitLock(lookEn) || '').toLowerCase()
-  // 高危 OOC 服装名词（颜色+名词 或 名词本身），理发店/服务业脑补高频
-  const patterns: RegExp[] = [
-    /\b(?:white|black|grey|gray|blue|green|red|beige|cream|striped|checked)?\s*(?:barber\s+apron|apron)\b/gi,
-    /\b(?:leather|denim|knitted)?\s*vest\b/gi,
-    /\b(?:cowboy|baseball|flat|bowler|fedora|knit|wool|black|white)?\s*hat\b/gi,
-    /\b(?:baseball|black|white)?\s*cap\b/gi,
-    /\b(?:silk|black|white|red)?\s*necktie\b/gi,
-    /\bbow\s?tie\b/gi,
-    /\b(?:wool|silk|black|white)?\s*scarf\b/gi,
-    /\b(?:evening|white|black|red|floor-?length|ball)?\s*gown\b/gi,
-    /\bfloor-?length\s+(?:dress|gown)\b/gi,
-    /\b(?:black|white|blue)?\s*blazer\b/gi,
-    /\b(?:black\s+)?(?:necktie|tie)\b/gi,
-    /\b(?:school|police|military|work)?\s*uniform\b/gi,
-    /\boveralls?\b/gi,
-    /\blab\s?coat\b/gi,
-    /\bname\s?tag\b/gi
-  ]
+  // 高危 OOC 服装名词（颜色+名词 或 名词本身），理发店/服务业脑补高频；词表由 promptLexicon 单一维护
+  const patterns = OOC_WARDROBE_STRIP_PATTERN_SOURCES.map((s) => new RegExp(s, 'gi'))
   let p = prompt
   for (const re of patterns) {
     // 仅当该服装词不在定妆锁中时才删除（lock 中已有同词则保留——identityLockBlock 会先锁定它）
@@ -65,7 +59,7 @@ export function stripOocWardrobe(prompt: string, lookEn: string): string {
     p = p.replace(re, (m) => {
       const w = m.toLowerCase()
       // 若该词（或其核心名词）已在定妆锁中，保留；否则删除
-      const core = w.replace(/^(?:white|black|grey|gray|blue|green|red|beige|cream|striped|checked|leather|denim|knitted|silk|wool|cowboy|baseball|flat|bowler|fedora|evening|school|police|military|work)\s*/gi, '').trim()
+      const core = w.replace(OOC_WARDROBE_PREFIX_RE, '').trim()
       if (lockedHits.has(w) || lock.includes(core)) return m
       return ''
     })
@@ -91,12 +85,17 @@ export function stripModernWardrobe(lookEn: string): string {
   // 高危现代服化道核心词：只要命中过（删除前），无条件追加古装兜底——
   // 否则删词后残留（black katana / boots / dark alley）仍会被画成现代黑武士
   const removedHighRisk = /tactical|combat|uniform|mask|swat|army|hoodie|ninja|samurai|katana/i.test(t)
-  const cleaned = t.replace(modern, ' ').replace(/\s{2,}/g, ' ').trim()
+  const cleaned = t
+    .replace(modern, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
   // 高危现代形态仍残留（面罩/制服/战斗服/忍者/武士），或残留现代场景词（街道灯/沥青/汽车/摩天楼），
   // 或清洗后太短：追加古装兜底（保证画出来是古装，不画成现代武士/现代街道）
   const stillModern =
     /\b(mask|uniform|combat|tactical|swat|army|ninja|samurai|katana)\b/i.test(cleaned) ||
-    /\b(street\s?lamps?|streetlight|street\b|asphalt|glass\s+building|skyscraper|car\b|vehicle|motorcycle|traffic|subway|elevator)\b/i.test(cleaned)
+    /\b(street\s?lamps?|streetlight|street\b|asphalt|glass\s+building|skyscraper|car\b|vehicle|motorcycle|traffic|subway|elevator)\b/i.test(
+      cleaned,
+    )
   const wordCount = cleaned.split(/\s+/).filter(Boolean).length
   if (!cleaned) {
     return 'chinese person, wearing traditional ancient chinese hanfu robes, classical hairstyle with hairpin, natural matte skin'
@@ -109,8 +108,7 @@ export function stripModernWardrobe(lookEn: string): string {
 
 /** 判定流派是否属于「古风/年代」类：需要时代清洗与时代锁 */
 export function isPeriodGenre(genre: string | undefined): boolean {
-  const g = (genre || '').trim()
-  return /古装|宫廷|仙侠|玄幻|武侠|穿越|民国/.test(g)
+  return PERIOD_GENRE_RE.test((genre || '').trim())
 }
 
 /**
@@ -121,8 +119,12 @@ export function isPeriodGenre(genre: string | undefined): boolean {
 export function sanitizeCastLook(lookEn: string): string {
   const t = (lookEn || '').trim()
   if (!t) return t
-  const skinNoise = /\b(acne scars|acne|pockmarks?|pimples?|blemishes?|rash)\b/g
-  return t.replace(skinNoise, ' ').replace(/\s{2,}/g, ' ').trim() || t
+  return (
+    t
+      .replace(SKIN_FLAW_LOOK_RE, ' ')
+      .replace(/\s{2,}/g, ' ')
+      .trim() || t
+  )
 }
 
 /** 身份硬锁块：脸/发/服必须逐字复用。只写要保留的发型和衣服，不点名要禁止的单品。 */
@@ -132,9 +134,13 @@ export function identityLockBlock(lookEn: string): string {
   return joinParts(
     'LOCKED IDENTITY (continuity bible — must match exactly across every shot)',
     look,
-    hair ? `STRICT HAIR LOCK: ${hair}, same hairstyle as the reference image for the whole shot` : 'STRICT HAIR LOCK: same hairstyle as the reference image for the whole shot',
-    outfit ? `STRICT OUTFIT LOCK: wear only ${outfit}, same garments as the reference image for the whole shot` : 'STRICT OUTFIT LOCK: same garments as the reference image for the whole shot',
-    'same face identity, same hair length, same wardrobe layers from the first frame to the last frame'
+    hair
+      ? `STRICT HAIR LOCK: ${hair}, same hairstyle as the reference image for the whole shot`
+      : 'STRICT HAIR LOCK: same hairstyle as the reference image for the whole shot',
+    outfit
+      ? `STRICT OUTFIT LOCK: wear only ${outfit}, same garments as the reference image for the whole shot`
+      : 'STRICT OUTFIT LOCK: same garments as the reference image for the whole shot',
+    'same face identity, same hair length, same wardrobe layers from the first frame to the last frame',
   )
 }
 
@@ -153,9 +159,15 @@ export function lookEnStructureIssues(lookEn: string): string[] {
   const t = (lookEn || '').trim()
   if (!t) return ['lookEn 为空']
   const issues: string[] = []
-  if (!/\b(hair|bun|ponytail|topknot|braid|bangs|fringe|hairline|bald)\b/i.test(t)) issues.push('缺发型条款')
-  if (!/\b(robe|tunic|hanfu|outfit|uniform|belt|sash|jacket|coat|shirt|dress|skirt|cloak|armou?r|garb|clothing|attire)\b/i.test(t)) issues.push('缺服装条款')
-  if (!/\b(face|round|oval|square|sharp|jaw|cheek|brow|brows|mustache|beard|stubble|eyes?|nose|features)\b/i.test(t)) issues.push('缺面部特征条款')
+  if (!HAIR_RE.test(t)) issues.push('缺发型条款')
+  if (
+    !/\b(robe|tunic|hanfu|outfit|uniform|belt|sash|jacket|coat|shirt|dress|skirt|cloak|armou?r|garb|clothing|attire)\b/i.test(
+      t,
+    )
+  )
+    issues.push('缺服装条款')
+  if (!/\b(face|round|oval|square|sharp|jaw|cheek|brow|brows|mustache|beard|stubble|eyes?|nose|features)\b/i.test(t))
+    issues.push('缺面部特征条款')
   return issues
 }
 
@@ -172,13 +184,17 @@ export function hardenLookWeapons(lookEn: string): string {
   const hasChinese = CHINESE_WEAPON_RE.test(t)
   let clause: string
   if (hasBan) {
-    clause = 'holding a single chinese straight jian sword, exactly one weapon, one hand empty, NO katana, NO curved japanese blade'
+    clause =
+      'holding a single chinese straight jian sword, exactly one weapon, one hand empty, NO katana, NO curved japanese blade'
   } else if (!hasChinese) {
     clause = 'carrying one traditional chinese weapon, exactly one weapon, one hand empty'
   } else {
     clause = 'exactly one weapon, one hand empty'
   }
-  const cleaned = t.replace(BANNED_WEAPON_RE, ' ').replace(/\s{2,}/g, ' ').trim()
+  const cleaned = t
+    .replace(BANNED_WEAPON_RE, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
   const joined = cleaned ? `${cleaned}, ${clause}` : clause
   return joined.replace(/,\s*,/g, ',').trim()
 }
@@ -187,29 +203,36 @@ export function hardenLookWeapons(lookEn: string): string {
 export function differentiateLooks(looks: string[]): { looks: string[]; notes: string[] } {
   const notes: string[] = []
   if (looks.length <= 1) return { looks, notes }
-  const colorRe = /#?[0-9a-fA-F]{6}|\b(black|white|grey|gray|brown|tan|beige|ivory|navy|blue|dark blue|deep blue|indigo|teal|green|olive|red|crimson|scarlet|purple|violet|lavender|pink|rose|orange|amber|gold|golden|silver|rust|maroon|claret|ochre|mustard|emerald|jade|cyan|azure|charcoal|slate|oxblood|mauve|plum|wine)\b/i
-  const hairRe = /\b(hair|bun|ponytail|topknot|braid|bangs|fringe|hairline)\b/i
-  const faceRe = /\b(round\s+face|oval\s+face|square\s+face|long\s+face|sharp\s+jaw|square\s+jaw|high\s+cheekbones|broad\s+cheekbones|narrow\s+face|round\s+cheeks|almond\s+eyes|deep\s+set\s+eyes|wide\s+eyes|narrow\s+eyes|arched\s+brows|straight\s+brows|thick\s+brows|thin\s+lips|full\s+lips|aquiline\s+nose|flat\s+nose|mustache|beard|goatee|stubble|mole|scar)\b/i
-  const seen = looks.map(l => ({
+  const colorRe =
+    /#?[0-9a-fA-F]{6}|\b(black|white|grey|gray|brown|tan|beige|ivory|navy|blue|dark blue|deep blue|indigo|teal|green|olive|red|crimson|scarlet|purple|violet|lavender|pink|rose|orange|amber|gold|golden|silver|rust|maroon|claret|ochre|mustard|emerald|jade|cyan|azure|charcoal|slate|oxblood|mauve|plum|wine)\b/i
+  const faceRe =
+    /\b(round\s+face|oval\s+face|square\s+face|long\s+face|sharp\s+jaw|square\s+jaw|high\s+cheekbones|broad\s+cheekbones|narrow\s+face|round\s+cheeks|almond\s+eyes|deep\s+set\s+eyes|wide\s+eyes|narrow\s+eyes|arched\s+brows|straight\s+brows|thick\s+brows|thin\s+lips|full\s+lips|aquiline\s+nose|flat\s+nose|mustache|beard|goatee|stubble|mole|scar)\b/i
+  const seen = looks.map((l) => ({
     color: (l.match(colorRe) || []).slice(0, 3),
-    hair: hairRe.test(l) ? (l.match(/[a-z]+(?: hair| bun| ponytail| topknot| braid| bangs| fringe)/i)?.[0] || 'hair') : '',
-    face: faceRe.test(l) ? (l.match(faceRe)?.[0] || 'face') : ''
+    hair: HAIR_RE.test(l)
+      ? l.match(/[a-z]+(?: hair| bun| ponytail| topknot| braid| bangs| fringe)/i)?.[0] || 'hair'
+      : '',
+    face: faceRe.test(l) ? l.match(faceRe)?.[0] || 'face' : '',
   }))
   const out = [...looks]
   for (let i = 1; i < out.length; i++) {
+    const cur = out[i]
+    const b = seen[i]
+    if (!cur || !b) continue
     for (let j = 0; j < i; j++) {
       const a = seen[j]
-      const b = seen[i]
+      if (!a) continue
       let same = 0
-      if (a.color.some(c => b.color.includes(c))) same++
+      if (a.color.some((c) => b.color.includes(c))) same++
       if (a.hair && a.hair === b.hair) same++
       if (a.face && a.face === b.face) same++
       if (same >= 2) {
-        const tag = i % 3 === 1
-          ? 'distinctly different face shape and hairstyle and clothing color from the other characters, unique appearance'
-          : 'completely different face, different hairstyle, different outfit color from all other characters, visually distinct'
-        if (!new RegExp('distinct|different (?:face|hair|outfit)', 'i').test(out[i])) {
-          out[i] = `${out[i].replace(/,\s*$/,'')}, ${tag}`
+        const tag =
+          i % 3 === 1
+            ? 'distinctly different face shape and hairstyle and clothing color from the other characters, unique appearance'
+            : 'completely different face, different hairstyle, different outfit color from all other characters, visually distinct'
+        if (!new RegExp('distinct|different (?:face|hair|outfit)', 'i').test(cur)) {
+          out[i] = `${cur.replace(/,\s*$/, '')}, ${tag}`
           notes.push(`角色 ${i + 1} 与角色 ${j + 1} 外观趋同（${same} 维相同），已追加差异化条款`)
         }
       }
@@ -231,10 +254,13 @@ export function hardenLookEnList(looks: string[], genre?: string): { looks: stri
     // 否则会被强加 "carrying one traditional chinese weapon" 把现代职业角色画成持剑人
     const hardened = period ? hardenLookWeapons(l) : l
     const issues = lookEnStructureIssues(hardened)
-    if (issues.length) notes.push(`角色 ${i + 1} lookEn 结构缺项：${issues.join('、')}（已尽力保留原文建档，首帧/渲染由 lookEn 锁+抽帧验收兜底）`)
+    if (issues.length)
+      notes.push(
+        `角色 ${i + 1} lookEn 结构缺项：${issues.join('、')}（已尽力保留原文建档，首帧/渲染由 lookEn 锁+抽帧验收兜底）`,
+      )
     return hardened
   })
-  if (period) prepared = prepared.map(l => stripModernWardrobe(l))
+  if (period) prepared = prepared.map((l) => stripModernWardrobe(l))
   const diff = differentiateLooks(prepared)
   notes.push(...diff.notes)
   return { looks: diff.looks, notes }

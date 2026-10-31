@@ -43,7 +43,7 @@ async function collectFiles(
   dir: string,
   relBase: string,
   includeDirectorState: boolean,
-  out: Array<{ abs: string; rel: string; size: number }>
+  out: Array<{ abs: string; rel: string; size: number }>,
 ): Promise<void> {
   let items: Dirent[]
   try {
@@ -71,9 +71,7 @@ async function collectFiles(
 }
 
 /** 打包项目目录为 zip，写入 targetPath；返回文件数与原始字节数 */
-export async function exportProjectPackage(
-  input: ExportProjectPackageInput
-): Promise<ExportProjectPackageResult> {
+export async function exportProjectPackage(input: ExportProjectPackageInput): Promise<ExportProjectPackageResult> {
   const includeDirectorState = Boolean(input.includeDirectorState)
   const files: Array<{ abs: string; rel: string; size: number }> = []
   await collectFiles(input.projectDir, '', includeDirectorState, files)
@@ -84,18 +82,17 @@ export async function exportProjectPackage(
   let doneBytes = 0
   const entries: ZipEntryInput[] = []
 
-  for (let i = 0; i < files.length; i++) {
-    const f = files[i]
+  for (const [i, f] of files.entries()) {
     const data = await fs.readFile(f.abs)
     entries.push({ path: f.rel, data })
     doneBytes += f.size
     const percent = total > 0 ? Math.min(99, Math.round((doneBytes / Math.max(1, totalBytes)) * 100)) : 99
     input.onProgress?.({
       percent,
-      message: `正在打包项目文件 ${i + 1}/${total}（${percent}%）`
+      message: `正在打包项目文件 ${i + 1}/${total}（${percent}%）`,
     })
     // 让出事件循环：大项目导出期间保持 UI 响应
-    await new Promise(resolve => setImmediate(resolve))
+    await new Promise((resolve) => setImmediate(resolve))
   }
 
   const zip = createZip(entries)
@@ -122,10 +119,10 @@ async function allocateProjectId(dataRoot: string): Promise<string> {
 
 /** 解压项目包到 DATA_ROOT；返回导入后的项目（id 与标题已按冲突规则重写） */
 export async function importProjectPackage(
-  input: ImportProjectPackageInput
+  input: ImportProjectPackageInput,
 ): Promise<{ project: Project; files: number }> {
   const entries = readZip(input.zipBuffer)
-  const projectEntry = entries.find(e => e.path === 'project.json')
+  const projectEntry = entries.find((e) => e.path === 'project.json')
   if (!projectEntry) throw new Error('项目包缺少 project.json，无法导入')
 
   let parsed: Project
@@ -148,18 +145,17 @@ export async function importProjectPackage(
   await fs.mkdir(targetDir, { recursive: true })
 
   try {
-    const payload = entries.filter(e => e.path !== 'project.json')
-    for (let i = 0; i < payload.length; i++) {
-      const e = payload[i]
+    const payload = entries.filter((e) => e.path !== 'project.json')
+    for (const [i, e] of payload.entries()) {
       const dest = path.join(targetDir, e.path)
       await fs.mkdir(path.dirname(dest), { recursive: true })
       await fs.writeFile(dest, e.data)
       const percent = Math.min(99, Math.round(((i + 1) / Math.max(1, payload.length)) * 100))
       input.onProgress?.({
         percent,
-        message: `正在导入项目文件 ${i + 1}/${payload.length}（${percent}%）`
+        message: `正在导入项目文件 ${i + 1}/${payload.length}（${percent}%）`,
       })
-      await new Promise(resolve => setImmediate(resolve))
+      await new Promise((resolve) => setImmediate(resolve))
     }
     await atomicWriteJson(path.join(targetDir, 'project.json'), project)
     input.onProgress?.({ percent: 100, message: '项目包导入完成' })

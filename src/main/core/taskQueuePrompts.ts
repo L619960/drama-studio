@@ -1,14 +1,26 @@
 import { createLogger } from './logger'
 import { GENRE_TEMPLATES, type Project, type Shot } from '../../shared/ipcTypes'
 import {
-  videoMotionPrompt, cleanAction, identityLockBlock,
-  stripOocWardrobe, stripOtherPersonClauses, stripOutdoorHints,
-  soloizeAction, stripEnglishCastNames,
-  timelineProtocolBlock, castPromptPoisoned, repairCastText,
-  periodLockFor, motionCueFromAction, scrubSummoningTerms,
-  keepDialogueChinese, sanitizeCinematicPrompt,
-  DISPLACEMENT_ACTION_RE, STRONG_ACTION_RE, faceExpressionLockFor,
-  COMBAT_ACTION_RE
+  videoMotionPrompt,
+  cleanAction,
+  identityLockBlock,
+  stripOocWardrobe,
+  stripOtherPersonClauses,
+  stripOutdoorHints,
+  soloizeAction,
+  stripEnglishCastNames,
+  timelineProtocolBlock,
+  castPromptPoisoned,
+  repairCastText,
+  periodLockFor,
+  motionCueFromAction,
+  scrubSummoningTerms,
+  keepDialogueChinese,
+  sanitizeCinematicPrompt,
+  DISPLACEMENT_ACTION_RE,
+  STRONG_ACTION_RE,
+  faceExpressionLockFor,
+  COMBAT_ACTION_RE,
 } from '../../shared/imagePrompts'
 
 const log = createLogger('TaskQueue')
@@ -25,17 +37,22 @@ export function driftLockBlock(shot: Shot): string {
   const parts: string[] = []
   // 强动作/位移镜跳过动作幅度压制（no sudden movement / no large displacement / no body rotation）——
   // 否则会压制剧本要求的摔砸/踢倒/位移（与动作忠实铁律冲突）；机位与复合动作锁仍注入
-  const skipMotionSuppress =
-    DISPLACEMENT_ACTION_RE.test(shot.action || '') || STRONG_ACTION_RE.test(shot.action || '')
+  const skipMotionSuppress = DISPLACEMENT_ACTION_RE.test(shot.action || '') || STRONG_ACTION_RE.test(shot.action || '')
   if (shot.facing) {
-    parts.push(`BLOCKING LOCK: ${shot.facing}, stay in the same screen position and facing direction for the whole clip, no side-slide, no teleport${skipMotionSuppress ? '' : ', no body rotation, upper body fixed position'}`)
+    parts.push(
+      `BLOCKING LOCK: ${shot.facing}, stay in the same screen position and facing direction for the whole clip, no side-slide, no teleport${skipMotionSuppress ? '' : ', no body rotation, upper body fixed position'}`,
+    )
   }
   if (shot.continuity) {
-    parts.push(`CONTINUITY HANDOFF: ${stripOtherPersonClauses(shot.continuity)}, start exactly in this state, do not replay a prior beat`)
+    parts.push(
+      `CONTINUITY HANDOFF: ${stripOtherPersonClauses(shot.continuity)}, start exactly in this state, do not replay a prior beat`,
+    )
   }
-  parts.push(skipMotionSuppress
-    ? 'single atomic motion only, fixed framing, camera motion only as specified, no extra camera moves, no zoom unless specified'
-    : 'single atomic motion only, no compound action, no sudden movement, no large displacement, smooth steady motion, fixed framing, camera motion only as specified, no extra camera moves, no zoom unless specified')
+  parts.push(
+    skipMotionSuppress
+      ? 'single atomic motion only, fixed framing, camera motion only as specified, no extra camera moves, no zoom unless specified'
+      : 'single atomic motion only, no compound action, no sudden movement, no large displacement, smooth steady motion, fixed framing, camera motion only as specified, no extra camera moves, no zoom unless specified',
+  )
   return parts.join(', ')
 }
 
@@ -75,7 +92,7 @@ const HOLD_ACTION_RE =
 export function sceneCueFor(shot: Pick<Shot, 'sceneEn' | 'action'>, cleanedRaw: string): string {
   if (cleanedRaw && !/[\u4e00-\u9fff]/.test(cleanedRaw)) return cleanedRaw
   const sceneWord = (shot.action || '').match(
-    /\b(?:convenience store|department store|supermarket|street market|market|shop|store|cafe|restaurant|noodle house|teahouse|counter|office|apartment|room|hall|temple|gate|mountain|forest|alley|street|riverbank|inn|pavilion)\w*\b/i
+    /\b(?:convenience store|department store|supermarket|street market|market|shop|store|cafe|restaurant|noodle house|teahouse|counter|office|apartment|room|hall|temple|gate|mountain|forest|alley|street|riverbank|inn|pavilion)\w*\b/i,
   )?.[0]
   return sceneWord ? `${sceneWord.toLowerCase()} interior` : ''
 }
@@ -126,12 +143,12 @@ export function buildH3Prompt(
   project: Project,
   withAudio: boolean,
   sec: number,
-  qualityBlock: string
+  qualityBlock: string,
 ): string {
-  const tpl = GENRE_TEMPLATES.find(t => t.key === project.genre)
+  const tpl = GENRE_TEMPLATES.find((t) => t.key === project.genre)
   // 题材只约束光影，身份锁压在题材词之前，避免「霸总」把卫衣角色渲成西装
-  const char = project.characters.find(c => c.id === shot.characterIds[0])
-  const board = (project.sceneBoards || []).find(b => b.id === shot.sceneBoardId)
+  const char = project.characters.find((c) => c.id === shot.characterIds[0])
+  const board = (project.sceneBoards || []).find((b) => b.id === shot.sceneBoardId)
   // 身份/发型/服装代码层强锁：无论主提示词来自 LLM 还是模板，都压在最前（H3/Wan 均适用）
   const lookEn = char?.appearanceLock || char?.description
   const identityLock = lookEn ? identityLockBlock(lookEn) : ''
@@ -154,20 +171,29 @@ export function buildH3Prompt(
   // 再删 OOC 服装词（围裙/领带/帽子等脑补职业装，与定妆冲突会造成渲染中途挂装漂移）
   const promptEn = usablePromptEn(shot, lookEn || '')
   const motion = promptEn
-    ? sanitizeCinematicPrompt(stripOocWardrobe(stripOtherPersonClauses(`${identityLock}${sceneCue ? `, in ${sceneCue}` : ''}, ${promptEn}, ${driftLockBlock(shot)}${handoff}, ${qualityBlock}`), lookEn || ''))
-    : sanitizeCinematicPrompt(videoMotionPrompt({
-        action: cleanAction(stripOutdoorHints(shot.action, shot.scene || '')),
-        lookEn,
-        scene: board?.name || shot.scene,
-        emotion: shot.emotion,
-        camera: shot.camera,
-        dialogue: withAudio ? shot.dialogue : undefined,
-        genreStyle: tpl?.promptStyle,
-        shotSize: shot.shotSize,
-        lighting: shot.lighting,
-        facing: shot.facing,
-        continuity: shot.continuity
-      }))
+    ? sanitizeCinematicPrompt(
+        stripOocWardrobe(
+          stripOtherPersonClauses(
+            `${identityLock}${sceneCue ? `, in ${sceneCue}` : ''}, ${promptEn}, ${driftLockBlock(shot)}${handoff}, ${qualityBlock}`,
+          ),
+          lookEn || '',
+        ),
+      )
+    : sanitizeCinematicPrompt(
+        videoMotionPrompt({
+          action: cleanAction(stripOutdoorHints(shot.action, shot.scene || '')),
+          ...(lookEn !== undefined ? { lookEn } : {}),
+          scene: board?.name || shot.scene,
+          ...(shot.emotion !== undefined ? { emotion: shot.emotion } : {}),
+          ...(shot.camera !== undefined ? { camera: shot.camera } : {}),
+          ...(withAudio ? { dialogue: shot.dialogue } : {}),
+          ...(tpl?.promptStyle !== undefined ? { genreStyle: tpl.promptStyle } : {}),
+          ...(shot.shotSize !== undefined ? { shotSize: shot.shotSize } : {}),
+          ...(shot.lighting !== undefined ? { lighting: shot.lighting } : {}),
+          ...(shot.facing !== undefined ? { facing: shot.facing } : {}),
+          ...(shot.continuity !== undefined ? { continuity: shot.continuity } : {}),
+        }),
+      )
   // 渲染层禁联想道具（实测根因：面馆场景空景含筷子筒/煮面锅 → H3 把碗筷联想给人物"端碗持筷"；
   // 通用禁餐具/食物/手持容器，除非 action 明确要求——避免模型给空手人物塞碗筷杯子）
   // 服装联想词（围裙/领带/制服/帽子等）不在此静态清单——由 oocWardrobeNegativeFor 按定妆锁
@@ -175,44 +201,60 @@ export function buildH3Prompt(
   // 道具数量硬约束（propsConstraintBlock）：持械镜锁"一把武器单手执械"、空手镜锁"双手无物"，
   // 杜绝双剑/多械/凭空变械与联想道具（实测《雨夜山门》镜4 双剑相交、镜1 刀形漂移的根因）。
   const propsLock = propsConstraintBlock(shot)
-  const hands = shot.type === 'i2v' && shot.characterIds.length
-    ? `hands follow the action, empty when the action does not hold an object, ${propsLock}`
-    : propsLock
+  const hands =
+    shot.type === 'i2v' && shot.characterIds.length
+      ? `hands follow the action, empty when the action does not hold an object, ${propsLock}`
+      : propsLock
   // 场景无路人锁（武打/对打/特写镜）：禁止 H3 添加剧本外背景人（实测《雨夜山门》镜1/镜4 路人）
   const noExtras = noExtrasLockFor(shot)
-  const finalMotion = motion + (hands ? `, ${hands}` : '') + (noExtras ? `, ${noExtras}` : '')
+  const finalMotion =
+    motion +
+    (hands ? `, ${hands}` : '') +
+    (noExtras ? `, ${noExtras}` : '') +
     // 面部表情锁定（正向约束）：H3 r2v 对参考图身份锁定弱，表演时脸型/表情夸张漂移
     // （实测温和微笑被放大成大笑，ArcFace 相似度 0.16）。条件化：强表情镜放行表情但锁面部结构。
-    + (shot.characterIds.length ? `, ${faceExpressionLockFor(shot.emotion, shot.action)}` : '')
+    (shot.characterIds.length ? `, ${faceExpressionLockFor(shot.emotion, shot.action)}` : '')
   // 时间轴稳定块（在 sanitize 之后拼接：总时长+首中末时间戳+帧序列规则+末帧转场锚点）
   const look = lookEn || ''
+  const timelineFirst = repairCastText(shot.firstFrameEn, shot.action || '', look, 'frame')
+  const timelineMid = repairCastText(shot.midFrameEn, shot.action || '', look, 'frame')
+  const timelineLast = repairCastText(shot.lastFrameEn, shot.action || '', look, 'frame')
   const timeline = timelineProtocolBlock({
     sec,
     fps: 24,
-    transition: shot.transition,
-    firstFrameEn: repairCastText(shot.firstFrameEn, shot.action || '', look, 'frame'),
-    midFrameEn: repairCastText(shot.midFrameEn, shot.action || '', look, 'frame'),
-    lastFrameEn: repairCastText(shot.lastFrameEn, shot.action || '', look, 'frame'),
-    motionEn: promptEn || motionCueFromAction(shot.action)
+    ...(shot.transition !== undefined ? { transition: shot.transition } : {}),
+    ...(timelineFirst !== undefined ? { firstFrameEn: timelineFirst } : {}),
+    ...(timelineMid !== undefined ? { midFrameEn: timelineMid } : {}),
+    ...(timelineLast !== undefined ? { lastFrameEn: timelineLast } : {}),
+    motionEn: promptEn || motionCueFromAction(shot.action),
   })
   // H3 工作流没有负向入口。负向词写进正向会被画出来，所以这里不写。
   const periodLock = periodLockFor(project.genre)
   // 官方 I2VA 首帧锚定格式（MiniMax H3 prompt guide）：显式声明 0.00s 时首帧被完全参考，
   // 比"the person shown in <Picture 1>"更符合 H3 训练格式，降低模型把首帧当参考而非精确起点的概率。
   // 人物镜：人物+场景双锚定（实测镜7 r2v：只锁人物、promptEn 无场景词 → 模型把理发店背景自由发挥成街道）
-  const subject = shot.type === 'i2v' && shot.characterIds.length
-    ? withAudio
-      // r2v 双参考：<Picture 1> 人物首帧（ref_image_1）+ <Picture 2> 场景板空景（ref_image_2）锁背景
-      ? 'For the target video, at 0.00 seconds, <Picture 1> is fully referenced: the person shown in it, appearance, clothing and identity fully preserved; <Picture 2> is fully referenced: the scene shown in it, layout, lighting and tone fully preserved'
-      // i2v 单参考：first_frame 整图延续（人物+背景一体）
-      : 'For the target video, at 0.00 seconds, <Picture 1> is fully referenced: the person shown in it, appearance, clothing and identity fully preserved; the surrounding scene, layout, lighting and tone also fully preserved from <Picture 1>'
-    : 'For the target video, at 0.00 seconds, <Picture 1> is fully referenced: the scene shown in it, layout, lighting and tone fully preserved'
+  const subject =
+    shot.type === 'i2v' && shot.characterIds.length
+      ? withAudio
+        ? // r2v 双参考：<Picture 1> 人物首帧（ref_image_1）+ <Picture 2> 场景板空景（ref_image_2）锁背景
+          'For the target video, at 0.00 seconds, <Picture 1> is fully referenced: the person shown in it, appearance, clothing and identity fully preserved; <Picture 2> is fully referenced: the scene shown in it, layout, lighting and tone fully preserved'
+        : // i2v 单参考：first_frame 整图延续（人物+背景一体）
+          'For the target video, at 0.00 seconds, <Picture 1> is fully referenced: the person shown in it, appearance, clothing and identity fully preserved; the surrounding scene, layout, lighting and tone also fully preserved from <Picture 1>'
+      : 'For the target video, at 0.00 seconds, <Picture 1> is fully referenced: the scene shown in it, layout, lighting and tone fully preserved'
   // 逐镜审核整改指令（看守）：未过审重渲时注入上次审核给出的修正要点
   const fix = shot.auditFix ? ` Revision directive: ${shot.auditFix}` : ''
   if (withAudio) {
     // r2v：只允许片中角色说 <d> 台词；严禁旁白/解说/第三人称念白（否则听感像纪录片解说）
-    return keepDialogueChinese(scrubSummoningTerms(`integrated_multimodal_description: [Shot 1] Live-action, cinematic. ${subject}. ${finalMotion}. ${periodLock}. ${timeline}.${fix} At 0.4 seconds, the on-screen character says: <d>[Chinese] ${shot.dialogue}</d> Lips move naturally in sync with the Mandarin speech of reference audio <Audio 1>. Only this character speaks; no narrator, no voiceover, no commentator, no third-person storytelling. overall_soundscape: natural ambience under the dialogue. non_diegetic_music: N/A`))
+    return keepDialogueChinese(
+      scrubSummoningTerms(
+        `integrated_multimodal_description: [Shot 1] Live-action, cinematic. ${subject}. ${finalMotion}. ${periodLock}. ${timeline}.${fix} At 0.4 seconds, the on-screen character says: <d>[Chinese] ${shot.dialogue}</d> Lips move naturally in sync with the Mandarin speech of reference audio <Audio 1>. Only this character speaks; no narrator, no voiceover, no commentator, no third-person storytelling. overall_soundscape: natural ambience under the dialogue. non_diegetic_music: N/A`,
+      ),
+    )
   }
   // i2v 无参考音：H3 极易把英文 multimodal 描述念成旁白——显式禁语音
-  return keepDialogueChinese(scrubSummoningTerms(`integrated_multimodal_description: [Shot 1] Live-action, cinematic. ${subject}. ${finalMotion}. ${periodLock}. ${timeline}.${fix} overall_soundscape: natural ambience only; no speech, no narration, no voiceover, no commentator, no spoken description of the scene; mouth remains closed. non_diegetic_music: N/A`))
+  return keepDialogueChinese(
+    scrubSummoningTerms(
+      `integrated_multimodal_description: [Shot 1] Live-action, cinematic. ${subject}. ${finalMotion}. ${periodLock}. ${timeline}.${fix} overall_soundscape: natural ambience only; no speech, no narration, no voiceover, no commentator, no spoken description of the scene; mouth remains closed. non_diegetic_music: N/A`,
+    ),
+  )
 }

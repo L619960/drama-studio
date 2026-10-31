@@ -16,28 +16,28 @@ export class ImageGenerateCancelled extends Error {
 }
 
 export interface ImageGenerateOptions {
-  workflowName?: string
-  width?: number
-  height?: number
-  negative?: string
+  workflowName?: string | undefined
+  width?: number | undefined
+  height?: number | undefined
+  negative?: string | undefined
   /** 固定种子；未传则随机 */
-  seed?: number
+  seed?: number | undefined
   /** 图生图参考图（定妆图等）：模板含 $REF_IMAGE$ 占位符时自动上传并注入 */
-  referenceImagePath?: string
+  referenceImagePath?: string | undefined
   /** 多参考图（全景方位图×定妆图等）：依次注入 $REF_IMAGE$, $REF_IMAGE2$, $REF_IMAGE3$。
    *  传入时优先于 referenceImagePath（referenceImagePath 兼容旧调用）。 */
-  referenceImagePaths?: string[]
+  referenceImagePaths?: string[] | undefined
   /** 严格工作流：workflowName 模板不存在时直接报错（不降级到 builtin_t2i 文生）。
    *  用于双图融合等「必须用指定模板」的场景，失败由调用方回退其他路径。 */
-  strictWorkflow?: boolean
+  strictWorkflow?: boolean | undefined
   /** i2i 参考图权重（KSampler denoise）：仅在工作流模板含 $DENOISE$ 占位符时生效 */
-  denoise?: number
+  denoise?: number | undefined
   /** 瞬时故障重试次数（不含首次），默认 2 */
-  retries?: number
+  retries?: number | undefined
   /** 取消探测：返回 true 时中断等待 */
-  shouldAbort?: () => boolean
+  shouldAbort?: (() => boolean) | undefined
   /** Comfy 等待超时（毫秒）；未传则客户端默认 */
-  timeoutMs?: number
+  timeoutMs?: number | undefined
 }
 
 /**
@@ -57,20 +57,19 @@ export class ImageService {
 
   constructor(
     private comfyui: ComfyUIClient,
-    private workflow: WorkflowLoader
+    private workflow: WorkflowLoader,
   ) {}
 
-  async generate(
-    prompt: string,
-    absOutput: string,
-    options?: ImageGenerateOptions
-  ): Promise<void> {
+  async generate(prompt: string, absOutput: string, options?: ImageGenerateOptions): Promise<void> {
     // P2-3: 磁盘剩余空间检查（<5GB 警告）
     try {
       const dir = path.dirname(absOutput)
       // diskUsage 是 Node 19+ API，无 @types/node 时用 any 绕过类型检查
       // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-require-imports -- diskUsage 是 Node 19+ 专有 API，require 规避静态 import 路径解析；as any 补偿 @types/node 缺失
-      const diskUsage = (require('node:fs') as any).diskUsage as (p: string, cb: (err: unknown, stats?: { free: number }) => void) => void
+      const diskUsage = (require('node:fs') as any).diskUsage as (
+        p: string,
+        cb: (err: unknown, stats?: { free: number }) => void,
+      ) => void
       await new Promise<void>((resolve) => {
         diskUsage(dir, (_err: unknown, stats?: { free: number }) => {
           if (stats) {
@@ -80,7 +79,9 @@ export class ImageService {
           resolve()
         })
       })
-    } catch { /* 磁盘检查失败不阻塞 */ }
+    } catch {
+      /* 磁盘检查失败不阻塞 */
+    }
     const retries = options?.retries ?? 2
     let width = options?.width ?? 768
     let height = options?.height ?? 1152
@@ -95,13 +96,11 @@ export class ImageService {
         // 避免同套条款重复出现拖长提示词
         // D-04（2026-10-20）：改整块常量匹配——此前用 'cinematic vfx discipline' 单句嗅探，
         // 用户 prompt 恰好含该字样时会误跳过整块质量条款
-        const finalPrompt = prompt.includes(CINEMATIC_QUALITY_BLOCK)
-          ? prompt
-          : `${prompt}, ${this.qualityBlock}`
+        const finalPrompt = prompt.includes(CINEMATIC_QUALITY_BLOCK) ? prompt : `${prompt}, ${this.qualityBlock}`
         await this.runOnce(finalPrompt, absOutput, {
           ...options,
           width,
-          height
+          height,
         })
         return
       } catch (e) {
@@ -129,11 +128,7 @@ export class ImageService {
     throw lastErr
   }
 
-  private async runOnce(
-    prompt: string,
-    absOutput: string,
-    options?: ImageGenerateOptions
-  ): Promise<void> {
+  private async runOnce(prompt: string, absOutput: string, options?: ImageGenerateOptions): Promise<void> {
     const listed = await this.workflow.list()
     const preferred = options?.workflowName || ImageService.DEFAULT_T2I_WORKFLOW
     // 显式指定工作流时沿用旧语义（缺失回退 builtin_t2i）；未指定则按写实优先链回退
@@ -165,7 +160,7 @@ export class ImageService {
     const vars: Record<string, string | number> = {
       PROMPT: prompt,
       SEED: seed,
-      NEGATIVE: negative
+      NEGATIVE: negative,
     }
     if (meta?.placeholders.includes('WIDTH')) vars.WIDTH = options?.width ?? 768
     if (meta?.placeholders.includes('HEIGHT')) vars.HEIGHT = options?.height ?? 1152
@@ -179,8 +174,7 @@ export class ImageService {
         ? [options.referenceImagePath]
         : []
     const refTokens = ['REF_IMAGE', 'REF_IMAGE2', 'REF_IMAGE3'] as const
-    for (let i = 0; i < refTokens.length; i++) {
-      const token = refTokens[i]
+    for (const [i, token] of refTokens.entries()) {
       if (!meta?.placeholders.includes(token)) continue
       const abs = refs[i]
       if (!abs) {
@@ -195,10 +189,7 @@ export class ImageService {
     }
     const graph = await this.workflow.buildGraph(name, vars)
 
-    const graphObj = graph as Record<
-      string,
-      { class_type?: string; inputs?: Record<string, unknown> }
-    >
+    const graphObj = graph as Record<string, { class_type?: string; inputs?: Record<string, unknown> }>
     for (const node of Object.values(graphObj)) {
       if (!node.inputs) continue
       if ('ckpt_name' in node.inputs && !node.inputs.ckpt_name) {
@@ -206,7 +197,8 @@ export class ImageService {
       }
       if (
         (node.class_type === 'EmptyLatentImage' || node.class_type === 'EmptySD3LatentImage') &&
-        options?.width && options?.height
+        options?.width &&
+        options?.height
       ) {
         node.inputs.width = options.width
         node.inputs.height = options.height
@@ -226,15 +218,15 @@ export class ImageService {
     if (options?.shouldAbort?.()) throw new ImageGenerateCancelled()
     const { promptId } = await this.comfyui.submit(graph)
     const output = await this.raceAbort(
+      promptId,
       this.comfyui.waitForCompletion(promptId, undefined, options?.timeoutMs),
-      options?.shouldAbort
+      options?.shouldAbort,
     )
 
-    const images = output.images
-    if (!images || images.length === 0) {
+    const img = output.images?.[0]
+    if (!img) {
       throw new Error('ComfyUI 未输出图片')
     }
-    const img = images[0]
     if (img.fullpath) {
       await this.comfyui.downloadFromFullPath(img.fullpath, absOutput)
     } else {
@@ -258,9 +250,8 @@ export class ImageService {
       const graph = await this.workflow.buildGraph('face_restore', vars)
       const { promptId } = await this.comfyui.submit(graph)
       const output = await this.comfyui.waitForCompletion(promptId, undefined, 120000)
-      const images = output.images
-      if (!images || images.length === 0) throw new Error('face restore 无输出')
-      const img = images[0]
+      const img = output.images?.[0]
+      if (!img) throw new Error('face restore 无输出')
       if (img.fullpath) {
         await this.comfyui.downloadFromFullPath(img.fullpath, absOutput)
       } else {
@@ -274,25 +265,33 @@ export class ImageService {
 
   private isOom(err: unknown): boolean {
     const msg = err instanceof Error ? err.message : String(err)
-    return /out of memory|\boom\b|cuda error|alloc.*(memory|failed)|insufficient.*vram|vram.*(insufficient|exceed|alloc)|hbm|显存不足|内存不足/i.test(msg)
+    return /out of memory|\boom\b|cuda error|alloc.*(memory|failed)|insufficient.*vram|vram.*(insufficient|exceed|alloc)|hbm|显存不足|内存不足/i.test(
+      msg,
+    )
   }
 
-  private async raceAbort<T>(
-    promise: Promise<T>,
-    shouldAbort?: () => boolean
-  ): Promise<T> {
+  private async raceAbort<T>(promptId: string, promise: Promise<T>, shouldAbort?: () => boolean): Promise<T> {
     if (!shouldAbort) return promise
     return new Promise<T>((resolve, reject) => {
       const timer = setInterval(() => {
         if (shouldAbort()) {
           clearInterval(timer)
+          // CORE-05：取消不仅要中断 ComfyUI 执行，还要结束挂起的 waitForCompletion——
+          // 否则其 5s 轮询与 30min 超时 timer 会残留，重试时该 promptId 仍被当成在途
+          this.comfyui.rejectPending('已取消生成', promptId)
           this.comfyui.interrupt().catch(() => undefined)
           reject(new ImageGenerateCancelled())
         }
       }, 800)
       promise.then(
-        (v) => { clearInterval(timer); resolve(v) },
-        (e) => { clearInterval(timer); reject(e) }
+        (v) => {
+          clearInterval(timer)
+          resolve(v)
+        },
+        (e) => {
+          clearInterval(timer)
+          reject(e)
+        },
       )
     })
   }

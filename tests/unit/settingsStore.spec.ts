@@ -6,7 +6,7 @@ import * as path from 'node:path'
 // electron 不可在主进程外加载：mock 掉 userData 指向临时目录
 const state = vi.hoisted(() => ({ userData: '' }))
 vi.mock('electron', () => ({
-  app: { getPath: (name: string) => (name === 'userData' ? state.userData : '') }
+  app: { getPath: (name: string) => (name === 'userData' ? state.userData : '') },
 }))
 
 import { SettingsStore } from '../../src/main/core/settingsStore'
@@ -133,5 +133,40 @@ describe('SettingsStore（S-03 归一化回归）', () => {
     const base = await store.get()
     const stale = { ...base, revision: (base.revision ?? 0) - 1 }
     await expect(store.save(stale)).rejects.toThrow(/设置已在别处更新/)
+  })
+
+  it('SEC-04：渲染层回传空 apiKey（未标记 dirty）时沿用磁盘旧密钥', async () => {
+    const first = await store.get()
+    first.llm = { ...first.llm, apiKey: 'sk-keep-me-9999', apiKeyDirty: true }
+    await store.save(first)
+    expect((await store.get()).llm.apiKey).toBe('sk-keep-me-9999')
+
+    // 渲染层视图：apiKey 为空、无 dirty —— 保存不得清空密钥
+    const view = await store.get()
+    view.llm = { ...view.llm, apiKey: '', apiKeyDirty: false }
+    await store.save(view)
+    expect((await store.get()).llm.apiKey).toBe('sk-keep-me-9999')
+  })
+
+  it('SEC-04：显式 dirty + 空 apiKey 才删除密钥；直接改值（dirty）覆盖旧密钥', async () => {
+    const s1 = await store.get()
+    s1.llm = { ...s1.llm, apiKey: 'sk-new-0001', apiKeyDirty: true }
+    await store.save(s1)
+    expect((await store.get()).llm.apiKey).toBe('sk-new-0001')
+
+    const s2 = await store.get()
+    s2.llm = { ...s2.llm, apiKey: '', apiKeyDirty: true }
+    await store.save(s2)
+    expect((await store.get()).llm.apiKey).toBe('')
+  })
+
+  it('SEC-04：hasApiKey/apiKeyMasked/apiKeyDirty 属通信字段，不落盘', async () => {
+    const s = await store.get()
+    s.llm = { ...s.llm, apiKey: 'sk-persist', apiKeyDirty: true, hasApiKey: true, apiKeyMasked: '****rsist' }
+    await store.save(s)
+    const raw = await fs.readFile(path.join(dir, 'settings.json'), 'utf-8')
+    expect(raw).not.toContain('apiKeyDirty')
+    expect(raw).not.toContain('hasApiKey')
+    expect(raw).not.toContain('apiKeyMasked')
   })
 })

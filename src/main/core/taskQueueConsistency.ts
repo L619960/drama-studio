@@ -1,7 +1,12 @@
 import { createLogger } from './logger'
 import { FFmpegService } from './ffmpegService'
 import { ProjectStore } from './projectStore'
-import { ConsistencyService, CONSISTENCY_THRESHOLD, FACE_CONSISTENCY_THRESHOLD, H3_WAN_FALLBACK_THRESHOLD } from './consistencyService'
+import {
+  ConsistencyService,
+  CONSISTENCY_THRESHOLD,
+  FACE_CONSISTENCY_THRESHOLD,
+  H3_WAN_FALLBACK_THRESHOLD,
+} from './consistencyService'
 import { shouldFallbackToWan } from '../../shared/pipelineGuards'
 import { detectRoleConfusion } from './roleBinding'
 import type { Project, ProgressEvent, Shot } from '../../shared/ipcTypes'
@@ -40,7 +45,7 @@ export async function runConsistencyCheck(
     renderSeed: number
     engine: string
     reRun: (seed: number, forceEngine?: string) => Promise<void>
-  }
+  },
 ): Promise<number> {
   const { projectId, shot, refImageRel, segmentAbsPath, consistencyMode, reRun, engine } = opts
   let renderSeed = opts.renderSeed
@@ -59,9 +64,7 @@ export async function runConsistencyCheck(
   const isR2vShot = !!shot.audioPath
   let score: number | undefined
   let method: 'face' | 'full' = 'full'
-  let compareRefAbs = shot.firstFramePath
-    ? rt.resolveInBase(shot.firstFramePath)
-    : rt.resolveInBase(refImageRel)
+  let compareRefAbs = shot.firstFramePath ? rt.resolveInBase(shot.firstFramePath) : rt.resolveInBase(refImageRel)
   if (isR2vShot) {
     try {
       const anchorRel = `projects/${projectId}/shots/${shot.id}_anchor.png`
@@ -78,17 +81,22 @@ export async function runConsistencyCheck(
   }
   try {
     rt.emitProgress({
-      projectId, shotId: shot.id, step: 'combine', percent: 97,
-      message: service.needsDownload ? '首次加载人物一致性模型（约90MB）...' : '人物一致性校验...'
+      projectId,
+      shotId: shot.id,
+      step: 'combine',
+      percent: 97,
+      message: service.needsDownload ? '首次加载人物一致性模型（约90MB）...' : '人物一致性校验...',
     })
     const dur = await rt.ffmpeg.getDuration(segmentAbsPath)
     // 三帧抽样（25%/50%/90%）取平均，捕捉中间段漂移，而非只看末帧附近
-    const frameTimes = [0.25, 0.5, 0.9].map(f => Math.max(0.1, dur * f))
+    const frameTimes = [0.25, 0.5, 0.9].map((f) => Math.max(0.1, dur * f))
     const result = await service.compareFrames(compareRefAbs, segmentAbsPath, frameTimes)
     score = result.score
     method = result.method
     shot.consistencyScore = Math.round(score * 1000) / 1000
-    log.info(`一致性 ${shot.id}：${method === 'face' ? '人脸' : '全图'}相似度 ${score.toFixed(3)}（3帧平均）【${service.lastMethodTrace}】`)
+    log.info(
+      `一致性 ${shot.id}：${method === 'face' ? '人脸' : '全图'}相似度 ${score.toFixed(3)}（3帧平均）【${service.lastMethodTrace}】`,
+    )
   } catch (e) {
     log.warn(`一致性校验跳过: ${e instanceof Error ? e.message : String(e)}`)
   }
@@ -112,15 +120,21 @@ export async function runConsistencyCheck(
     shot.seed = renderSeed
     if (fallbackWan) {
       rt.emitProgress({
-        projectId, shotId: shot.id, step: 'render', percent: 20,
-        message: `${warnMsg}（H3 身份漂移严重，自动切换 Wan i2v 重渲以锁定人物）...`
+        projectId,
+        shotId: shot.id,
+        step: 'render',
+        percent: 20,
+        message: `${warnMsg}（H3 身份漂移严重，自动切换 Wan i2v 重渲以锁定人物）...`,
       })
       log.info(`[${shot.id}] H3 一致性 ${score.toFixed(3)} 极低，切换 Wan i2v 重渲`)
       await reRun(renderSeed, 'wan')
     } else {
       rt.emitProgress({
-        projectId, shotId: shot.id, step: 'render', percent: 20,
-        message: `${warnMsg}，换 seed 自动重渲一次...`
+        projectId,
+        shotId: shot.id,
+        step: 'render',
+        percent: 20,
+        message: `${warnMsg}，换 seed 自动重渲一次...`,
       })
       await reRun(renderSeed)
     }
@@ -129,14 +143,17 @@ export async function runConsistencyCheck(
       const result2 = await service.compareFrames(
         compareRefAbs,
         segmentAbsPath,
-        [0.25, 0.5, 0.9].map(f => Math.max(0.1, dur2 * f))
+        [0.25, 0.5, 0.9].map((f) => Math.max(0.1, dur2 * f)),
       )
       shot.consistencyScore = Math.round(result2.score * 1000) / 1000
       if (result2.score < (result2.method === 'face' ? FACE_CONSISTENCY_THRESHOLD : CONSISTENCY_THRESHOLD)) {
         shot.lowConsistency = true
         rt.emitProgress({
-          projectId, shotId: shot.id, step: 'combine', percent: 99,
-          message: `重渲后${result2.method === 'face' ? '人脸' : '全图'}相似度 ${result2.score.toFixed(2)} 仍偏低，已标记。镜头仍进入成片，可在剪辑台跳过或重渲`
+          projectId,
+          shotId: shot.id,
+          step: 'combine',
+          percent: 99,
+          message: `重渲后${result2.method === 'face' ? '人脸' : '全图'}相似度 ${result2.score.toFixed(2)} 仍偏低，已标记。镜头仍进入成片，可在剪辑台跳过或重渲`,
         })
       } else {
         shot.lowConsistency = undefined
@@ -149,14 +166,18 @@ export async function runConsistencyCheck(
     // 但灾难级低分（<0.2，画面里已不是参考人物）必须标记，供复审/剪辑台剔除。
     shot.lowConsistency = (method === 'face' && score < 0.4) || score < 0.2 ? true : shot.lowConsistency
     rt.emitProgress({
-      projectId, shotId: shot.id, step: 'combine', percent: 99,
-      message: isR2vShot && score < 0.2
-        ? `${warnMsg}（R2V 漂移严重，已标记低一致性；镜头仍进入成片，可在剪辑台跳过或重渲）`
-        : isR2vShot
-          ? `${warnMsg}（R2V 参考驱动镜，分数仅供参考，不标记）`
-          : method === 'face' && score < 0.4
-            ? `${warnMsg}（已标记严重漂移，镜头仍进入成片；可在剪辑台跳过或重渲）`
-            : `${warnMsg}（仅告警，镜头保留进成片）`
+      projectId,
+      shotId: shot.id,
+      step: 'combine',
+      percent: 99,
+      message:
+        isR2vShot && score < 0.2
+          ? `${warnMsg}（R2V 漂移严重，已标记低一致性；镜头仍进入成片，可在剪辑台跳过或重渲）`
+          : isR2vShot
+            ? `${warnMsg}（R2V 参考驱动镜，分数仅供参考，不标记）`
+            : method === 'face' && score < 0.4
+              ? `${warnMsg}（已标记严重漂移，镜头仍进入成片；可在剪辑台跳过或重渲）`
+              : `${warnMsg}（仅告警，镜头保留进成片）`,
     })
   }
   return renderSeed
@@ -170,7 +191,7 @@ export async function runConsistencyCheck(
  */
 export async function recheckProjectConsistency(
   rt: ConsistencyRuntime,
-  projectId: string
+  projectId: string,
 ): Promise<{ rechecked: number; cleared: number; stillLow: number; skipped: number }> {
   const project = await rt.store.get(projectId)
   if (!project) throw new Error('项目不存在')
@@ -192,12 +213,13 @@ export async function recheckProjectConsistency(
     }
     try {
       rt.emitProgress({
-        projectId, shotId: shot.id, step: 'combine', percent: 97,
-        message: `第${shot.index}镜 重跑人物一致性校验...`
+        projectId,
+        shotId: shot.id,
+        step: 'combine',
+        percent: 97,
+        message: `第${shot.index}镜 重跑人物一致性校验...`,
       })
-      const compareRefAbs0 = shot.firstFramePath
-        ? rt.resolveInBase(shot.firstFramePath)
-        : rt.resolveInBase(refImageRel)
+      const compareRefAbs0 = shot.firstFramePath ? rt.resolveInBase(shot.firstFramePath) : rt.resolveInBase(refImageRel)
       let compareRefAbs = compareRefAbs0
       const segmentAbs = rt.resolveInBase(shot.segmentPath)
       const isR2vShot = !!shot.audioPath
@@ -207,15 +229,19 @@ export async function recheckProjectConsistency(
           const anchorRel = `projects/${projectId}/shots/${shot.id}_anchor.png`
           await rt.ffmpeg.extractFrameAt(segmentAbs, rt.resolveInBase(anchorRel), 0.06)
           compareRefAbs = rt.resolveInBase(anchorRel)
-        } catch { /* 保持原参照 */ }
+        } catch {
+          /* 保持原参照 */
+        }
       }
       const dur = await rt.ffmpeg.getDuration(segmentAbs)
-      const frameTimes = [0.25, 0.5, 0.9].map(f => Math.max(0.1, dur * f))
+      const frameTimes = [0.25, 0.5, 0.9].map((f) => Math.max(0.1, dur * f))
       const result = await service.compareFrames(compareRefAbs, segmentAbs, frameTimes)
       const threshold = result.method === 'face' ? FACE_CONSISTENCY_THRESHOLD : CONSISTENCY_THRESHOLD
       shot.consistencyScore = result.score
       rechecked++
-      log.info(`一致性复评 第${shot.index}镜：${result.method === 'face' ? '人脸' : '全图'} ${result.score.toFixed(3)}（阈值 ${threshold}${isR2vShot ? '，R2V 锚点' : ''}）`)
+      log.info(
+        `一致性复评 第${shot.index}镜：${result.method === 'face' ? '人脸' : '全图'} ${result.score.toFixed(3)}（阈值 ${threshold}${isR2vShot ? '，R2V 锚点' : ''}）`,
+      )
       // R2V 参考驱动镜不标 lowConsistency（D-06）；i2v 镜按阈值摘帽
       if (result.score >= threshold || isR2vShot) {
         if (shot.lowConsistency) cleared++
@@ -245,7 +271,7 @@ export async function computeShotRoleConfusion(
   rt: ConsistencyRuntime,
   projectId: string,
   shot: Shot,
-  project: Project
+  project: Project,
 ): Promise<{
   confused: boolean
   withCharacter?: string
@@ -255,9 +281,11 @@ export async function computeShotRoleConfusion(
 } | null> {
   const declaredId = shot.characterIds[0]
   if (!declaredId) return null
-  const declared = project.characters.find(c => c.id === declaredId)
+  const declared = project.characters.find((c) => c.id === declaredId)
   if (!declared) return null
-  const others = project.characters.filter(c => c.id !== declaredId && (c.faceImagePath || c.refImagePath || c.bodySheetPath))
+  const others = project.characters.filter(
+    (c) => c.id !== declaredId && (c.faceImagePath || c.refImagePath || c.bodySheetPath),
+  )
   if (others.length === 0) return null
   if (shot.type !== 'i2v' || shot.status !== 'done' || !shot.segmentPath) return null
   const service = rt.getConsistencyService()
@@ -271,33 +299,44 @@ export async function computeShotRoleConfusion(
       const anchorRel = `projects/${projectId}/shots/${shot.id}_anchor.png`
       await rt.ffmpeg.extractFrameAt(segmentAbs, rt.resolveInBase(anchorRel), 0.06)
       refAbs = rt.resolveInBase(anchorRel)
-    } catch { /* 保持原参照 */ }
+    } catch {
+      /* 保持原参照 */
+    }
   }
   if (!refAbs) {
-    try { refAbs = rt.resolveInBase(rt.resolveRefImageRel(shot, project)) } catch { return null }
+    try {
+      refAbs = rt.resolveInBase(rt.resolveRefImageRel(shot, project))
+    } catch {
+      return null
+    }
   }
   const dur = await rt.ffmpeg.getDuration(segmentAbs).catch(() => 0)
   if (!dur) return null
-  const frameTimes = [0.25, 0.5, 0.9].map(f => Math.max(0.1, dur * f))
-  const selfResult = typeof shot.consistencyScore === 'number'
-    ? { score: shot.consistencyScore }
-    : await service.compareFrames(refAbs, segmentAbs, frameTimes).catch(() => ({ score: 0 }))
+  const frameTimes = [0.25, 0.5, 0.9].map((f) => Math.max(0.1, dur * f))
+  const selfResult =
+    typeof shot.consistencyScore === 'number'
+      ? { score: shot.consistencyScore }
+      : await service.compareFrames(refAbs, segmentAbs, frameTimes).catch(() => ({ score: 0 }))
   const otherScores: Array<{ characterId: string; name: string; score: number }> = []
   for (const other of others) {
     const otherRel = other.faceImagePath || other.refImagePath || other.bodySheetPath!
     try {
       const r = await service.compareFrames(rt.resolveInBase(otherRel), segmentAbs, frameTimes)
       otherScores.push({ characterId: other.id, name: other.name, score: r.score })
-    } catch { /* 单角色比对失败跳过 */ }
+    } catch {
+      /* 单角色比对失败跳过 */
+    }
   }
   const verdict = detectRoleConfusion({
     selfScore: selfResult.score,
     otherScores,
-    margin: 0.05
+    margin: 0.05,
   })
-  shot.roleConfusion = verdict.confused ? true : shot.roleConfusion
   if (verdict.confused) {
-    log.warn(`角色混淆 ${shot.id}（第${shot.index}镜）：本镜声明角色「${declared.name}」self=${verdict.selfScore?.toFixed(3)}，但输出更像「${verdict.withName}」${verdict.bestOther?.toFixed(3)}（>self+0.05），已标记待重渲`)
+    shot.roleConfusion = true
+    log.warn(
+      `角色混淆 ${shot.id}（第${shot.index}镜）：本镜声明角色「${declared.name}」self=${verdict.selfScore?.toFixed(3)}，但输出更像「${verdict.withName}」${verdict.bestOther?.toFixed(3)}（>self+0.05），已标记待重渲`,
+    )
   }
   return verdict
 }
@@ -307,7 +346,7 @@ export async function computeShotRoleConfusion(
  */
 export async function recheckProjectRoleConfusion(
   rt: ConsistencyRuntime,
-  projectId: string
+  projectId: string,
 ): Promise<{ checked: number; confused: number; skipped: number }> {
   const project = await rt.store.get(projectId)
   if (!project) throw new Error('项目不存在')
@@ -321,12 +360,15 @@ export async function recheckProjectRoleConfusion(
       continue
     }
     const verdict = await computeShotRoleConfusion(rt, projectId, shot, project)
-    if (!verdict) { skipped++; continue }
+    if (!verdict) {
+      skipped++
+      continue
+    }
     checked++
     if (verdict.confused) {
       confused++
       shot.roleConfusion = true
-      shot.auditHint = `角色混淆：本镜声明「${project.characters.find(c => c.id === shot.characterIds[0])?.name}」但画面更像「${verdict.withName}」（${verdict.bestOther?.toFixed(2)} vs self ${verdict.selfScore?.toFixed(2)}），请重渲该镜或修正参考图`
+      shot.auditHint = `角色混淆：本镜声明「${project.characters.find((c) => c.id === shot.characterIds[0])?.name}」但画面更像「${verdict.withName}」（${verdict.bestOther?.toFixed(2)} vs self ${verdict.selfScore?.toFixed(2)}），请重渲该镜或修正参考图`
     }
   }
   await rt.store.save(project)

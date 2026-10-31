@@ -4,13 +4,17 @@ import * as path from 'node:path'
 import { analyzeSystemPrompt } from '../../src/main/core/llmPromptsAnalyze'
 
 const sb = {
-  minShots: 5, maxShots: 8, maxCharacters: 4,
+  minShots: 5,
+  maxShots: 8,
+  maxCharacters: 4,
   temperature: 0.7,
-  enforcePropLock: true, enforceReactionBeats: true, enforceBoardingChain: false
+  enforcePropLock: true,
+  enforceReactionBeats: true,
+  enforceBoardingChain: false,
 } as any
 
 function system(extraRules: string[] = []): string {
-  return analyzeSystemPrompt({ sb, titleHint: '测试剧', tpl: undefined, extraRules })
+  return analyzeSystemPrompt({ sb, titleHint: '测试剧', extraRules })
 }
 
 describe('analyzeSystemPrompt 单一事实源（2026-10-23 全量整改）', () => {
@@ -32,7 +36,25 @@ describe('analyzeSystemPrompt 单一事实源（2026-10-23 全量整改）', () 
   })
   it('不含任何他剧/他项目残留角色名（污染名准入）', () => {
     const s = system()
-    for (const n of ['白若曦', '孟瑶', '苏棠', '林一剪', '江哲', 'Chen Mo', 'Marcus', 'Elara', '沈青崖', '铁髯', '阿禾', '周野', '苏晚', '老陈', '灵气打卡', '雨夜山门', '深夜便利店']) {
+    for (const n of [
+      '白若曦',
+      '孟瑶',
+      '苏棠',
+      '林一剪',
+      '江哲',
+      'Chen Mo',
+      'Marcus',
+      'Elara',
+      '沈青崖',
+      '铁髯',
+      '阿禾',
+      '周野',
+      '苏晚',
+      '老陈',
+      '灵气打卡',
+      '雨夜山门',
+      '深夜便利店',
+    ]) {
       expect(s, `残留污染名: ${n}`).not.toContain(n)
     }
   })
@@ -54,7 +76,21 @@ describe('rules.json 污染准入（methodRules 注入 LLM 前必须无具体剧
     const p = path.join(process.cwd(), 'skills', 'director', 'rules.json')
     const rules = JSON.parse(fs.readFileSync(p, 'utf-8'))
     const all = JSON.stringify(rules)
-    for (const n of ['沈青崖', '铁髯', '阿禾', '灵气打卡', '雨夜山门', '深夜便利店', '周野', '苏晚', '老陈', 'Marcus', 'Elara', 'Chen Mo', '关东煮']) {
+    for (const n of [
+      '沈青崖',
+      '铁髯',
+      '阿禾',
+      '灵气打卡',
+      '雨夜山门',
+      '深夜便利店',
+      '周野',
+      '苏晚',
+      '老陈',
+      'Marcus',
+      'Elara',
+      'Chen Mo',
+      '关东煮',
+    ]) {
       expect(all, `rules.json 残留污染名: ${n}`).not.toContain(n)
     }
   })

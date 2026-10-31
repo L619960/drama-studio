@@ -2,11 +2,18 @@ import axios from 'axios'
 import * as fs from 'fs/promises'
 import * as path from 'node:path'
 import { spawn } from 'node:child_process'
-import { execFileSync } from 'node:child_process'
+import { childProcessManager } from './childProcessManager'
 import type WebSocket from 'ws'
-import type { ComfyStartResult, ComfyWSMessage, ComfyUIHistoryOutput, ComfyUIOutputItem, ComfySystemStats } from '../../shared/ipcTypes'
+import type {
+  ComfyStartResult,
+  ComfyWSMessage,
+  ComfyUIHistoryOutput,
+  ComfyUIOutputItem,
+  ComfySystemStats,
+} from '../../shared/ipcTypes'
 import type { ObjectNodeInfo as ObjectInfoLike } from './workflowLoader'
 import { createLogger } from './logger'
+import { appLogsDir } from './appPaths'
 
 const log = createLogger('ComfyUI')
 
@@ -20,16 +27,132 @@ export interface SubmitResult {
   number: number
 }
 
-
 /** 解析带引号路径的命令行（路径可含空格） */
 function parseCommandLine(cmd: string): string[] {
   const out: string[] = []
   const re = /"([^"]*)"|'([^']*)'|(\S+)/g
   let m: RegExpExecArray | null
   while ((m = re.exec(cmd)) !== null) {
-    out.push(m[1] ?? m[2] ?? m[3])
+    const token = m[1] ?? m[2] ?? m[3]
+    if (token === undefined) continue
+    out.push(token)
   }
   return out
+}
+
+// ===== SEC-03：启动命令白名单 =====
+// 渲染层可改写 settings.comfyui.startCommand 并触发一键启动，若不校验等于任意程序执行。
+// 规则：① 可执行文件必须是 Python 解释器（禁 cmd/powershell/wscript/curl 等）；
+//      ② 必须显式执行 main.py（拒绝 -c/-m 这类任意代码/模块执行）；
+//      ③ main.py 必须位于用户配置的 ComfyUI 目录（inputDir/modelsDir 的上层目录）内。
+const ALLOWED_PY_BASENAMES = new Set(['python.exe', 'pythonw.exe', 'python3.exe', 'python', 'python3'])
+const FORBIDDEN_PY_FLAGS = new Set(['-c', '--command', '-m', '-', '--exec', '--eval'])
+
+/** 平台无关的「子路径在根内」判定（Windows 大小写不敏感） */
+function isInsidePath(child: string, root: string): boolean {
+  const norm = (p: string): string => (process.platform === 'win32' ? path.resolve(p).toLowerCase() : path.resolve(p))
+  const c = norm(child)
+  const r = norm(root)
+  return c === r || c.startsWith(r + path.sep)
+}
+
+/**
+ * 由设置推导 ComfyUI 安装根目录候选：inputDir/modelsDir 的上一级。
+ * 两个目录都未配置时退化为「python.exe 所在目录及其上一级」——
+ * 秋叶整合包形态（<整合包>\python\python.exe + <整合包>\ComfyUI\main.py）可覆盖，
+ * 同时仍把脚本锁在启动器所在目录树内。
+ */
+export function resolveComfyRoots(comfyui: { inputDir?: string; modelsDir?: string }, exe: string): string[] {
+  const roots: string[] = []
+  if (comfyui.inputDir) roots.push(path.dirname(comfyui.inputDir))
+  if (comfyui.modelsDir) roots.push(path.dirname(comfyui.modelsDir))
+  if (roots.length) return roots
+  roots.push(path.dirname(exe), path.dirname(path.dirname(exe)))
+  return roots
+}
+
+export type StartCommandValidation =
+  { ok: true; exe: string; args: string[]; script: string } | { ok: false; error: string }
+
+/**
+ * SEC-03：一键启动命令校验（纯函数 + 两次 stat，便于单测）。
+ * 通过后返回可直接 spawn 的 exe/args；失败返回面向用户的中文原因。
+ */
+export async function validateStartCommand(cmd: string, roots: string[]): Promise<StartCommandValidation> {
+  if (/[\r\n\0]/.test(cmd)) return { ok: false, error: '启动命令含非法控制字符' }
+  const argv = parseCommandLine(cmd)
+  if (!argv.length) return { ok: false, error: '启动命令为空' }
+  const exe = argv[0]
+  if (!exe) return { ok: false, error: '启动命令为空' }
+  const args = argv.slice(1)
+  if (!exe.includes('\\') && !exe.includes('/')) {
+    return { ok: false, error: `启动程序不存在或未配置（${exe}）` }
+  }
+  const exeBase = path.basename(exe).toLowerCase()
+  if (!ALLOWED_PY_BASENAMES.has(exeBase)) {
+    return {
+      ok: false,
+      error: `启动程序必须是 Python 解释器（python.exe / python3.exe），当前为 ${path.basename(exe)}；已拒绝启动`,
+    }
+  }
+  const badFlag = args.find((a) => FORBIDDEN_PY_FLAGS.has(a.toLowerCase()))
+  if (badFlag) {
+    return { ok: false, error: `启动命令含不允许的参数 ${badFlag}（禁止执行任意代码/模块）` }
+  }
+  const scriptArg = args.find((a) => !a.startsWith('-') && /main\.py$/i.test(a))
+  if (!scriptArg) {
+    return { ok: false, error: '启动命令必须显式执行 ComfyUI 的 main.py' }
+  }
+  const script = path.isAbsolute(scriptArg) ? scriptArg : path.resolve(path.dirname(exe), scriptArg)
+  try {
+    const st = await fs.stat(exe)
+    if (!st.isFile()) return { ok: false, error: `启动程序不是文件（${exe}）` }
+  } catch {
+    return { ok: false, error: `启动程序不存在（${exe}）` }
+  }
+  try {
+    const st = await fs.stat(script)
+    if (!st.isFile()) return { ok: false, error: `ComfyUI 入口脚本不是文件（${script}）` }
+  } catch {
+    return { ok: false, error: `ComfyUI 入口脚本不存在（${script}）` }
+  }
+  if (!roots.length || !roots.some((r) => isInsidePath(script, r))) {
+    return {
+      ok: false,
+      error: '启动脚本不在已配置的 ComfyUI 目录内；请在设置中填写 ComfyUI 的 input 或 models 目录后重试',
+    }
+  }
+  return { ok: true, exe, args, script }
+}
+
+// ===== SEC-11：停止只结束「自己启动的」或「端口归属匹配」的进程 =====
+/** 解析 PowerShell 输出的 `pid::commandline` 行 */
+export function parseStopCandidates(output: string): Array<{ pid: number; commandLine: string }> {
+  const out: Array<{ pid: number; commandLine: string }> = []
+  for (const line of output.split(/\r?\n/)) {
+    const idx = line.indexOf('::')
+    if (idx < 0) continue
+    const pidText = line.slice(0, idx).trim()
+    if (!/^\d+$/.test(pidText)) continue
+    out.push({ pid: Number(pidText), commandLine: line.slice(idx + 2).trim() })
+  }
+  return out
+}
+
+/**
+ * SEC-11：命令行是否归属当前 baseUrl 端口。
+ * 显式 `--port <n>`/`--port=<n>` 必须精确匹配（含词边界，避免 --port 81880 误判）；
+ * 未显式指定端口时，ComfyUI 默认监听 8188，仅当目标端口为 8188 才视为归属。
+ */
+export function commandLineOwnsPort(commandLine: string, port: number): boolean {
+  const m = /--port(?:=|\s+)(\d+)/i.exec(commandLine)
+  if (m) return Number(m[1]) === port
+  return port === 8188
+}
+
+/** 命令行是否为 ComfyUI 主进程（含 main.py） */
+export function commandLineIsComfyMain(commandLine: string): boolean {
+  return /main\.py/i.test(commandLine)
 }
 
 /**
@@ -61,7 +184,7 @@ export const VRAM_TIERS: Record<VramTierName, VramTier> = {
   // 18~24GB：准高清竖屏（640×1152 = 32×20 / 32×36 合法网格；旧 640×1136 非 32 倍数会触发 VAE 修正）
   high: { name: 'high', label: '18–24GB', width: 640, height: 1152, maxFrames: 175, maxWanSec: 6 },
   // >=24GB：H3 官方 768p
-  ultra: { name: 'ultra', label: '24GB 以上', width: 768, height: 1344, maxFrames: 175, maxWanSec: 6 }
+  ultra: { name: 'ultra', label: '24GB 以上', width: 768, height: 1344, maxFrames: 175, maxWanSec: 6 },
 }
 
 /** 从高到低：OOM 时逐级降分辨率 */
@@ -70,8 +193,9 @@ const VRAM_TIER_LADDER: VramTierName[] = ['ultra', 'high', 'standard', 'mid', 'l
 /** 降一档显存档位；已是最低档返回 null */
 export function stepDownVramTier(tier: VramTier): VramTier | null {
   const i = VRAM_TIER_LADDER.indexOf(tier.name)
-  if (i < 0 || i >= VRAM_TIER_LADDER.length - 1) return null
-  return VRAM_TIERS[VRAM_TIER_LADDER[i + 1]]
+  const nextName = VRAM_TIER_LADDER[i + 1]
+  if (i < 0 || nextName === undefined) return null
+  return VRAM_TIERS[nextName] ?? null
 }
 
 const GIB = 1024 ** 3
@@ -79,7 +203,7 @@ const GIB = 1024 ** 3
 interface PendingPrompt {
   resolve: (output: ComfyUIHistoryOutput) => void
   reject: (error: Error) => void
-  onProgress?: (percent: number, currentNode: string | null) => void
+  onProgress?: ((percent: number, currentNode: string | null) => void) | undefined
   timer: NodeJS.Timeout
   pollTimer?: NodeJS.Timeout
 }
@@ -119,11 +243,11 @@ export class ComfyUIClient {
    * 未配置启动命令时返回错误，不猜测安装盘符。
    * 不阻塞等待就绪（由调用方轮询 healthCheck 显示「启动中」）。
    */
-  async start(startCommand?: string): Promise<ComfyStartResult> {
+  async start(comfyui?: { startCommand?: string; inputDir?: string; modelsDir?: string }): Promise<ComfyStartResult> {
     if (await this.healthCheck()) return { ok: true, already: true }
     // R-04：并发去重（IPC 层连点/多入口并发时复用进行中的启动）
     if (this.starting) return this.starting
-    this.starting = this.doStart(startCommand)
+    this.starting = this.doStart(comfyui)
     try {
       return await this.starting
     } finally {
@@ -131,83 +255,151 @@ export class ComfyUIClient {
     }
   }
 
-  private async doStart(startCommand?: string): Promise<ComfyStartResult> {
-    const cmd = startCommand?.trim() || ''
+  private async doStart(comfyui?: {
+    startCommand?: string
+    inputDir?: string
+    modelsDir?: string
+  }): Promise<ComfyStartResult> {
+    const cmd = (comfyui?.startCommand ?? '').trim()
     if (!cmd) return { ok: false, error: '未配置 ComfyUI 启动命令，请在设置中填写 python.exe 与 main.py 的路径' }
+    // SEC-03：进程白名单 + 脚本存在性 + 安装目录归属校验（命令可被渲染层改写，必须严守）
     const argv = parseCommandLine(cmd)
-    if (!argv.length) return { ok: false, error: '启动命令为空' }
-    const exe = argv[0]
-    const args = argv.slice(1)
-    if (!exe.includes('\\') && !exe.includes('/')) {
-      return { ok: false, error: `启动程序不存在或未配置（${exe}）` }
+    const roots = resolveComfyRoots(comfyui ?? {}, argv[0] ?? '')
+    const check = await validateStartCommand(cmd, roots)
+    if (!check.ok) {
+      log.warn(`ComfyUI 启动命令被拒绝: ${check.error}`)
+      return { ok: false, error: check.error }
     }
-    // S-03：拒绝控制字符（换行/回车会污染启动日志与命令行解析），并校验启动文件真实存在且为文件，
-    // 避免把误配目录/不存在路径交给 spawn（Windows 下会弹「找不到文件」系统对话框）
-    if (/[\r\n\0]/.test(cmd)) return { ok: false, error: '启动命令含非法控制字符' }
-    try {
-      const st = await fs.stat(exe)
-      if (!st.isFile()) return { ok: false, error: `启动程序不是文件（${exe}）` }
-    } catch {
-      return { ok: false, error: `启动程序不存在（${exe}）` }
-    }
+    const exe = check.exe
+    const args = check.args
     const cwd = path.dirname(exe)
     // 启动日志：用户数据目录下 comfyui-launch.log（排错用）
-    const logDir = path.join(process.env.APPDATA || '', 'drama-studio', 'logs')
+    const logDir = appLogsDir()
     let logFd: fs.FileHandle | undefined
     try {
       await fs.mkdir(logDir, { recursive: true })
       logFd = await fs.open(path.join(logDir, 'comfyui-launch.log'), 'a')
-    } catch { /* 打不开日志不影响启动 */ }
+    } catch {
+      /* 打不开日志不影响启动 */
+    }
     try {
       const p = spawn(exe, args, {
         cwd,
         detached: true,
         windowsHide: true,
-        stdio: ['ignore', logFd ? (logFd.fd as unknown as number) : 'ignore', logFd ? (logFd.fd as unknown as number) : 'ignore']
+        stdio: [
+          'ignore',
+          logFd ? (logFd.fd as unknown as number) : 'ignore',
+          logFd ? (logFd.fd as unknown as number) : 'ignore',
+        ],
       })
       // 记录 PID，防止被 GC 影响（detached 已脱离）
       this.launchedPid = p.pid ?? undefined
       log.info(`ComfyUI 启动中 pid=${p.pid} cmd=${cmd}`)
-      return { ok: true, pid: p.pid ?? undefined }
+      return { ok: true, ...(p.pid !== undefined ? { pid: p.pid } : {}) }
     } catch (e) {
       log.error(`ComfyUI 启动失败: ${e instanceof Error ? e.message : String(e)}`)
       return { ok: false, error: e instanceof Error ? e.message : String(e) }
+    } finally {
+      // CORE-11：子进程已继承独立句柄，父进程这份 fd 必须关闭，否则每次启动泄漏一个 fd
+      if (logFd) await logFd.close().catch(() => undefined)
     }
   }
 
-  /** 最近一次由本应用启动的进程 PID（仅用于日志/定位，停止仍按命令行匹配） */
+  /** 最近一次由本应用启动的进程 PID（停止时优先按此精确结束，避免误杀用户其它 ComfyUI） */
   private launchedPid: number | undefined = undefined
 
   /**
-   * 停止本机 ComfyUI：按「命令行含 main.py 且含当前 baseUrl 端口」定位 python 进程并结束（含子进程树）。
+   * 停止本机 ComfyUI：
+   * 1) 优先结束本应用记录的 launchedPid（并校验其命令行确为 ComfyUI 主进程且端口归属一致）；
+   * 2) 兜底按命令行匹配（main.py + 端口归属），仅结束命中进程树。
    */
   async stop(): Promise<{ ok: boolean; killed: number; error?: string }> {
     let port = 8188
     try {
       const u = new URL(this.baseUrl)
       port = Number(u.port) || 8188
-    } catch { /* 用默认端口 */ }
+    } catch {
+      /* 用默认端口 */
+    }
+
+    // 1) 精确结束自己启动的进程
+    const ownPid = this.launchedPid
+    if (ownPid) {
+      this.launchedPid = undefined
+      let own = false
+      if (process.platform === 'win32') {
+        try {
+          // CORE-11：改异步 execFile，避免 PowerShell 查询把主线程同步阻塞最长 8s
+          const { stdout } = await childProcessManager.execFile(
+            'powershell',
+            [
+              '-NoProfile',
+              '-NonInteractive',
+              '-Command',
+              `$p = Get-CimInstance Win32_Process -Filter "ProcessId=${ownPid}" -ErrorAction SilentlyContinue; if ($p) { $p.CommandLine }`,
+            ],
+            { timeout: 8000, windowsHide: true, label: 'comfy-cim-own' },
+          )
+          const line = stdout.trim()
+          own = Boolean(line) && commandLineIsComfyMain(line) && commandLineOwnsPort(line, port)
+        } catch {
+          /* 查询失败：走兜底扫描 */
+        }
+      } else {
+        own = true // 非 Windows 无 CIM：信任自己记录的 pid
+      }
+      if (own && (await this.killProcessTree(ownPid))) {
+        log.info(`ComfyUI 停止：结束本应用启动的进程 pid=${ownPid}（端口 ${port}）`)
+        return { ok: true, killed: 1 }
+      }
+    }
+
+    // 2) 兜底：按命令行匹配（含端口归属校验）
     try {
       const ps = `
 $filter = "Name='python.exe' or Name='python3.exe'"
-$procs = Get-CimInstance Win32_Process -Filter $filter -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -match 'main\\.py' -and $_.CommandLine -match '--port\\s+${port}' }
-$procs | Select-Object -ExpandProperty ProcessId
+Get-CimInstance Win32_Process -Filter $filter -ErrorAction SilentlyContinue | ForEach-Object { "$($_.ProcessId)::$($_.CommandLine)" }
 `
-      const out = execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', ps], {
-        encoding: 'utf8', timeout: 15000, windowsHide: true
-      })
-      const pids = out.split(/\r?\n/).map(s => s.trim()).filter(s => /^\d+$/.test(s))
+      const { stdout } = await childProcessManager.execFile(
+        'powershell',
+        ['-NoProfile', '-NonInteractive', '-Command', ps],
+        {
+          timeout: 15000,
+          windowsHide: true,
+          label: 'comfy-cim-scan',
+        },
+      )
+      const pids = parseStopCandidates(stdout)
+        .filter((p) => commandLineIsComfyMain(p.commandLine) && commandLineOwnsPort(p.commandLine, port))
+        .map((p) => p.pid)
+        .filter((pid) => pid > 0)
       let killed = 0
       for (const pid of pids) {
-        try {
-          execFileSync('taskkill', ['/PID', pid, '/T', '/F'], { timeout: 10000, windowsHide: true, stdio: 'ignore' })
-          killed++
-        } catch { /* 进程可能已退出 */ }
+        if (await this.killProcessTree(pid)) killed++
       }
       log.info(`ComfyUI 停止：匹配 ${pids.length} 个进程，结束 ${killed} 个（端口 ${port}）`)
       return { ok: killed > 0 || pids.length === 0, killed }
     } catch (e) {
       return { ok: false, killed: 0, error: e instanceof Error ? e.message : String(e) }
+    }
+  }
+
+  /** 结束进程树；返回是否确实执行了结束命令（进程可能已退出） */
+  private async killProcessTree(pid: number): Promise<boolean> {
+    try {
+      if (process.platform === 'win32') {
+        await childProcessManager.execFile('taskkill', ['/PID', String(pid), '/T', '/F'], {
+          timeout: 10000,
+          windowsHide: true,
+          label: 'comfy-taskkill',
+        })
+      } else {
+        process.kill(pid, 'SIGTERM')
+      }
+      return true
+    } catch {
+      return false
     }
   }
 
@@ -225,8 +417,8 @@ $procs | Select-Object -ExpandProperty ProcessId
           name: String(dev.name ?? ''),
           type: String(dev.type ?? ''),
           vramTotal: Number(dev.vram_total ?? 0),
-          vramFree: Number(dev.vram_free ?? 0)
-        }))
+          vramFree: Number(dev.vram_free ?? 0),
+        })),
       }
     } catch {
       return null
@@ -245,7 +437,7 @@ $procs | Select-Object -ExpandProperty ProcessId
     let tier: VramTier = VRAM_TIERS.standard
     try {
       const stats = await this.getSystemStats()
-      const gpu = stats?.devices.find(d => /cuda/i.test(d.type))
+      const gpu = stats?.devices.find((d) => /cuda/i.test(d.type))
       const vramBytes = gpu?.vramTotal ?? 0
       if (vramBytes > 0) {
         if (vramBytes < 8 * GIB) tier = VRAM_TIERS.low
@@ -253,7 +445,9 @@ $procs | Select-Object -ExpandProperty ProcessId
         else if (vramBytes < 18 * GIB) tier = VRAM_TIERS.standard
         else if (vramBytes < 24 * GIB) tier = VRAM_TIERS.high
         else tier = VRAM_TIERS.ultra
-        log.info(`显存 ${(vramBytes / GIB).toFixed(1)} GiB → 档位 ${tier.name}（${tier.width}x${tier.height}，H3≤${tier.maxFrames}帧）`)
+        log.info(
+          `显存 ${(vramBytes / GIB).toFixed(1)} GiB → 档位 ${tier.name}（${tier.width}x${tier.height}，H3≤${tier.maxFrames}帧）`,
+        )
       }
     } catch {
       // 探测失败用 standard
@@ -299,7 +493,7 @@ $procs | Select-Object -ExpandProperty ProcessId
     formData.append('overwrite', 'true')
     const res = await axios.post(`${this.baseUrl}/upload/image`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
-      timeout: 30000
+      timeout: 30000,
     })
     return res.data.name
   }
@@ -320,9 +514,9 @@ $procs | Select-Object -ExpandProperty ProcessId
         method: 'POST',
         body: formData,
         // ComfyUI 挂起时不能无限卡住渲染队列（对齐 uploadImage 的 30s 超时）
-        signal: AbortSignal.timeout(30_000)
+        signal: AbortSignal.timeout(30_000),
       })
-      const data = await res.json() as { name?: string }
+      const data = (await res.json()) as { name?: string }
       if (!data.name) throw new Error('upload rejected')
       return data.name
     } catch (e) {
@@ -333,17 +527,21 @@ $procs | Select-Object -ExpandProperty ProcessId
   }
 
   async submit(graph: Record<string, unknown>): Promise<SubmitResult> {
-    const res = await axios.post(`${this.baseUrl}/prompt`, {
-      prompt: graph,
-      client_id: this.clientId
-    }, { timeout: 30000 })
+    const res = await axios.post(
+      `${this.baseUrl}/prompt`,
+      {
+        prompt: graph,
+        client_id: this.clientId,
+      },
+      { timeout: 30000 },
+    )
 
     if (res.data.error) {
       throw new Error(res.data.error)
     }
     return {
       promptId: res.data.prompt_id,
-      number: res.data.number
+      number: res.data.number,
     }
   }
 
@@ -375,12 +573,18 @@ $procs | Select-Object -ExpandProperty ProcessId
   }
 
   /**
-   * 立刻结束所有挂起的 waitForCompletion（清轮询定时器并 reject）。
+   * 立刻结束挂起的 waitForCompletion（清轮询定时器并 reject）。
    * 取消渲染时调用，避免 interrupt 之后仍等到超时。
+   * CORE-05：可按 promptId 精确结束单个任务，避免并发任务被整体取消。
    */
-  rejectPending(message: string): void {
-    for (const [promptId, pending] of [...this.pendingPrompts.entries()]) {
-      this.settlePrompt(promptId, pending)
+  rejectPending(message: string, promptId?: string): void {
+    const targets: Array<[string, PendingPrompt]> = promptId
+      ? this.pendingPrompts.has(promptId)
+        ? [[promptId, this.pendingPrompts.get(promptId)!]]
+        : []
+      : [...this.pendingPrompts.entries()]
+    for (const [pid, pending] of targets) {
+      this.settlePrompt(pid, pending)
       pending.reject(new Error(message))
     }
   }
@@ -432,16 +636,25 @@ $procs | Select-Object -ExpandProperty ProcessId
     const res = await axios.get(`${this.baseUrl}/view`, {
       params: { filename, subfolder, type },
       responseType: 'arraybuffer',
-      timeout: 60000
+      timeout: 60000,
     })
+    const buf = Buffer.from(res.data as ArrayBuffer)
+    // CORE-02：ComfyUI 偶发返回 200 + 空体（节点失败但工作流仍成功返回），
+    // 0 字节产物一旦落盘会被当成功拼进成片，这里直接判失败并清理。
+    if (buf.length === 0) throw new Error(`ComfyUI 返回空文件（${filename}），已中止`)
     await fs.mkdir(path.dirname(outputPath), { recursive: true })
-    await fs.writeFile(outputPath, Buffer.from(res.data))
+    await fs.writeFile(outputPath, buf)
   }
 
   /** 从 fullpath 直接读取（本地 ComfyUI 更快） */
   async downloadFromFullPath(fullpath: string, outputPath: string): Promise<void> {
     await fs.mkdir(path.dirname(outputPath), { recursive: true })
     await fs.copyFile(fullpath, outputPath)
+    const st = await fs.stat(outputPath).catch(() => null)
+    if (!st || st.size <= 0) {
+      await fs.rm(outputPath, { force: true }).catch(() => undefined)
+      throw new Error(`ComfyUI 输出文件为空（${path.basename(fullpath)}），已中止`)
+    }
   }
 
   async connect(): Promise<void> {
@@ -453,7 +666,11 @@ $procs | Select-Object -ExpandProperty ProcessId
     if (this.ws) {
       const old = this.ws
       this.ws = null
-      try { old.close() } catch { /* 忽略 */ }
+      try {
+        old.close()
+      } catch {
+        /* 忽略 */
+      }
     }
 
     const WS = (await import('ws')).default
@@ -521,7 +738,7 @@ $procs | Select-Object -ExpandProperty ProcessId
   async waitForCompletion(
     promptId: string,
     onProgress?: (percent: number, currentNode: string | null) => void,
-    timeoutMs = 30 * 60 * 1000
+    timeoutMs = 30 * 60 * 1000,
   ): Promise<ComfyUIHistoryOutput> {
     return new Promise((resolve, reject) => {
       const pending: PendingPrompt = { resolve, reject, onProgress, timer: undefined as unknown as NodeJS.Timeout }
@@ -552,7 +769,7 @@ $procs | Select-Object -ExpandProperty ProcessId
 
   private handleMessage(data: unknown): void {
     // ws 库的 message data 是 Buffer，必须先转字符串
-    const text = typeof data === 'string' ? data : (data as Buffer).toString?.() ?? ''
+    const text = typeof data === 'string' ? data : ((data as Buffer).toString?.() ?? '')
 
     let msg: ComfyWSMessage
     try {
@@ -590,7 +807,7 @@ $procs | Select-Object -ExpandProperty ProcessId
               pending.resolve(output)
               return
             }
-            await new Promise(r => setTimeout(r, 500))
+            await new Promise((r) => setTimeout(r, 500))
           }
           pending.reject(new Error('No output found in history'))
         })()
@@ -614,15 +831,12 @@ $procs | Select-Object -ExpandProperty ProcessId
   /** 辅助方法：从输出中找到视频文件 */
   findVideoOutput(output: ComfyUIHistoryOutput): ComfyUIOutputItem | null {
     for (const key of ['gifs', 'videos', 'images'] as const) {
-      const items = output[key]
-      if (items && items.length > 0) {
-        return items[0]
-      }
+      const first = output[key]?.[0]
+      if (first) return first
     }
     for (const items of Object.values(output)) {
-      if (items && items.length > 0 && items[0].filename?.endsWith('.mp4')) {
-        return items[0]
-      }
+      const first = items?.[0]
+      if (first?.filename?.endsWith('.mp4')) return first
     }
     return null
   }

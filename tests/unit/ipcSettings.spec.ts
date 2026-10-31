@@ -12,7 +12,7 @@ const state = vi.hoisted(() => {
   const base = process.env.TEMP || process.env.TMPDIR || '/tmp'
   return {
     dir: `${base}/drama-ipc-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-    handlers: new Map<string, (...a: unknown[]) => unknown>()
+    handlers: new Map<string, (...a: unknown[]) => unknown>(),
   }
 })
 
@@ -21,9 +21,9 @@ vi.mock('electron', () => ({
   ipcMain: {
     handle: (channel: string, fn: (...a: unknown[]) => unknown) => {
       state.handlers.set(channel, fn)
-    }
+    },
   },
-  BrowserWindow: class {}
+  BrowserWindow: class {},
 }))
 
 import { IpcChannels } from '../../src/shared/ipcTypes'
@@ -50,8 +50,7 @@ describe('ipc/shared', () => {
   })
 
   it('toAppFileUrl：反斜杠归一、逐段 URL 编码', () => {
-    expect(toAppFileUrl('projects/p1/成片 v1.mp4'))
-      .toBe('app-file://local/projects/p1/%E6%88%90%E7%89%87%20v1.mp4')
+    expect(toAppFileUrl('projects/p1/成片 v1.mp4')).toBe('app-file://local/projects/p1/%E6%88%90%E7%89%87%20v1.mp4')
     expect(toAppFileUrl('\\projects\\p1\\a.png')).toBe('app-file://local/projects/p1/a.png')
   })
 
@@ -73,7 +72,9 @@ describe('ipc/shared', () => {
     handleIpc('test:ok', (_e: unknown, n: number) => n * 2)
     await expect(call('test:ok', 21) as Promise<number>).resolves.toBe(42)
 
-    handleIpc('test:boom', () => { throw new Error('业务失败') })
+    handleIpc('test:boom', () => {
+      throw new Error('业务失败')
+    })
     await expect(call('test:boom') as Promise<unknown>).rejects.toThrow('业务失败')
     const logged = String(errSpy.mock.calls[0]?.[0] ?? '')
     expect(logged).toContain('test:boom')
@@ -87,11 +88,19 @@ describe('ipc/settings', () => {
     const save = vi.fn(async () => 3)
     const settings = {
       comfyui: { baseUrl: 'http://127.0.0.1:8188' },
+      llm: { apiKey: 'sk-secret-abcd', baseUrl: 'https://api.deepseek.com', model: 'deepseek-chat' },
       creation: {
-        character: { realismLock: 'strong', faceWidth: 768, faceHeight: 1152, t2iWorkflow: '', seedMode: 'random', seed: 42 },
+        character: {
+          realismLock: 'strong',
+          faceWidth: 768,
+          faceHeight: 1152,
+          t2iWorkflow: '',
+          seedMode: 'random',
+          seed: 42,
+        },
         scene: { plateWidth: 768, plateHeight: 1152, weatherHint: 'auto', emptyStrict: true },
-        edit: { comfyTimeoutSec: 600 }
-      }
+        edit: { comfyTimeoutSec: 600 },
+      },
     }
     const get = vi.fn(async () => settings)
     const setBaseUrl = vi.fn(async () => undefined)
@@ -99,15 +108,32 @@ describe('ipc/settings', () => {
     registerSettingsIpc({
       settingsStore: { get, save } as never,
       comfyuiClient: { setBaseUrl } as never,
-      imageService: { generate } as never
+      imageService: { generate } as never,
     })
     return { save, get, setBaseUrl, generate, settings }
   }
 
-  it('settingsGet 回读设置', async () => {
-    const { get, settings } = mkCtx()
-    await expect(call(IpcChannels.settingsGet) as Promise<unknown>).resolves.toEqual(settings)
+  it('settingsGet：SEC-04 明文 apiKey 不下发渲染层，只回 hasApiKey + 掩码', async () => {
+    const { get } = mkCtx()
+    const r = (await call(IpcChannels.settingsGet)) as {
+      llm: { apiKey: string; hasApiKey?: boolean; apiKeyMasked?: string }
+    }
+    expect(r.llm.apiKey).toBe('')
+    expect(r.llm.hasApiKey).toBe(true)
+    expect(r.llm.apiKeyMasked).toBe('****abcd')
+    expect(JSON.stringify(r)).not.toContain('sk-secret')
     expect(get).toHaveBeenCalledTimes(1)
+  })
+
+  it('settingsGet：未配置密钥时 hasApiKey=false 且掩码为空', async () => {
+    const ctx = mkCtx()
+    ;(ctx.settings.llm as { apiKey: string }).apiKey = ''
+    const r = (await call(IpcChannels.settingsGet)) as {
+      llm: { apiKey: string; hasApiKey?: boolean; apiKeyMasked?: string }
+    }
+    expect(r.llm.apiKey).toBe('')
+    expect(r.llm.hasApiKey).toBe(false)
+    expect(r.llm.apiKeyMasked).toBe('')
   })
 
   it('settingsSave 返回 revision，并在 baseUrl 变更时重连 ComfyUI', async () => {
@@ -126,8 +152,9 @@ describe('ipc/settings', () => {
 
   it('settingsPreviewAsset：定妆预览走 image.generate，返回 app-file URL', async () => {
     const { generate } = mkCtx()
-    const r = await call(IpcChannels.settingsPreviewAsset, { kind: 'character', promptHint: '红裙少女' }) as {
-      relativePath: string; mediaUrl: string
+    const r = (await call(IpcChannels.settingsPreviewAsset, { kind: 'character', promptHint: '红裙少女' })) as {
+      relativePath: string
+      mediaUrl: string
     }
     expect(generate).toHaveBeenCalledTimes(1)
     expect(r.relativePath).toMatch(/^preview\/character_\d+\.png$/)

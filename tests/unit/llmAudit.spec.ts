@@ -6,16 +6,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 vi.mock('../../src/main/core/llmHttp', () => ({
-  httpChat: vi.fn()
+  httpChat: vi.fn(),
 }))
 vi.mock('axios', () => ({ default: { post: vi.fn() } }))
 vi.mock('../../src/shared/creationSettings', () => ({
   resolveCreation: vi.fn(() => ({
-    storyboard: { enforcePropLock: true, enforceReactionBeats: false, enforceBoardingChain: true }
-  }))
+    storyboard: { enforcePropLock: true, enforceReactionBeats: false, enforceBoardingChain: true },
+  })),
 }))
 vi.mock('../../src/shared/narrativeBeats', () => ({
-  validateNarrativeContinuity: vi.fn(() => [] as string[])
+  validateNarrativeContinuity: vi.fn(() => [] as string[]),
 }))
 vi.mock('node:fs/promises', () => {
   const readFile = vi.fn()
@@ -35,14 +35,24 @@ const post = axios.post as unknown as Mock
 const readFileMock = readFile as unknown as Mock
 const narrativeMock = validateNarrativeContinuity as unknown as Mock
 
-const getSettings = vi.fn(async () =>
-  ({ llm: { model: 'ds-vision', apiKey: 'sk-audit', baseUrl: 'https://api.test/' } }) as unknown as AppSettings
+const getSettings = vi.fn(
+  async () =>
+    ({ llm: { model: 'ds-vision', apiKey: 'sk-audit', baseUrl: 'https://api.test/' } }) as unknown as AppSettings,
 )
 
 const baseShots = [
-  { index: 1, scene: '雨夜天台', character: '林澈', dialogue: '你终于来了', durationSec: 4, action: '撑伞走近', type: 'i2v' as const, shotSize: '中景' },
+  {
+    index: 1,
+    scene: '雨夜天台',
+    character: '林澈',
+    dialogue: '你终于来了',
+    durationSec: 4,
+    action: '撑伞走近',
+    type: 'i2v' as const,
+    shotSize: '中景',
+  },
   { index: 2, scene: '街道', character: '', dialogue: '', durationSec: 3 },
-  { index: 3, scene: '车内', character: '苏念', dialogue: '走吧', durationSec: 2, type: 't2v' as const }
+  { index: 3, scene: '车内', character: '苏念', dialogue: '走吧', durationSec: 2, type: 't2v' as const },
 ]
 
 beforeEach(() => {
@@ -72,9 +82,9 @@ describe('reviewStoryOp · 成片叙事复审', () => {
       expect.stringContaining('成片审片导演'),
       expect.stringContaining('梗概:（未提供）'),
       0.2,
-      120000
+      120000,
     )
-    const user = chat.mock.calls[0][2] as string
+    const user = chat.mock.calls[0]?.[2] as string
     expect(user).toContain('第1镜 [4s] 雨夜天台｜i2v｜中景｜角色:林澈｜台词:你终于来了｜action:撑伞走近')
     expect(user).toContain('第2镜 [3s] 街道｜?｜-｜角色:空镜｜台词:（无）｜action:（无）')
   })
@@ -112,14 +122,14 @@ describe('reviewStoryOp · 成片叙事复审', () => {
   it('本地问题与模型问题去重合并，且总数截断为 12', async () => {
     narrativeMock.mockReturnValue(['道具伞在第3镜失踪了', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'])
     chat.mockResolvedValue(
-      '{"passed":false,"issues":["道具伞在第3镜失踪了，建议补特写","第5镜台词与画面矛盾"],"summary":"不行"}'
+      '{"passed":false,"issues":["道具伞在第3镜失踪了，建议补特写","第5镜台词与画面矛盾"],"summary":"不行"}',
     )
     const out = await reviewStoryOp(getSettings, input)
     expect(out.passed).toBe(false)
     // 重复项被跳过、新项追加、截断 12
     expect(out.issues).toHaveLength(11)
     expect(out.issues).toContain('第5镜台词与画面矛盾')
-    expect(out.issues.filter(i => i.includes('道具伞在第3镜失踪了'))).toHaveLength(1)
+    expect(out.issues.filter((i) => i.includes('道具伞在第3镜失踪了'))).toHaveLength(1)
   })
 
   it('模型问题为本地问题前缀时同样判重跳过', async () => {
@@ -145,15 +155,19 @@ describe('reviewStoryOp · 成片叙事复审', () => {
   it('本地硬规则入参：scriptHint 缺省为空串，type 按角色有无回退 i2v/t2v，开关透传', async () => {
     await reviewStoryOp(getSettings, input)
     const [title, logline, hint, shots, flags] = narrativeMock.mock.calls[0] as [
-      string, string, string, Array<Record<string, unknown>>, Record<string, boolean>
+      string,
+      string,
+      string,
+      Array<Record<string, unknown>>,
+      Record<string, boolean>,
     ]
     expect(title).toBe('伞下')
     expect(logline).toBe('一把伞串起重逢')
     expect(hint).toBe('')
-    expect(shots[1].type).toBe('t2v') // 无角色 → t2v
-    expect(shots[0].type).toBe('i2v')
-    expect(shots[2].type).toBe('t2v') // 显式 t2v 保留
-    expect(shots[1].characterName).toBeUndefined()
+    expect(shots[1]?.type).toBe('t2v') // 无角色 → t2v
+    expect(shots[0]?.type).toBe('i2v')
+    expect(shots[2]?.type).toBe('t2v') // 显式 t2v 保留
+    expect(shots[1]?.characterName).toBeUndefined()
     expect(flags).toEqual({ enforcePropLock: true, enforceReactionBeats: false, enforceBoardingChain: true })
   })
 })
@@ -167,8 +181,14 @@ describe('diagnoseFailureOp · 流水线故障自诊断', () => {
     chat.mockResolvedValue('{"canAutoFix":true,"diagnosis":"显存不足","suggestion":"降低分辨率"}')
     const out = await diagnoseFailureOp(getSettings, { ...input, context: '第4镜 1080p' })
     expect(out).toEqual({ canAutoFix: true, diagnosis: '显存不足', suggestion: '降低分辨率' })
-    expect(chat).toHaveBeenCalledWith(getSettings, expect.stringContaining('故障诊断专家'), expect.any(String), 0.2, 60000)
-    const user = chat.mock.calls[0][2] as string
+    expect(chat).toHaveBeenCalledWith(
+      getSettings,
+      expect.stringContaining('故障诊断专家'),
+      expect.any(String),
+      0.2,
+      60000,
+    )
+    const user = chat.mock.calls[0]?.[2] as string
     expect(user).toContain('失败阶段：渲染')
     expect(user).toContain('上下文：第4镜 1080p')
     expect(user).toContain('1. CUDA out of memory')
@@ -179,7 +199,7 @@ describe('diagnoseFailureOp · 流水线故障自诊断', () => {
     chat.mockResolvedValue('```json\n{"canAutoFix":false,"diagnosis":"缺节点","suggestion":"安装节点"}\n```')
     const out = await diagnoseFailureOp(getSettings, input)
     expect(out.canAutoFix).toBe(false)
-    expect(chat.mock.calls[0][2]).not.toContain('上下文')
+    expect(chat.mock.calls[0]?.[2]).not.toContain('上下文')
   })
 
   it('canAutoFix 非 true（缺失/字符串）→ false', async () => {
@@ -215,13 +235,21 @@ describe('auditImageOp · 逐镜视觉审核', () => {
     kind: 'video' as const,
     checklist: [
       { id: 'face', label: '人脸一致', check: '与定妆比对', severity: 'block' as const },
-      { id: 'light', label: '光线自然', check: '无过曝', severity: 'warn' as const }
+      { id: 'light', label: '光线自然', check: '无过曝', severity: 'warn' as const },
     ],
-    context: { index: 1, scene: '天台', character: '林澈', action: '撑伞', shotSize: '近景', camera: '正面', lookEn: 'black coat' }
+    context: {
+      index: 1,
+      scene: '天台',
+      character: '林澈',
+      action: '撑伞',
+      shotSize: '近景',
+      camera: '正面',
+      lookEn: 'black coat',
+    },
   }
 
   const jsonResp = (content: string | undefined, reasoning?: string) => ({
-    data: { choices: [{ message: { content, reasoning_content: reasoning } }] }
+    data: { choices: [{ message: { content, reasoning_content: reasoning } }] },
   })
 
   it('未配置 apiKey → 直接 visionUnavailable，不读图不发请求', async () => {
@@ -240,11 +268,20 @@ describe('auditImageOp · 逐镜视觉审核', () => {
   })
 
   it('成功路径：jpg→image/jpeg、URL 去尾斜杠、Bearer 头、90s 超时、多模态 body 与清单提示词', async () => {
-    post.mockResolvedValue(jsonResp('{"passed":false,"blockedProblems":["人脸身份与定妆不一致"],"fixHint":"keep face identity"}'))
+    post.mockResolvedValue(
+      jsonResp('{"passed":false,"blockedProblems":["人脸身份与定妆不一致"],"fixHint":"keep face identity"}'),
+    )
     const out = await auditImageOp(getSettings, auditInput)
-    expect(out).toEqual({ visionUnavailable: false, passed: false, blockedProblems: ['人脸身份与定妆不一致'], fixHint: 'keep face identity' })
+    expect(out).toEqual({
+      visionUnavailable: false,
+      passed: false,
+      blockedProblems: ['人脸身份与定妆不一致'],
+      fixHint: 'keep face identity',
+    })
     expect(post).toHaveBeenCalledTimes(1)
-    const [url, body, cfg] = post.mock.calls[0]
+    const call = post.mock.calls[0]
+    if (!call) throw new Error('测试夹具缺少 post.mock.calls[0]')
+    const [url, body, cfg] = call
     expect(url).toBe('https://api.test/chat/completions')
     expect(cfg).toEqual({ headers: { Authorization: 'Bearer sk-audit' }, timeout: 90000 })
     expect(body.model).toBe('ds-vision')
@@ -259,13 +296,20 @@ describe('auditImageOp · 逐镜视觉审核', () => {
   })
 
   it('无扩展名按 png、baseUrl 缺省用 deepseek、kind=keyframe 且无 lookEn 的提示词分支', async () => {
-    const settings = vi.fn(async () => ({ llm: { apiKey: 'sk-a', model: 'm1', baseUrl: '' } }) as unknown as AppSettings)
-    const out1 = await auditImageOp(settings, { ...auditInput, imagePath: 'C:/out/frame', kind: 'keyframe', context: { ...auditInput.context, lookEn: undefined } })
+    const settings = vi.fn(
+      async () => ({ llm: { apiKey: 'sk-a', model: 'm1', baseUrl: '' } }) as unknown as AppSettings,
+    )
+    const out1 = await auditImageOp(settings, {
+      ...auditInput,
+      imagePath: 'C:/out/frame',
+      kind: 'keyframe',
+      context: { ...auditInput.context, lookEn: undefined },
+    })
     expect(out1.visionUnavailable).toBe(false)
-    expect(post.mock.calls[0][0]).toBe('https://api.deepseek.com/chat/completions')
-    expect(post.mock.calls[0][1].messages[1].content[1].image_url.url).toMatch(/^data:image\/png;base64,/)
-    expect(post.mock.calls[0][1].messages[1].content[0].text).toContain('关键帧审核')
-    expect(post.mock.calls[0][1].messages[1].content[0].text).not.toContain('外观锁定')
+    expect(post.mock.calls[0]?.[0]).toBe('https://api.deepseek.com/chat/completions')
+    expect(post.mock.calls[0]?.[1].messages[1].content[1].image_url.url).toMatch(/^data:image\/png;base64,/)
+    expect(post.mock.calls[0]?.[1].messages[1].content[0].text).toContain('关键帧审核')
+    expect(post.mock.calls[0]?.[1].messages[1].content[0].text).not.toContain('外观锁定')
   })
 
   it('content 空但有 reasoning → 加大配额重试一次后成功', async () => {
@@ -276,8 +320,8 @@ describe('auditImageOp · 逐镜视觉审核', () => {
     expect(out).toEqual({ visionUnavailable: false, passed: true, blockedProblems: [], fixHint: '' })
     expect(post).toHaveBeenCalledTimes(2)
     // 同一 body 对象原地改配额后重发（首次发出时 max_tokens=2000，重试前被改为 4000）
-    expect(post.mock.calls[0][1]).toBe(post.mock.calls[1][1])
-    expect(post.mock.calls[1][1].max_tokens).toBe(4000)
+    expect(post.mock.calls[0]?.[1]).toBe(post.mock.calls[1]?.[1])
+    expect(post.mock.calls[1]?.[1].max_tokens).toBe(4000)
   })
 
   it('content 空且无 reasoning → visionUnavailable，只请求一次', async () => {
@@ -308,10 +352,14 @@ describe('auditImageOp · 逐镜视觉审核', () => {
 
   it('字段归一：passed 缺失视为通过；blockedProblems 非数组→[]、含空串过滤并截断 6；fixHint 截断 300', async () => {
     const long = 'x'.repeat(350)
-    post.mockResolvedValue(jsonResp(JSON.stringify({
-      blockedProblems: ['p1', '', 'p3', 'p4', 'p5', 'p6', 'p7', 'p8'],
-      fixHint: `  ${long}  `
-    })))
+    post.mockResolvedValue(
+      jsonResp(
+        JSON.stringify({
+          blockedProblems: ['p1', '', 'p3', 'p4', 'p5', 'p6', 'p7', 'p8'],
+          fixHint: `  ${long}  `,
+        }),
+      ),
+    )
     const out = await auditImageOp(getSettings, auditInput)
     expect(out.passed).toBe(true)
     expect(out.blockedProblems).toEqual(['p1', 'p3', 'p4', 'p5', 'p6', 'p7'])

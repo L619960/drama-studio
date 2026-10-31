@@ -13,27 +13,50 @@ import type { AnalyzeScene, AnalyzedShot } from './ipcTypes'
 import { extractOutfitLock } from './castAppearance'
 import { shotSizeCueFor } from './scenePrompts'
 import { CJK_RE, ERA_TERMS, hasPeriodCue, wordCount } from './promptAuditRules'
+import { INDOOR_LIGHTING_RE } from './promptLexicon'
 
 /** 英文提示词字段：必须单行英文短语；中文残留会稀释模型权重 */
 export const ENGLISH_PROMPT_FIELDS = [
-  'sceneEn', 'promptEn', 'negativeEn', 'firstFrameEn', 'midFrameEn', 'lastFrameEn',
-  'handoffToNext', 'transitionEn', 'camera', 'lighting', 'facing', 'continuity', 'emotion'
+  'sceneEn',
+  'promptEn',
+  'negativeEn',
+  'firstFrameEn',
+  'midFrameEn',
+  'lastFrameEn',
+  'handoffToNext',
+  'transitionEn',
+  'camera',
+  'lighting',
+  'facing',
+  'continuity',
+  'emotion',
 ] as const
 
 /** 渲染层已统一注入的通用负向词：镜级 negativeEn 重复写只会稀释本镜真正的增量风险 */
 const SYSTEM_NEGATIVE_TERMS = [
-  'no morphing', 'no clothing change', 'no extra limbs', 'no sudden movement',
-  'no large displacement', 'no position shift', 'no extra characters', 'no extra people',
-  'no background crowd', 'consistent background', 'no subtitles', 'no watermark', 'no text',
-  'no distorted hands', 'no distorted limbs'
+  'no morphing',
+  'no clothing change',
+  'no extra limbs',
+  'no sudden movement',
+  'no large displacement',
+  'no position shift',
+  'no extra characters',
+  'no extra people',
+  'no background crowd',
+  'consistent background',
+  'no subtitles',
+  'no watermark',
+  'no text',
+  'no distorted hands',
+  'no distorted limbs',
 ]
 
 const NIGHT_RE = /夜|晚|midnight|night|moon|moonlit|dark\b|evening|dusk/i
 const RAIN_RE = /雨|rain|overcast|storm|雾|fog|haze|snow|snowy/i
 const GOLDEN_RE = /黄昏|日落|sunset|golden hour|dawn|黎明|日出|morning|晨光/i
-const INDOOR_RE = /室内|房间|屋里|店内|办公|写字楼|楼内|厅内|hall|room|store|shop|office|apartment|interior|indoor|corridor|stairwell|temple|inn/i
 
-const CAMERA_ANGLE_RE = /\b(eye-level|low angle|high angle|aerial|over-shoulder|three-quarter|bird'?s eye|worm'?s eye|top-down|dutch angle)\b/i
+const CAMERA_ANGLE_RE =
+  /\b(eye-level|low angle|high angle|aerial|over-shoulder|three-quarter|bird'?s eye|worm'?s eye|top-down|dutch angle)\b/i
 const CAMERA_LENS_RE = /\b\d{2,3}\s?mm\b|\blens\b|depth of field|bokeh/i
 
 /** 单行纯文本 + 去 Markdown + 收敛逗号空白（保留句首冠词，不做虚词裁剪） */
@@ -70,7 +93,8 @@ export function defaultLightingFor(sceneText: string): string {
   if (NIGHT_RE.test(t)) return 'cool moonlight key from camera-left, low-key exposure, deep shadows'
   if (RAIN_RE.test(t)) return 'overcast diffused daylight, soft even exposure from camera-left, muted contrast'
   if (GOLDEN_RE.test(t)) return 'warm golden-hour backlight from camera-left, soft rim light, gentle shadows'
-  if (INDOOR_RE.test(t)) return 'warm practical interior key light from camera-left, soft shadows, natural falloff'
+  if (INDOOR_LIGHTING_RE.test(t))
+    return 'warm practical interior key light from camera-left, soft shadows, natural falloff'
   return 'soft natural daylight key from camera-left, balanced exposure, gentle shadows'
 }
 
@@ -87,7 +111,11 @@ export function defaultCameraFor(shotSize?: string): string {
 
 /** 景别对应的镜头参数（焦距 + 景深），用于补全 camera 缺项 */
 function lensFor(shotSize?: string): string {
-  return defaultCameraFor(shotSize).split(',').slice(0, 2).map(s => s.trim()).join(', ')
+  return defaultCameraFor(shotSize)
+    .split(',')
+    .slice(0, 2)
+    .map((s) => s.trim())
+    .join(', ')
 }
 
 /** 统一机位/镜头描述：缺机位高度补 eye-level，缺焦距景深补对应景别标准值 */
@@ -134,7 +162,7 @@ function buildFirstFrame(shot: AnalyzedShot, lighting: string): string {
     shotSizeCueFor(shot.shotSize),
     shot.emotion || 'calm, restrained',
     lighting,
-    'static posture at the start of the shot'
+    'static posture at the start of the shot',
   ]
   return clampWords(parts.join(', '), 50)
 }
@@ -168,11 +196,11 @@ function cleanNegative(text: string | undefined, period: boolean): string | unde
 
 export interface PromptSchemaOptions {
   /** 场景清单（提供同场景统一的环境基底） */
-  scenes?: AnalyzeScene[]
+  scenes?: AnalyzeScene[] | undefined
   /** 取某镜角色的外观锁（lookEn），用于补身份锚 */
-  lookOf?: (shot: AnalyzedShot) => string
+  lookOf?: ((shot: AnalyzedShot) => string) | undefined
   /** 全剧题材（判定是否古装/年代，决定时代负向是否保留） */
-  genre?: string
+  genre?: string | undefined
 }
 
 /**
@@ -181,7 +209,7 @@ export interface PromptSchemaOptions {
  */
 export function normalizeShotPrompts(
   shots: AnalyzedShot[],
-  opts: PromptSchemaOptions = {}
+  opts: PromptSchemaOptions = {},
 ): { shots: AnalyzedShot[]; notes: string[] } {
   const sceneBase = new Map<string, string>()
   for (const sc of opts.scenes || []) {
@@ -261,9 +289,10 @@ export function normalizeShotPrompts(
       }
       if (!nxt.continuity) {
         const prev = shots[i - 1]
-        nxt.continuity = prev && prev.scene.trim() === key
-          ? 'continues from the previous shot end state in the same location'
-          : 'standing in the opening pose of this shot'
+        nxt.continuity =
+          prev && prev.scene.trim() === key
+            ? 'continues from the previous shot end state in the same location'
+            : 'standing in the opening pose of this shot'
         noteField('continuity', idx)
       }
     }
@@ -281,14 +310,17 @@ export function normalizeShotPrompts(
       noteField('firstFrameEn', idx)
     }
     if (!nxt.promptEn || wordCount(nxt.promptEn) < 20) {
-      nxt.promptEn = shot.type === 'i2v'
-        ? buildMotionPrompt(shot, opts.lookOf?.(shot) || '')
-        : buildScenePrompt(shot, nxt.sceneEn, canonLight, cam)
+      nxt.promptEn =
+        shot.type === 'i2v'
+          ? buildMotionPrompt(shot, opts.lookOf?.(shot) || '')
+          : buildScenePrompt(shot, nxt.sceneEn, canonLight, cam)
       noteField('promptEn', idx)
     }
 
     // —— 6) 负向去重 / 时代词按题材保留 ——
-    nxt.negativeEn = cleanNegative(shot.negativeEn, period)
+    const negative = cleanNegative(shot.negativeEn, period)
+    if (negative === undefined) delete nxt.negativeEn
+    else nxt.negativeEn = negative
 
     // —— 7) 下镜衔接 ——
     const isLast = i === shots.length - 1
@@ -299,11 +331,11 @@ export function normalizeShotPrompts(
         noteField('handoffToNext', idx)
       }
     }
-    if (isLast) nxt.handoffToNext = undefined
+    if (isLast) delete nxt.handoffToNext
 
     // —— 8) 道具：去空、去重、保留英文名 ——
     if (shot.props?.length) {
-      nxt.props = [...new Set(shot.props.map(p => oneLine(String(p))).filter(Boolean))]
+      nxt.props = [...new Set(shot.props.map((p) => oneLine(String(p))).filter(Boolean))]
     }
 
     return nxt

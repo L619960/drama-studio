@@ -3,10 +3,7 @@ import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { tmpdir } from 'node:os'
 import type { AppSettings } from '../../src/shared/ipcTypes'
-import {
-  logLlmError,
-  llmBaseUrl
-} from '../../src/main/core/llmRequest'
+import { logLlmError, llmApiKey, llmBaseUrl } from '../../src/main/core/llmRequest'
 
 describe('llmRequest · LLM 请求适配层（2026-10-30 补 branches）', () => {
   let dir: string
@@ -24,23 +21,58 @@ describe('llmRequest · LLM 请求适配层（2026-10-30 补 branches）', () =>
 
   describe('llmBaseUrl：baseURL 解析（纯函数）', () => {
     it('有 baseUrl → 去末尾斜杠', () => {
-      expect(llmBaseUrl({ llm: { baseUrl: 'https://api.deepseek.com/' } } as AppSettings))
-        .toBe('https://api.deepseek.com')
+      expect(llmBaseUrl({ llm: { baseUrl: 'https://api.deepseek.com/' } } as AppSettings)).toBe(
+        'https://api.deepseek.com',
+      )
     })
 
     it('空 baseUrl → 默认 deepseek 官方端点', () => {
-      expect(llmBaseUrl({ llm: { baseUrl: '' } } as AppSettings))
-        .toBe('https://api.deepseek.com')
+      expect(llmBaseUrl({ llm: { baseUrl: '' } } as AppSettings)).toBe('https://api.deepseek.com')
     })
 
     it('无末尾斜杠 → 原样返回', () => {
-      expect(llmBaseUrl({ llm: { baseUrl: 'https://example.com/api' } } as AppSettings))
-        .toBe('https://example.com/api')
+      expect(llmBaseUrl({ llm: { baseUrl: 'https://example.com/api' } } as AppSettings)).toBe('https://example.com/api')
     })
 
     it('多个末尾斜杠 → 全部去掉', () => {
-      expect(llmBaseUrl({ llm: { baseUrl: 'https://x.com///' } } as AppSettings))
-        .toBe('https://x.com')
+      expect(llmBaseUrl({ llm: { baseUrl: 'https://x.com///' } } as AppSettings)).toBe('https://x.com')
+    })
+  })
+
+  describe('P2-6：环境变量覆盖（仅请求期生效）', () => {
+    const KEYS = ['DS_LLM_BASE_URL', 'DS_LLM_API_KEY'] as const
+    const saved: Record<string, string | undefined> = {}
+
+    beforeEach(() => {
+      for (const k of KEYS) {
+        saved[k] = process.env[k]
+        delete process.env[k]
+      }
+    })
+    afterEach(() => {
+      for (const k of KEYS) {
+        if (saved[k] === undefined) delete process.env[k]
+        else process.env[k] = saved[k]
+      }
+    })
+
+    it('DS_LLM_BASE_URL 优先于设置，且同样去末尾斜杠 / 空白', () => {
+      process.env.DS_LLM_BASE_URL = '  https://gateway.example.com/v1///  '
+      expect(llmBaseUrl({ llm: { baseUrl: 'https://api.deepseek.com' } } as AppSettings)).toBe(
+        'https://gateway.example.com/v1',
+      )
+    })
+
+    it('环境变量为空串 → 视为未覆盖，回退设置', () => {
+      process.env.DS_LLM_BASE_URL = '   '
+      expect(llmBaseUrl({ llm: { baseUrl: 'https://api.test/' } } as AppSettings)).toBe('https://api.test')
+    })
+
+    it('DS_LLM_API_KEY 优先于设置；空串回退设置', () => {
+      process.env.DS_LLM_API_KEY = 'sk-env'
+      expect(llmApiKey({ llm: { apiKey: 'sk-settings' } } as AppSettings)).toBe('sk-env')
+      process.env.DS_LLM_API_KEY = ''
+      expect(llmApiKey({ llm: { apiKey: 'sk-settings' } } as AppSettings)).toBe('sk-settings')
     })
   })
 
@@ -49,7 +81,7 @@ describe('llmRequest · LLM 请求适配层（2026-10-30 补 branches）', () =>
       const err = {
         message: 'bad request',
         stack: 'Error: bad request\n  at foo.js:1',
-        response: { status: 400, data: { error: 'thinking not supported' } }
+        response: { status: 400, data: { error: 'thinking not supported' } },
       }
       const detail = logLlmError('test-stage', err)
       expect(detail).toContain('HTTP 400')

@@ -24,7 +24,7 @@ import {
   reviewScriptOp,
   splitScriptOp,
   analyzeOp,
-  type FillPromptContext
+  type FillPromptContext,
 } from './llmScriptOps'
 import { reviewStoryOp, diagnoseFailureOp, auditImageOp } from './llmAudit'
 
@@ -39,13 +39,19 @@ export type { ChatMessage, ToolSpec, FillPromptContext }
 export class LLMService {
   constructor(
     private getSettings: () => Promise<AppSettings>,
-    private genreTemplates: GenreTemplate[]
+    private genreTemplates: GenreTemplate[],
   ) {}
 
   /** 通用多轮对话，支持 function-calling。返回 assistant 消息（可能携带 tool_calls）。 */
   chatCompletion(
     messages: ChatMessage[],
-    opts: { temperature?: number; timeoutMs?: number; tools?: ToolSpec[]; signal?: AbortSignal; effort?: string } = {}
+    opts: {
+      temperature?: number
+      timeoutMs?: number
+      tools?: ToolSpec[]
+      signal?: AbortSignal | undefined
+      effort?: string
+    } = {},
   ): Promise<ChatMessage> {
     return httpChatCompletion(this.getSettings, messages, opts)
   }
@@ -97,7 +103,11 @@ export class LLMService {
   }
 
   /** AI 剧本医生：专业剧本审查，输出问题清单 + 修改后的完整剧本 */
-  reviewScript(script: string, genre: string, title?: string): Promise<{
+  reviewScript(
+    script: string,
+    genre: string,
+    title?: string,
+  ): Promise<{
     issues: Array<{ severity: 'block' | 'warn'; scene: string; problem: string; suggestion: string }>
     revisedScript: string
   }> {
@@ -110,7 +120,11 @@ export class LLMService {
   }
 
   /** AI 导演·剧本分析：一次调用同时产出角色清单与分镜列表（signal 可中断长耗时请求） */
-  analyze(script: string, genre: string, opts?: { title?: string; extraRules?: string[]; signal?: AbortSignal }): Promise<AnalyzeResult> {
+  analyze(
+    script: string,
+    genre: string,
+    opts?: { title?: string; extraRules?: string[]; signal?: AbortSignal },
+  ): Promise<AnalyzeResult> {
     return analyzeOp(this.getSettings, this.genreTemplates, script, genre, opts)
   }
 
@@ -155,7 +169,7 @@ export class LLMService {
       action: string
       shotSize: string
       camera: string
-      lookEn?: string
+      lookEn?: string | undefined
     }
   }): Promise<{
     visionUnavailable: boolean

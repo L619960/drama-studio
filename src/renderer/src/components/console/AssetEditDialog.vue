@@ -19,12 +19,20 @@
           <div class="asset-dialog-compare" v-if="assetEditing.previousUrl">
             <div class="asset-dialog-label">上一版（可回滚）</div>
             <img :src="assetEditing.previousUrl" />
-            <el-button size="small" type="warning" plain :loading="rollbackBusy" @click="rollbackAsset">回滚到上一版</el-button>
+            <el-button size="small" type="warning" plain :loading="rollbackBusy" @click="rollbackAsset"
+              >回滚到上一版</el-button
+            >
           </div>
         </div>
         <div class="asset-dialog-form">
           <div class="prompt-label">正向提示词 <span class="prompt-hint">（英文为主，Ctrl+Enter 生成）</span></div>
-          <PromptEditor v-model="assetEditing.prompt" :rows="5" placeholder="描述想要的画面" kind="positive" @ctrl-enter="confirmAssetRegenerate" />
+          <PromptEditor
+            v-model="assetEditing.prompt"
+            :rows="5"
+            placeholder="描述想要的画面"
+            kind="positive"
+            @ctrl-enter="confirmAssetRegenerate"
+          />
           <div class="prompt-chips">
             <el-tag
               v-for="s in PROMPT_SNIPPETS"
@@ -34,11 +42,18 @@
               class="chip"
               @click="appendSnippet(s)"
             >
-{{ s }}
-</el-tag>
+              {{ s }}
+            </el-tag>
           </div>
-          <div class="prompt-label">追加负向提示词 <span class="prompt-hint">（追加到系统默认压制词之后，不会替换；留空仅用默认）</span></div>
-          <PromptEditor v-model="assetEditing.negative" :rows="2" placeholder="追加要压制的元素，逗号分隔，如：crowd, vehicles（可留空）" kind="negative" />
+          <div class="prompt-label">
+            追加负向提示词 <span class="prompt-hint">（追加到系统默认压制词之后，不会替换；留空仅用默认）</span>
+          </div>
+          <PromptEditor
+            v-model="assetEditing.negative"
+            :rows="2"
+            placeholder="追加要压制的元素，逗号分隔，如：crowd, vehicles（可留空）"
+            kind="negative"
+          />
           <div class="prompt-label">图像工作流 <span class="prompt-hint">（单次生效，不改项目默认）</span></div>
           <el-select v-model="assetEditing.workflow" placeholder="默认工作流" clearable class="wf-select">
             <el-option v-for="w in imageWorkflows" :key="w.name" :label="wfLabel(w)" :value="w.name" />
@@ -55,8 +70,8 @@
         :disabled="!assetEditing?.prompt.trim()"
         @click="confirmAssetRegenerate"
       >
-重新生成
-</el-button>
+        重新生成
+      </el-button>
     </template>
   </el-dialog>
 </template>
@@ -66,8 +81,10 @@ import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import PromptEditor from './PromptEditor.vue'
 import {
-  type Project, type WorkflowMeta,
-  type AssetRegenerateKind, type AssetRegenerateInput
+  type Project,
+  type WorkflowMeta,
+  type AssetRegenerateKind,
+  type AssetRegenerateInput,
 } from '../../../../shared/ipcTypes'
 
 const props = defineProps<{
@@ -82,9 +99,15 @@ const emit = defineEmits<{
 
 // ===== 提示词模板片段：点击追加到当前 textarea =====
 const PROMPT_SNIPPETS = [
-  'cinematic lighting', 'soft natural light', 'volumetric fog',
-  'shallow depth of field', 'wide angle', 'close-up shot',
-  'highly detailed, 8k', 'film grain', 'golden hour'
+  'cinematic lighting',
+  'soft natural light',
+  'volumetric fog',
+  'shallow depth of field',
+  'wide angle',
+  'close-up shot',
+  'highly detailed, 8k',
+  'film grain',
+  'golden hour',
 ]
 
 // ===== 产物编辑（弹窗模式，编辑暂存，点「重新生成」才落盘） =====
@@ -101,33 +124,52 @@ interface AssetEditState {
   /** 当前产物预览 URL */
   currentUrl: string
   /** 上一版备份 URL（生成成功后由主进程返回 previousPath，经 assetUrls 映射） */
-  previousUrl?: string
+  previousUrl?: string | undefined
 }
 const assetBusySet = ref<Set<string>>(new Set())
 const assetEditing = ref<AssetEditState | null>(null)
 const assetDialogVisible = ref(false)
 const rollbackBusy = ref(false)
-const assetEditingKey = computed(() => assetEditing.value ? draftKey(assetEditing.value.kind, assetEditing.value.id) : '')
+const assetEditingKey = computed(() =>
+  assetEditing.value ? draftKey(assetEditing.value.kind, assetEditing.value.id) : '',
+)
 const assetDialogTitle = computed(() => {
   const k = assetEditing.value?.kind
   if (!k) return '编辑产物'
-  return k === 'charFace' ? '编辑角色脸图' : k === 'charBody' ? '编辑角色三视图'
-    : k === 'scenePlate' ? '编辑场景板空场景图' : k === 'firstFrame' ? '编辑首帧' : '编辑尾帧'
+  return k === 'charFace'
+    ? '编辑角色脸图'
+    : k === 'charBody'
+      ? '编辑角色三视图'
+      : k === 'scenePlate'
+        ? '编辑场景板空场景图'
+        : k === 'firstFrame'
+          ? '编辑首帧'
+          : '编辑尾帧'
 })
 function draftKey(kind: AssetRegenerateKind, id: string): string {
-  const head = kind === 'charFace' ? 'char:face' : kind === 'charBody' ? 'char:body' : kind === 'scenePlate' ? 'scene' : (kind === 'firstFrame' ? 'frame:first' : 'frame:last')
+  const head =
+    kind === 'charFace'
+      ? 'char:face'
+      : kind === 'charBody'
+        ? 'char:body'
+        : kind === 'scenePlate'
+          ? 'scene'
+          : kind === 'firstFrame'
+            ? 'frame:first'
+            : 'frame:last'
   return `${head}:${id}`
 }
 function openAssetDialog(kind: AssetRegenerateKind, id: string, seedPrompt: string, currentUrl: string): void {
   assetEditing.value = {
-    kind, id,
+    kind,
+    id,
     prompt: seedPrompt,
     negative: '',
     workflow: '',
     originalPrompt: seedPrompt,
     originalNegative: '',
     originalWorkflow: '',
-    currentUrl
+    currentUrl,
   }
   assetDialogVisible.value = true
 }
@@ -148,10 +190,21 @@ function appendSnippet(snippet: string): void {
 function wfLabel(w: WorkflowMeta): string {
   return w.capability ? `${w.name}  [${w.capability}]` : w.name
 }
-function buildAssetPayload(kind: AssetRegenerateKind, id: string, d: { prompt: string; negative: string; workflow: string }): AssetRegenerateInput | null {
+function buildAssetPayload(
+  kind: AssetRegenerateKind,
+  id: string,
+  d: { prompt: string; negative: string; workflow: string },
+): AssetRegenerateInput | null {
   const p = props.project
   if (!p) return null
-  const payload: AssetRegenerateInput = { projectId: p.id, kind, prompt: d.prompt.trim(), negative: d.negative.trim() || undefined, workflow: d.workflow || undefined }
+  const negative = d.negative.trim()
+  const payload: AssetRegenerateInput = {
+    projectId: p.id,
+    kind,
+    prompt: d.prompt.trim(),
+    ...(negative ? { negative } : {}),
+    ...(d.workflow ? { workflow: d.workflow } : {}),
+  }
   if (kind === 'charFace' || kind === 'charBody') payload.characterId = id
   else if (kind === 'scenePlate') payload.boardId = id
   else payload.shotId = id
@@ -160,7 +213,10 @@ function buildAssetPayload(kind: AssetRegenerateKind, id: string, d: { prompt: s
 async function confirmAssetRegenerate(): Promise<void> {
   const s = assetEditing.value
   if (!s) return
-  if (!s.prompt.trim()) { ElMessage.warning('提示词不能为空'); return }
+  if (!s.prompt.trim()) {
+    ElMessage.warning('提示词不能为空')
+    return
+  }
   const k = draftKey(s.kind, s.id)
   if (assetBusySet.value.has(k)) return
   const payload = buildAssetPayload(s.kind, s.id, s)
@@ -169,8 +225,12 @@ async function confirmAssetRegenerate(): Promise<void> {
   try {
     const res = await window.api.asset.regenerate(payload)
     if (res.previousPath) {
-      ;(s as AssetEditState & { _prevRel?: string })._prevRel = res.previousPath
-      try { s.previousUrl = await window.api.file.mediaUrl(res.previousPath) } catch { s.previousUrl = '' }
+      ;(s as AssetEditState & { _prevRel?: string | undefined })._prevRel = res.previousPath
+      try {
+        s.previousUrl = await window.api.file.mediaUrl(res.previousPath)
+      } catch {
+        s.previousUrl = ''
+      }
     }
     ElMessage.success('已重新生成')
     emit('asset-refreshed')
@@ -192,7 +252,7 @@ async function rollbackAsset(): Promise<void> {
     await window.api.asset.rollback(payload)
     ElMessage.success('已回滚到上一版')
     s.previousUrl = undefined
-    ;(s as AssetEditState & { _prevRel?: string })._prevRel = undefined
+    ;(s as AssetEditState & { _prevRel?: string | undefined })._prevRel = undefined
     emit('asset-refreshed')
   } catch (e) {
     ElMessage.error((e as Error)?.message || '回滚失败')
@@ -201,48 +261,108 @@ async function rollbackAsset(): Promise<void> {
   }
 }
 // project 更新后刷新 dialog 内当前产物 URL（上一版图 URL 由 regenerate 返回时直接用 mediaUrl 取得）
-watch(() => props.project, () => {
-  const s = assetEditing.value
-  if (!s) return
-  const rel = currentAssetRelPath(s.kind, s.id)
-  if (rel) s.currentUrl = props.assetUrls[rel] || s.currentUrl
-}, { deep: true })
+watch(
+  () => props.project,
+  () => {
+    const s = assetEditing.value
+    if (!s) return
+    const rel = currentAssetRelPath(s.kind, s.id)
+    if (rel) s.currentUrl = props.assetUrls[rel] || s.currentUrl
+  },
+  { deep: true },
+)
 function currentAssetRelPath(kind: AssetRegenerateKind, id: string): string | undefined {
   const p = props.project
   if (!p) return undefined
   if (kind === 'charFace' || kind === 'charBody') {
-    const c = p.characters.find(x => x.id === id)
-    return kind === 'charFace' ? (c?.faceImagePath || c?.refImagePath) : c?.bodySheetPath
+    const c = p.characters.find((x) => x.id === id)
+    return kind === 'charFace' ? c?.faceImagePath || c?.refImagePath : c?.bodySheetPath
   }
   if (kind === 'scenePlate') {
-    return (p.sceneBoards || []).find(b => b.id === id)?.emptyPlatePath
+    return (p.sceneBoards || []).find((b) => b.id === id)?.emptyPlatePath
   }
-  const shot = p.shots.find(s => s.id === id)
+  const shot = p.shots.find((s) => s.id === id)
   return kind === 'firstFrame' ? shot?.firstFramePath : shot?.lastFramePath
 }
 
 defineExpose({
   open: openAssetDialog,
-  isBusy
+  isBusy,
 })
 </script>
 
 <style scoped>
-.asset-dialog-row { display: flex; gap: 16px; }
-.asset-dialog-preview { flex: 0 0 280px; display: flex; flex-direction: column; gap: 10px; }
-.asset-dialog-label { font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
-.asset-dialog-img {
-  width: 100%; height: 180px; border-radius: 6px; background: var(--bg-input);
-  display: flex; align-items: center; justify-content: center; overflow: hidden;
+.asset-dialog-row {
+  display: flex;
+  gap: 16px;
 }
-.asset-dialog-img img { width: 100%; height: 100%; object-fit: cover; }
-.asset-dialog-compare { display: flex; flex-direction: column; gap: 6px; }
-.asset-dialog-compare img { width: 100%; height: 120px; object-fit: cover; border-radius: 6px; border: 1px dashed var(--border-weak); }
-.asset-dialog-form { flex: 1; display: flex; flex-direction: column; gap: 4px; }
-.prompt-label { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
-.prompt-hint { font-size: 11px; color: var(--text-muted); font-weight: 400; }
-.prompt-chips { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 6px; }
-.prompt-chips .chip { cursor: pointer; }
-.prompt-chips .chip:hover { opacity: 0.8; }
-.wf-select { width: 100%; }
+.asset-dialog-preview {
+  flex: 0 0 280px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.asset-dialog-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+.asset-dialog-img {
+  width: 100%;
+  height: 180px;
+  border-radius: 6px;
+  background: var(--bg-input);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.asset-dialog-img img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.asset-dialog-compare {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.asset-dialog-compare img {
+  width: 100%;
+  height: 120px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px dashed var(--border-weak);
+}
+.asset-dialog-form {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.prompt-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+.prompt-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+.prompt-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 4px 0 6px;
+}
+.prompt-chips .chip {
+  cursor: pointer;
+}
+.prompt-chips .chip:hover {
+  opacity: 0.8;
+}
+.wf-select {
+  width: 100%;
+}
 </style>

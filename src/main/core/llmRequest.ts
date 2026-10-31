@@ -10,10 +10,10 @@ import type { AxiosResponse } from 'axios'
 import fs from 'node:fs'
 import path from 'node:path'
 import type { AppSettings } from '../../shared/ipcTypes'
+import { userDataDir } from './appPaths'
 
-/** D-02（2026-10-20）：LLM 诊断落盘统一目录（userData/drama-studio/tmp）——
- *  此前两处硬编码 `drama-studio/drama-studio/tmp` 双重嵌套，与数据根不一致 */
-export const LLM_DUMP_DIR = path.join(process.env.APPDATA || process.cwd(), 'drama-studio', 'tmp')
+/** P2-5：诊断落盘统一走 Electron userData（打包版 productName 变化时仍与 app.getPath 一致） */
+export const LLM_DUMP_DIR = path.join(userDataDir(), 'tmp')
 
 /**
  * LLM 错误落盘：restart-app.ps1 不重定向主进程 stdout，console.error 抓不到，
@@ -34,20 +34,39 @@ export function logLlmError(stage: string, err: unknown): string {
     detail = [
       status ? `HTTP ${status}` : '',
       e?.message || String(err),
-      respBody ? `响应体: ${respBody.slice(0, 500)}` : ''
-    ].filter(Boolean).join(' | ')
+      respBody ? `响应体: ${respBody.slice(0, 500)}` : '',
+    ]
+      .filter(Boolean)
+      .join(' | ')
     const line = `[${new Date().toISOString()}] stage=${stage}\ndetail=${detail}\nstack=${e?.stack || ''}\n\n`
-    const logDir = path.join(process.env.APPDATA || process.cwd(), 'drama-studio')
+    const logDir = userDataDir()
     fs.mkdirSync(logDir, { recursive: true })
     fs.appendFileSync(path.join(logDir, 'llm-error.log'), line, 'utf-8')
     console.error(`[LLM ${stage}]`, detail, e?.stack)
-  } catch { /* 落盘失败不阻断 */ }
+  } catch {
+    /* 落盘失败不阻断 */
+  }
   return detail
 }
 
-/** OpenAI 兼容 baseURL（去末尾斜杠；默认 deepseek 官方端点） */
+/**
+ * P2-6：环境变量覆盖 LLM 端点/密钥，仅供 CI、多环境联调等场景临时切换；
+ * 只在请求期生效、绝不写回 settings.json，避免把一次性凭据持久化到用户磁盘。
+ * 代理无需额外配置：axios 1.x 内置 proxy-from-env，自动读取
+ * HTTPS_PROXY / HTTP_PROXY / NO_PROXY（Electron 主进程同样继承这些环境变量）。
+ */
+function envValue(name: string): string {
+  return (process.env[name] || '').trim()
+}
+
+/** 生效的 API Key：DS_LLM_API_KEY > 设置 > 空 */
+export function llmApiKey(s: AppSettings): string {
+  return envValue('DS_LLM_API_KEY') || s.llm.apiKey
+}
+
+/** 生效的 OpenAI 兼容 baseURL（去末尾斜杠）：DS_LLM_BASE_URL > 设置 > deepseek 官方端点 */
 export function llmBaseUrl(s: AppSettings): string {
-  return (s.llm.baseUrl || 'https://api.deepseek.com').replace(/\/+$/, '')
+  return (envValue('DS_LLM_BASE_URL') || s.llm.baseUrl || 'https://api.deepseek.com').replace(/\/+$/, '')
 }
 
 /**
@@ -58,14 +77,14 @@ export function llmBaseUrl(s: AppSettings): string {
 export async function postChatCompletion(
   s: AppSettings,
   body: Record<string, unknown>,
-  opts: { timeoutMs?: number; signal?: AbortSignal; dropOn422?: Array<'thinking' | 'effort'> } = {}
+  opts: { timeoutMs?: number; signal?: AbortSignal; dropOn422?: Array<'thinking' | 'effort'> } = {},
 ): Promise<AxiosResponse> {
-  const headers = { Authorization: `Bearer ${s.llm.apiKey}` }
+  const headers = { Authorization: `Bearer ${llmApiKey(s)}` }
   try {
     return await axios.post(`${llmBaseUrl(s)}/chat/completions`, body, {
       headers,
       timeout: opts.timeoutMs ?? 180000,
-      signal: opts.signal
+      ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
     })
   } catch (e) {
     const st = (e as { response?: { status?: number } })?.response?.status
@@ -75,7 +94,7 @@ export async function postChatCompletion(
       return await axios.post(`${llmBaseUrl(s)}/chat/completions`, fallbackBody, {
         headers,
         timeout: opts.timeoutMs ?? 180000,
-        signal: opts.signal
+        ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
       })
     }
     throw e

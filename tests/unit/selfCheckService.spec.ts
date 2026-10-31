@@ -33,9 +33,9 @@ function goodSettings(over: Record<string, any> = {}): any {
       storyboard: { minShots: 8, maxShots: 16 },
       character: { candidates: 2 },
       scene: { candidates: 2 },
-      edit: { defaultFrames: 81, renderCandidates: 1, comfyTimeoutSec: 600, reviewGate: 'block' }
+      edit: { defaultFrames: 81, renderCandidates: 1, comfyTimeoutSec: 600, reviewGate: 'block' },
     },
-    ...over
+    ...over,
   }
 }
 
@@ -49,8 +49,8 @@ function makeSvc(opts: Record<string, any> = {}): any {
     opts.comfy || { healthCheck: vi.fn(async () => true) },
     {
       get: vi.fn(async () => opts.settings || goodSettings()),
-      save: opts.save || vi.fn(async () => undefined)
-    } as any
+      save: opts.save || vi.fn(async () => undefined),
+    } as any,
   )
 }
 
@@ -100,7 +100,7 @@ describe('checkConversations', () => {
     expect(item.detail).toContain('2 个损坏会话已备份隔离')
     expect(item.detail).toContain('broken.json')
     const names = await fs.readdir(dir)
-    expect(names.filter(n => n.startsWith('broken.json.bak_')).length).toBe(1)
+    expect(names.filter((n) => n.startsWith('broken.json.bak_')).length).toBe(1)
     expect(names).toContain('ok.json')
   })
 
@@ -137,9 +137,13 @@ describe('checkProjects', () => {
     const baseDir = await makeTmpDir()
     const root = path.join(baseDir, 'projects')
     await fs.mkdir(path.join(root, 'p1'), { recursive: true })
-    await fs.writeFile(path.join(root, 'p1', 'project.json'), JSON.stringify({
-      id: 'p1', shots: [{ status: 'rendering' }, { status: 'pending' }]
-    }))
+    await fs.writeFile(
+      path.join(root, 'p1', 'project.json'),
+      JSON.stringify({
+        id: 'p1',
+        shots: [{ status: 'rendering' }, { status: 'pending' }],
+      }),
+    )
     const svc = makeSvc({ baseDir })
 
     const item = await svc.checkProjects()
@@ -164,9 +168,9 @@ describe('checkSkills / checkWorkflows', () => {
         list: vi.fn(async () => [
           { builtin: true, enabled: true, kind: 'tool' },
           { builtin: true, enabled: false, kind: 'prompt' },
-          { builtin: false, enabled: true, kind: 'prompt' }
-        ])
-      }
+          { builtin: false, enabled: true, kind: 'prompt' },
+        ]),
+      },
     })
 
     const item = await svc.checkSkills()
@@ -182,13 +186,17 @@ describe('checkSkills / checkWorkflows', () => {
     expect(empty.detail).toContain('未找到任何工作流模板')
 
     const broken = await makeSvc({
-      workflows: { list: vi.fn(async () => { throw new Error('目录不可读') }) }
+      workflows: {
+        list: vi.fn(async () => {
+          throw new Error('目录不可读')
+        }),
+      },
     }).checkWorkflows()
     expect(broken.ok).toBe(false)
     expect(broken.detail).toContain('模板目录读取失败：目录不可读')
 
     const ok = await makeSvc({
-      workflows: { list: vi.fn(async () => [{ name: 'wf_a' }, { name: 'wf_b' }]) }
+      workflows: { list: vi.fn(async () => [{ name: 'wf_a' }, { name: 'wf_b' }]) },
     }).checkWorkflows()
     expect(ok.ok).toBe(true)
     expect(ok.detail).toContain('2 个模板解析正常：wf_a、wf_b')
@@ -205,8 +213,11 @@ describe('checkSettings', () => {
   })
 
   it('非法帧数自动钳回 16n+1 并落盘', async () => {
-    const save = vi.fn(async () => undefined)
-    const svc = makeSvc({ settings: goodSettings({ render: { defaultFrames: 80, assetConcurrency: 2, reviewGate: 'block' } }), save })
+    const save = vi.fn(async (_settings: unknown) => undefined)
+    const svc = makeSvc({
+      settings: goodSettings({ render: { defaultFrames: 80, assetConcurrency: 2, reviewGate: 'block' } }),
+      save,
+    })
 
     const item = await svc.checkSettings()
 
@@ -214,7 +225,7 @@ describe('checkSettings', () => {
     expect(item.fixed).toBe(true)
     expect(item.detail).toContain('默认帧数 80→81')
     expect(save).toHaveBeenCalledTimes(1)
-    expect((save.mock.calls[0][0] as any).render.defaultFrames).toBe(81)
+    expect((save.mock.calls[0]?.[0] as any).render.defaultFrames).toBe(81)
   })
 
   it('缺 Key/并发越界/创作配置非法时报告问题', async () => {
@@ -227,17 +238,25 @@ describe('checkSettings', () => {
           storyboard: { minShots: 20, maxShots: 8 },
           character: { candidates: 9 },
           scene: { candidates: 0 },
-          edit: { defaultFrames: 80, renderCandidates: 5, comfyTimeoutSec: 30, reviewGate: 'block' }
-        }
-      })
+          edit: { defaultFrames: 80, renderCandidates: 5, comfyTimeoutSec: 30, reviewGate: 'block' },
+        },
+      }),
     })
 
     const item = await svc.checkSettings()
 
     expect(item.ok).toBe(false)
-    for (const msg of ['LLM API Key 未配置', 'ComfyUI 地址为空', '资产并发 4 超出 1~3',
-      '分镜最少镜头大于最多镜头', '剪辑默认帧数非 16n+1', '人物抽卡张数非法',
-      '场景抽卡张数非法', '渲染抽卡条数非法', 'Comfy 超时过短']) {
+    for (const msg of [
+      'LLM API Key 未配置',
+      'ComfyUI 地址为空',
+      '资产并发 4 超出 1~3',
+      '分镜最少镜头大于最多镜头',
+      '剪辑默认帧数非 16n+1',
+      '人物抽卡张数非法',
+      '场景抽卡张数非法',
+      '渲染抽卡条数非法',
+      'Comfy 超时过短',
+    ]) {
       expect(item.detail).toContain(msg)
     }
   })
@@ -249,7 +268,11 @@ describe('checkFfmpeg / checkComfy', () => {
     expect(ok.ok).toBe(true)
 
     const bad = await makeSvc({
-      ffmpeg: { ready: vi.fn(async () => { throw new Error('ffmpeg 缺失') }) }
+      ffmpeg: {
+        ready: vi.fn(async () => {
+          throw new Error('ffmpeg 缺失')
+        }),
+      },
     }).checkFfmpeg()
     expect(bad.ok).toBe(false)
     expect(bad.detail).toBe('ffmpeg 缺失')
@@ -274,15 +297,22 @@ describe('run', () => {
       baseDir,
       skills: { list: vi.fn(async () => [{ builtin: true, enabled: true, kind: 'tool' }]) },
       workflows: { list: vi.fn(async () => [{ name: 'wf_a' }]) },
-      comfy: { healthCheck: vi.fn(async () => false) }
+      comfy: { healthCheck: vi.fn(async () => false) },
     })
 
     const items = await svc.run()
 
     expect(items).toHaveLength(9)
     expect(items.map((i: any) => i.name)).toEqual([
-      '数据目录', '对话记录', '项目档案', '技能库', '工作流模板',
-      '提示词工业标准', '关键配置', 'FFmpeg', 'ComfyUI'
+      '数据目录',
+      '对话记录',
+      '项目档案',
+      '技能库',
+      '工作流模板',
+      '提示词工业标准',
+      '关键配置',
+      'FFmpeg',
+      'ComfyUI',
     ])
     const comfy = items[8] as any
     expect(comfy.ok).toBe(true)

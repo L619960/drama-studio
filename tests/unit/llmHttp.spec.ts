@@ -9,11 +9,14 @@ const post = vi.fn()
 
 vi.mock('axios', () => ({ default: { post: (...a: unknown[]) => post(...a) } }))
 vi.mock('../../src/main/core/logger', () => ({
-  createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() })
+  createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }))
 vi.mock('../../src/main/core/llmRequest', () => ({
   logLlmError: vi.fn(() => 'boom'),
-  LLM_DUMP_DIR: '/tmp/drama-studio-tmp'
+  LLM_DUMP_DIR: '/tmp/drama-studio-tmp',
+  // P2-6 的环境变量覆盖只在真实模块实现；单测保持「直接取设置」的原始断言口径
+  llmApiKey: (s: AppSettings) => s.llm.apiKey,
+  llmBaseUrl: (s: AppSettings) => (s.llm.baseUrl || 'https://api.deepseek.com').replace(/\/+$/, ''),
 }))
 vi.mock('node:fs', () => {
   const m = { mkdirSync: vi.fn(), writeFileSync: vi.fn() }
@@ -24,7 +27,7 @@ import { httpChat, httpChatCompletion, httpChatRaw, httpTest } from '../../src/m
 import type { AppSettings } from '../../src/shared/ipcTypes'
 
 const SETTINGS = {
-  llm: { apiKey: 'sk-test', baseUrl: 'https://api.test///', model: 'test-model' }
+  llm: { apiKey: 'sk-test', baseUrl: 'https://api.test///', model: 'test-model' },
 } as unknown as AppSettings
 const getSettings = async (): Promise<AppSettings> => SETTINGS
 
@@ -36,31 +39,36 @@ beforeEach(() => {
 
 describe('httpChatCompletion · 请求体与回退', () => {
   it('缺 API Key → 直接报错，不发请求', async () => {
-    const noKey = async (): Promise<AppSettings> => ({ llm: { apiKey: '', baseUrl: '', model: '' } } as unknown as AppSettings)
+    const noKey = async (): Promise<AppSettings> =>
+      ({ llm: { apiKey: '', baseUrl: '', model: '' } }) as unknown as AppSettings
     await expect(httpChatCompletion(noKey, [])).rejects.toThrow(/API Key/)
     expect(post).not.toHaveBeenCalled()
   })
 
   it('body 构建：tools → tool_choice=auto、effort 透传、contentParts 转 content 数组、baseUrl 去掉尾斜杠', async () => {
     post.mockResolvedValueOnce(okResp())
-    await httpChatCompletion(getSettings, [
-      { role: 'user', content: '看图', contentParts: [{ type: 'text', text: 'hi' }] }
-    ], { temperature: 0.9, tools: [{ type: 'function', function: { name: 'f', description: 'd', parameters: {} } }], effort: 'high' })
+    await httpChatCompletion(
+      getSettings,
+      [{ role: 'user', content: '看图', contentParts: [{ type: 'text', text: 'hi' }] }],
+      {
+        temperature: 0.9,
+        tools: [{ type: 'function', function: { name: 'f', description: 'd', parameters: {} } }],
+        effort: 'high',
+      },
+    )
     expect(post).toHaveBeenCalledTimes(1)
     const [url, body] = post.mock.calls[0] as [string, Record<string, unknown>]
     expect(url).toBe('https://api.test/chat/completions')
     expect(body).toMatchObject({ model: 'test-model', temperature: 0.9, tool_choice: 'auto', effort: 'high' })
-    expect((body.messages as Array<Record<string, unknown>>)[0].content).toEqual([{ type: 'text', text: 'hi' }])
+    expect((body.messages as Array<Record<string, unknown>>)[0]?.content).toEqual([{ type: 'text', text: 'hi' }])
   })
 
   it('provider 拒绝 effort/thinking（400）→ 去掉参数重试一次并成功', async () => {
-    post
-      .mockRejectedValueOnce({ response: { status: 400 } })
-      .mockResolvedValueOnce(okResp('fallback-ok'))
+    post.mockRejectedValueOnce({ response: { status: 400 } }).mockResolvedValueOnce(okResp('fallback-ok'))
     const r = await httpChatCompletion(getSettings, [{ role: 'user', content: 'x' }], { effort: 'high' })
     expect(r.content).toBe('fallback-ok')
     expect(post).toHaveBeenCalledTimes(2)
-    const secondBody = post.mock.calls[1][1] as Record<string, unknown>
+    const secondBody = post.mock.calls[1]?.[1] as Record<string, unknown>
     expect(secondBody.effort).toBeUndefined()
     expect(secondBody.thinking).toBeUndefined()
   })
@@ -80,26 +88,22 @@ describe('httpChatCompletion · 请求体与回退', () => {
     post.mockResolvedValueOnce(okResp())
     const ac = new AbortController()
     await httpChatCompletion(getSettings, [{ role: 'user', content: 'x' }], { signal: ac.signal })
-    expect((post.mock.calls[0][2] as { signal?: AbortSignal }).signal).toBe(ac.signal)
+    expect((post.mock.calls[0]?.[2] as { signal?: AbortSignal }).signal).toBe(ac.signal)
   })
 })
 
 describe('httpChat · 重试 / 空响应 / signal', () => {
   it('429 → 退避后重试成功（共 2 次请求）', async () => {
-    post
-      .mockRejectedValueOnce({ response: { status: 429 } })
-      .mockResolvedValueOnce(okResp('retried'))
+    post.mockRejectedValueOnce({ response: { status: 429 } }).mockResolvedValueOnce(okResp('retried'))
     await expect(httpChat(getSettings, 'sys', 'user')).resolves.toBe('retried')
     expect(post).toHaveBeenCalledTimes(2)
   })
 
   it('400 → 去掉 thinking 回退重试（不回退 429 逻辑）', async () => {
-    post
-      .mockRejectedValueOnce({ response: { status: 400 } })
-      .mockResolvedValueOnce(okResp('no-thinking'))
+    post.mockRejectedValueOnce({ response: { status: 400 } }).mockResolvedValueOnce(okResp('no-thinking'))
     const r = await httpChat(getSettings, 'sys', 'user')
     expect(r).toBe('no-thinking')
-    const secondBody = post.mock.calls[1][1] as Record<string, unknown>
+    const secondBody = post.mock.calls[1]?.[1] as Record<string, unknown>
     expect(secondBody.thinking).toBeUndefined()
     expect(secondBody.max_tokens).toBe(16384)
   })
@@ -128,9 +132,9 @@ describe('httpChat · 重试 / 空响应 / signal', () => {
     post.mockResolvedValueOnce(okResp())
     const ac = new AbortController()
     await httpChat(getSettings, 'sys', 'user', 0.7, 60000, 1024, ac.signal)
-    expect((post.mock.calls[0][2] as { signal?: AbortSignal }).signal).toBe(ac.signal)
+    expect((post.mock.calls[0]?.[2] as { signal?: AbortSignal }).signal).toBe(ac.signal)
     // 自定义 maxTokens 生效
-    expect((post.mock.calls[0][1] as Record<string, unknown>).max_tokens).toBe(1024)
+    expect((post.mock.calls[0]?.[1] as Record<string, unknown>).max_tokens).toBe(1024)
   })
 })
 
@@ -138,7 +142,7 @@ describe('httpChatRaw / httpTest', () => {
   it('httpChatRaw：直接提交完整 body，返回 trim 后的内容', async () => {
     post.mockResolvedValueOnce(okResp('  raw-content  '))
     await expect(httpChatRaw(getSettings, { model: 'm', messages: [] })).resolves.toBe('raw-content')
-    expect(post.mock.calls[0][1]).toEqual({ model: 'm', messages: [] })
+    expect(post.mock.calls[0]?.[1]).toEqual({ model: 'm', messages: [] })
   })
 
   it('httpChatRaw：空内容抛「LLM 返回为空」', async () => {

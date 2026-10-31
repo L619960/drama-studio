@@ -4,22 +4,28 @@
  */
 import type { ConversationToolsHost, ToolResult } from './conversationTools'
 import type { MemoryKind } from '../../shared/ipcTypes'
+import { llmApiKey, llmBaseUrl } from './llmRequest'
 
 // ---------------------------------------------------------------- 自定义技能
 
-export async function runCustomSkill(host: ConversationToolsHost, name: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<ToolResult> {
+export async function runCustomSkill(
+  host: ConversationToolsHost,
+  name: string,
+  args: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<ToolResult> {
   const skillId = name.replace(/^custom_/, '')
   const all = await host.skills.list()
-  const skill = all.find(s => s.id === skillId)
+  const skill = all.find((s) => s.id === skillId)
   if (!skill || !skill.enabled) return { ok: false, text: '技能不存在或已停用' }
   const userText = String(args.user_text || '')
   const system = (skill.promptTemplate || '').replace(/\{\{\s*input\s*\}\}/g, () => userText) || userText
   const reply = await host.llm.chatCompletion(
     [
       { role: 'system', content: system },
-      { role: 'user', content: userText || '请按技能说明执行' }
+      { role: 'user', content: userText || '请按技能说明执行' },
     ],
-    { temperature: 0.7, signal }
+    { temperature: 0.7, signal },
   )
   return { ok: true, text: reply.content }
 }
@@ -28,10 +34,16 @@ export async function runCustomSkill(host: ConversationToolsHost, name: string, 
 
 /** 解析项目 ID：优先用传入的；全局对话回退到最近操作的项目；再回退到最近更新的项目 */
 export async function resolvePid(host: ConversationToolsHost, pid: string | undefined): Promise<string> {
-  if (pid) { host.lastProjectId = pid; return pid }
+  if (pid) {
+    host.lastProjectId = pid
+    return pid
+  }
   if (host.lastProjectId) {
     // 校验主进程内存指针指向的项目仍存在，防止「幽灵项目」导致 ENOENT
-    const exists = await host.projects.get(host.lastProjectId).then(() => true).catch(() => false)
+    const exists = await host.projects
+      .get(host.lastProjectId)
+      .then(() => true)
+      .catch(() => false)
     if (exists) return host.lastProjectId
     host.lastProjectId = undefined
   }
@@ -51,9 +63,14 @@ export async function tListMemories(host: ConversationToolsHost, kind?: MemoryKi
   if (!items.length) return { ok: true, text: JSON.stringify({ empty: true, message: '记忆库暂无内容' }) }
   return {
     ok: true,
-    text: JSON.stringify(items.slice(0, 50).map(m => ({
-      id: m.id, kind: m.kind, title: m.title, content: m.content
-    })))
+    text: JSON.stringify(
+      items.slice(0, 50).map((m) => ({
+        id: m.id,
+        kind: m.kind,
+        title: m.title,
+        content: m.content,
+      })),
+    ),
   }
 }
 
@@ -76,12 +93,12 @@ export async function tGetSettings(host: ConversationToolsHost): Promise<ToolRes
   return {
     ok: true,
     text: JSON.stringify({
-      llm: { baseUrl: s.llm.baseUrl, model: s.llm.model, apiKeyConfigured: Boolean(s.llm.apiKey) },
+      llm: { baseUrl: llmBaseUrl(s), model: s.llm.model, apiKeyConfigured: Boolean(llmApiKey(s)) },
       comfyui: { baseUrl: s.comfyui.baseUrl },
       workflow: { default: s.workflow.default },
       render: s.render,
-      tts: { defaultVoice: s.tts.defaultVoice }
-    })
+      tts: { defaultVoice: s.tts.defaultVoice },
+    }),
   }
 }
 
@@ -123,10 +140,19 @@ export async function tSetSettings(host: ConversationToolsHost, args: Record<str
     // 9d：LLM 地址白名单——防对话工具被诱导把 apiKey 送到任意外部服务器。
     // 仅允许主流厂商域名与本机回环地址；其余拒绝。
     const LLM_BASEURL_ALLOWED_HOSTS = [
-      'api.openai.com', 'api.anthropic.com', 'deepseek.com', 'api.deepseek.com',
-      'api.moonshot.cn', 'api.moonshot.ai', 'openrouter.ai', 'api.siliconflow.cn',
-      'api.aliyun.com', 'dashscope.aliyuncs.com', 'ark.cn-beijing.volces.com',
-      'api.x.ai', 'generativelanguage.googleapis.com'
+      'api.openai.com',
+      'api.anthropic.com',
+      'deepseek.com',
+      'api.deepseek.com',
+      'api.moonshot.cn',
+      'api.moonshot.ai',
+      'openrouter.ai',
+      'api.siliconflow.cn',
+      'api.aliyun.com',
+      'dashscope.aliyuncs.com',
+      'ark.cn-beijing.volces.com',
+      'api.x.ai',
+      'generativelanguage.googleapis.com',
     ]
     let host: string
     try {
@@ -138,7 +164,7 @@ export async function tSetSettings(host: ConversationToolsHost, args: Record<str
     if (!isLocalhost && !LLM_BASEURL_ALLOWED_HOSTS.includes(host)) {
       return {
         ok: false,
-        text: `llm_baseUrl 域名 ${host} 不在允许列表（仅支持主流 LLM 厂商与 localhost；如需自定义代理请在设置页直接修改）`
+        text: `llm_baseUrl 域名 ${host} 不在允许列表（仅支持主流 LLM 厂商与 localhost；如需自定义代理请在设置页直接修改）`,
       }
     }
     put(s.llm, 'baseUrl', base)
@@ -151,8 +177,8 @@ export async function tSetSettings(host: ConversationToolsHost, args: Record<str
     text: JSON.stringify({
       ok: true,
       applied,
-      message: '设置已保存并即时生效（LLM/ComfyUI 地址在下次请求时使用新值）'
-    })
+      message: '设置已保存并即时生效（LLM/ComfyUI 地址在下次请求时使用新值）',
+    }),
   }
 }
 
@@ -169,19 +195,28 @@ export async function tCreateSkill(host: ConversationToolsHost, args: Record<str
     return { ok: false, text: 'prompt_template 必须包含 {{input}} 占位符（调用时用户输入会嵌入到这里）' }
   }
   const skill = await host.skills.create({ name, description, promptTemplate })
-  return { ok: true, text: `新技能「${skill.name}」已沉淀（id=${skill.id}），用户在技能管理面板可见；之后对话中可直接按其 description 调用` }
+  return {
+    ok: true,
+    text: `新技能「${skill.name}」已沉淀（id=${skill.id}），用户在技能管理面板可见；之后对话中可直接按其 description 调用`,
+  }
 }
 
 export async function tListSkills(host: ConversationToolsHost): Promise<ToolResult> {
   const all = await host.skills.list()
-  const custom = all.filter(s => !s.builtin)
+  const custom = all.filter((s) => !s.builtin)
   return {
     ok: true,
     text: JSON.stringify({
-      customSkills: custom.map(s => ({ id: s.id, name: s.name, description: s.description, enabled: s.enabled, createdAt: s.createdAt })),
+      customSkills: custom.map((s) => ({
+        id: s.id,
+        name: s.name,
+        description: s.description,
+        enabled: s.enabled,
+        createdAt: s.createdAt,
+      })),
       builtinCount: all.length - custom.length,
-      hint: 'builtinCount 为内置工具数量；沉淀新知识前先比对 customSkills 避免重复，已有类似技能用 update_skill 升级'
-    })
+      hint: 'builtinCount 为内置工具数量；沉淀新知识前先比对 customSkills 避免重复，已有类似技能用 update_skill 升级',
+    }),
   }
 }
 
@@ -196,7 +231,8 @@ export async function tUpdateSkill(host: ConversationToolsHost, args: Record<str
     if (!tpl.includes('{{input}}')) return { ok: false, text: 'prompt_template 必须包含 {{input}} 占位符' }
     patch.promptTemplate = tpl
   }
-  if (!Object.keys(patch).length) return { ok: false, text: '没有提供任何要更新的字段（name/description/prompt_template）' }
+  if (!Object.keys(patch).length)
+    return { ok: false, text: '没有提供任何要更新的字段（name/description/prompt_template）' }
   try {
     await host.skills.update(id, patch)
     return { ok: true, text: `技能 ${id} 已更新（${Object.keys(patch).join('、')}），新内容即时生效` }

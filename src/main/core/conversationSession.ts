@@ -43,7 +43,7 @@ export async function clearImpl(agent: ConversationService, scope: string): Prom
 
 /** 项目被删除时清理主进程内存指针，防止「幽灵项目」残留 */
 export function forgetProjectImpl(agent: ConversationService, id: string): void {
-  if (agent.lastProjectId === id) agent.lastProjectId = undefined
+  if (agent.lastProjectId === id) delete agent.lastProjectId
 }
 
 export async function saveImpl(agent: ConversationService, scope: string, msgs: ConversationMessage[]): Promise<void> {

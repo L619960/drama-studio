@@ -11,7 +11,7 @@ import {
   tUpdateShot,
   tAddShot,
   tDeleteShot,
-  tMoveShot
+  tMoveShot,
 } from '../../src/main/core/conversationToolsProject'
 import type { ConversationToolsHost } from '../../src/main/core/conversationTools'
 import type { Character, Project, Shot } from '../../src/shared/ipcTypes'
@@ -30,7 +30,7 @@ function mkShot(index: number, over: Partial<Shot> = {}): Shot {
     frames: 81,
     seed: 1,
     status: 'pending',
-    ...over
+    ...over,
   }
 }
 
@@ -41,7 +41,7 @@ function mkChar(name: string, over: Partial<Character> = {}): Character {
     refImagePath: '',
     description: 'desc',
     voice: 'zh-CN-XiaoxiaoNeural',
-    ...over
+    ...over,
   }
 }
 
@@ -57,7 +57,7 @@ function mkProject(over: Partial<Project> = {}): Project {
     fps: 24,
     createdAt: 0,
     updatedAt: 0,
-    ...over
+    ...over,
   }
 }
 
@@ -66,15 +66,15 @@ function mkHost(projects: Project[]) {
   const host = {
     projects: {
       list: vi.fn(async () => projects),
-      get: vi.fn(async (pid: string) => projects.find(p => p.id === pid) ?? projects[0]),
-      save
+      get: vi.fn(async (pid: string) => projects.find((p) => p.id === pid) ?? projects[0]),
+      save,
     },
     settings: {
       get: vi.fn(async () => ({
-        render: { defaultWidth: 720, defaultHeight: 480, defaultFrames: 81 }
-      }))
+        render: { defaultWidth: 720, defaultHeight: 480, defaultFrames: 81 },
+      })),
     },
-    lastProjectId: undefined as string | undefined
+    lastProjectId: undefined as string | undefined,
   } as unknown as ConversationToolsHost
   return { host, save }
 }
@@ -92,7 +92,7 @@ describe('tListProjects', () => {
       id: 'p9',
       title: '雨夜天台',
       shots: [mkShot(1, { status: 'done' }), mkShot(2, { status: 'pending' }), mkShot(3, { status: 'done' })],
-      updatedAt: 1700000000000
+      updatedAt: 1700000000000,
     })
     const { host } = mkHost([p])
     const r = await tListProjects(host)
@@ -105,7 +105,7 @@ describe('tListProjects', () => {
       status: 'draft',
       shots: 3,
       doneShots: 2,
-      updatedAt: new Date(1700000000000).toLocaleString('zh-CN')
+      updatedAt: new Date(1700000000000).toLocaleString('zh-CN'),
     })
   })
 })
@@ -174,8 +174,8 @@ describe('tListCharacters', () => {
         mkChar('甲', { faceImagePath: 'f.png', voiceRate: '150', appearanceLock: 'lock', voice: 'zh-CN-AoedeNeural' }),
         mkChar('乙', { refImagePath: 'r.png' }),
         mkChar('丙', { bodySheetPath: 'b.png' }),
-        mkChar('丁')
-      ]
+        mkChar('丁'),
+      ],
     })
     const { host } = mkHost([p])
     const r = await tListCharacters(host, 'p1')
@@ -186,7 +186,7 @@ describe('tListCharacters', () => {
       voiceRate: '150',
       description: 'desc',
       appearanceLock: 'lock',
-      hasPortrait: true
+      hasPortrait: true,
     })
     expect(arr[1].hasPortrait).toBe(true)
     expect(arr[1].voiceRate).toBe(100)
@@ -200,7 +200,9 @@ describe('tUpdateCharacter', () => {
   function hostWithChar() {
     const p = mkProject({ characters: [mkChar('甲'), mkChar('乙')] })
     const { host, save } = mkHost([p])
-    return { host, save, p, char: p.characters[0] }
+    const char = p.characters[0]
+    if (!char) throw new Error('测试夹具缺少 p.characters[0]')
+    return { host, save, p, char }
   }
 
   it('无 pid', async () => {
@@ -234,7 +236,7 @@ describe('tUpdateCharacter', () => {
       character_name: '甲',
       name: '   ',
       description: 42,
-      voice_rate: 40
+      voice_rate: 40,
     })
     expect(r.ok).toBe(false)
     expect(save).not.toHaveBeenCalled()
@@ -247,7 +249,7 @@ describe('tUpdateCharacter', () => {
       name: ' 新甲 ',
       description: ' 新简介 ',
       voice: 'zh-CN-XiaoxiaoNeural',
-      voice_rate: 120.6
+      voice_rate: 120.6,
     })
     expect(r.ok).toBe(true)
     expect(r.text).toBe('角色「甲」已更新：姓名 甲 → 新甲；简介已更新；音色 → zh-CN-XiaoxiaoNeural；语速 → 121%')
@@ -313,7 +315,7 @@ describe('tUpdateShot', () => {
       scene: '   ',
       type: 'xxx',
       shot_size: 'telephoto',
-      camera: ''
+      camera: '',
     })
     expect(r).toEqual({ ok: false, text: '没有提供任何有效修改字段' })
     expect(save).not.toHaveBeenCalled()
@@ -335,7 +337,7 @@ describe('tUpdateShot', () => {
       lighting: ' dusk ',
       facing: ' camera ',
       continuity: ' standing ',
-      frames: 97
+      frames: 97,
     })
     expect(r.ok).toBe(true)
     expect(shot.scene).toBe('天台')
@@ -384,7 +386,7 @@ describe('tUpdateShot', () => {
     const r = await tUpdateShot(host, 'p1', { shot_index: 1, emotion: 'sad' })
     expect(p.status).toBe('rendering')
     expect(r.text).toBe(
-      '第 1 镜已更新：情绪。注意：项目正在渲染中，本次修改不影响进行中的渲染任务，完成后请复核并重渲该镜'
+      '第 1 镜已更新：情绪。注意：项目正在渲染中，本次修改不影响进行中的渲染任务，完成后请复核并重渲该镜',
     )
   })
 })
@@ -401,7 +403,7 @@ describe('tAddShot', () => {
     expect(await tAddShot(host, 'p1', { action: 'a' })).toEqual({ ok: false, text: 'scene 与 action 不能为空' })
     expect(await tAddShot(host, 'p1', { scene: 's', action: '   ' })).toEqual({
       ok: false,
-      text: 'scene 与 action 不能为空'
+      text: 'scene 与 action 不能为空',
     })
     expect(save).not.toHaveBeenCalled()
   })
@@ -416,10 +418,11 @@ describe('tAddShot', () => {
       shot_size: 'closeup',
       dialogue: ' 你好 ',
       camera: ' pan ',
-      emotion: 123
+      emotion: 123,
     })
     expect(r.ok).toBe(true)
     const added = p.shots[1]
+    if (!added) throw new Error('测试夹具缺少 p.shots[1]')
     expect(added.scene).toBe('雨夜')
     expect(added.action).toBe('对峙')
     expect(added.type).toBe('i2v')
@@ -431,7 +434,7 @@ describe('tAddShot', () => {
     expect(added.height).toBe(480)
     expect(added.frames).toBe(81)
     expect(added.status).toBe('pending')
-    expect(p.shots.map(s => s.index)).toEqual([1, 2, 3])
+    expect(p.shots.map((s) => s.index)).toEqual([1, 2, 3])
     expect(r.text).toContain('已新增第 2 镜「雨夜」（i2v），后续镜头已自动重新编号')
     expect(save).toHaveBeenCalledTimes(1)
   })
@@ -440,7 +443,7 @@ describe('tAddShot', () => {
     const p = mkProject({ shots: [mkShot(1)] })
     const { host } = mkHost([p])
     await tAddShot(host, 'p1', { scene: 's', action: 'a', shot_size: 'telephoto' })
-    expect(p.shots[1].shotSize).toBe('medium')
+    expect(p.shots[1]?.shotSize).toBe('medium')
   })
 
   it('t2v：shotSize 为 undefined，after_index 越界回退末尾', async () => {
@@ -448,6 +451,7 @@ describe('tAddShot', () => {
     const { host } = mkHost([p])
     const r = await tAddShot(host, 'p1', { scene: 's', action: 'a', type: 't2v', after_index: 99 })
     const added = p.shots[2]
+    if (!added) throw new Error('测试夹具缺少 p.shots[2]')
     expect(added.type).toBe('t2v')
     expect(added.shotSize).toBeUndefined()
     expect(added.index).toBe(3)
@@ -459,7 +463,7 @@ describe('tAddShot', () => {
     p.status = 'done'
     const { host } = mkHost([p])
     await tAddShot(host, 'p1', { scene: 's', action: 'a' })
-    expect(p.shots[1].index).toBe(2)
+    expect(p.shots[1]?.index).toBe(2)
     expect(p.status).toBe('draft')
   })
 })
@@ -489,7 +493,7 @@ describe('tDeleteShot', () => {
     const r = await tDeleteShot(host, 'p1', { shot_index: 2 })
     expect(r.ok).toBe(true)
     expect(r.text).toBe('已删除第 2 镜「scene2」，共剩 2 镜，镜号已重新编号')
-    expect(p.shots.map(s => s.index)).toEqual([1, 2])
+    expect(p.shots.map((s) => s.index)).toEqual([1, 2])
     expect(save).toHaveBeenCalledTimes(1)
   })
 })
@@ -518,7 +522,7 @@ describe('tMoveShot', () => {
     const { host, save } = mkHost([p])
     const r = await tMoveShot(host, 'p1', { shot_index: 3, to_index: 1 })
     expect(r.text).toBe('「scene3」已移到第 1 镜位置，镜号已重新编号')
-    expect(p.shots.map(s => s.id)).toEqual(['s3', 's1', 's2'])
+    expect(p.shots.map((s) => s.id)).toEqual(['s3', 's1', 's2'])
     expect(save).toHaveBeenCalledTimes(1)
   })
 
@@ -526,7 +530,7 @@ describe('tMoveShot', () => {
     const p = mkProject({ shots: [mkShot(1), mkShot(2), mkShot(3)] })
     const { host } = mkHost([p])
     const r = await tMoveShot(host, 'p1', { shot_index: 1, to_index: 99 })
-    expect(p.shots.map(s => s.id)).toEqual(['s2', 's3', 's1'])
+    expect(p.shots.map((s) => s.id)).toEqual(['s2', 's3', 's1'])
     expect(r.text).toContain('已移到第 3 镜位置')
   })
 })

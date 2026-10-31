@@ -7,24 +7,51 @@
 import { describe, it, expect, vi } from 'vitest'
 
 vi.mock('../../src/main/core/logger', () => ({
-  createLogger: () => ({ info: () => {}, warn: () => {}, error: () => {}, debug: () => {} })
+  createLogger: () => ({ info: () => {}, warn: () => {}, error: () => {}, debug: () => {} }),
 }))
 
 import type { Shot, Project } from '../../src/shared/ipcTypes'
-import { driftLockBlock, usablePromptEn, sceneCueFor, propsConstraintBlock, noExtrasLockFor, buildH3Prompt } from '../../src/main/core/taskQueuePrompts'
+import {
+  driftLockBlock,
+  usablePromptEn,
+  sceneCueFor,
+  propsConstraintBlock,
+  noExtrasLockFor,
+  buildH3Prompt,
+} from '../../src/main/core/taskQueuePrompts'
 
 // ---------- 辅助：构造最小 Shot ----------
 function mkShot(o: Partial<Shot> = {}): Shot {
   return {
-    id: 's1', index: 1, scene: '便利店', action: '转身', dialogue: '', characterIds: ['c1'],
-    type: 'i2v', width: 720, height: 480, frames: 81, seed: 1, ...o
+    id: 's1',
+    index: 1,
+    scene: '便利店',
+    action: '转身',
+    dialogue: '',
+    characterIds: ['c1'],
+    type: 'i2v',
+    width: 720,
+    height: 480,
+    frames: 81,
+    seed: 1,
+    status: 'pending',
+    ...o,
   }
 }
 function mkProject(o: Partial<Project> = {}): Project {
   return {
-    id: 'p1', title: 'x', genre: '都市', episode: 1, status: 'draft',
+    id: 'p1',
+    title: 'x',
+    genre: '都市',
+    episode: 1,
+    status: 'draft',
     characters: [{ id: 'c1', name: '周野', refImagePath: '', description: '', voice: '', voiceRate: '' }],
-    sceneBoards: [], shots: [], fps: 24, createdAt: 0, updatedAt: 0, ...o
+    sceneBoards: [],
+    shots: [],
+    fps: 24,
+    createdAt: 0,
+    updatedAt: 0,
+    ...o,
   }
 }
 
@@ -164,7 +191,7 @@ describe('propsConstraintBlock · 道具硬约束', () => {
 describe('noExtrasLockFor · 场景无路人锁', () => {
   it('非战斗 非特写 非中景 → 空串（远景/大全景不锁路人）', () => {
     expect(noExtrasLockFor(mkShot({ action: '', shotSize: 'wide' }))).toBe('')
-    expect(noExtrasLockFor(mkShot({ action: 'walk', shotSize: 'longshot' }))).toBe('')
+    expect(noExtrasLockFor(mkShot({ action: 'walk', shotSize: 'wide' }))).toBe('')
   })
 
   it('单人 + closeup →  exactly ONE person', () => {
@@ -203,12 +230,28 @@ describe('noExtrasLockFor · 场景无路人锁', () => {
 describe('buildH3Prompt · H3 结构化提示词组装', () => {
   const p = mkProject({
     genre: '都市',
-    characters: [{ id: 'c1', name: '周野', refImagePath: '', description: 'young man in hoodie', appearanceLock: 'young asian man, black hoodie' }],
-    sceneBoards: [{ id: 'b1', key: 'S1', name: '深夜便利店', description: '', emptyPlatePath: '' }]
+    characters: [
+      {
+        id: 'c1',
+        name: '周野',
+        refImagePath: '',
+        description: 'young man in hoodie',
+        voice: '',
+        appearanceLock: 'young asian man, black hoodie',
+      },
+    ],
+    sceneBoards: [{ id: 'b1', key: 'S1', name: '深夜便利店', description: '', emptyPlatePath: '' }],
   })
 
   it('i2v + 无音频 → integrated_multimodal_description + <Picture 1> subject 声明 + no speech 禁令 + TIMELINE PROTOCOL', () => {
-    const shot = mkShot({ type: 'i2v', characterIds: ['c1'], sceneBoardId: 'b1', shotSize: 'medium', facing: 'camera', action: 'slowly turns to camera' })
+    const shot = mkShot({
+      type: 'i2v',
+      characterIds: ['c1'],
+      sceneBoardId: 'b1',
+      shotSize: 'medium',
+      facing: 'camera',
+      action: 'slowly turns to camera',
+    })
     const out = buildH3Prompt(shot, p, false, 4, 'cinematic lighting')
     expect(out).toContain('integrated_multimodal_description')
     expect(out).toContain('<Picture 1>')
@@ -220,8 +263,11 @@ describe('buildH3Prompt · H3 结构化提示词组装', () => {
 
   it('r2v + 有音频 → 注入 <d>[Chinese] 台词 + <Audio 1> 参考音频 + 仅片中角色说 + 禁旁白', () => {
     const shot = mkShot({
-      type: 'i2v', characterIds: ['c1'], dialogue: '别走',
-      shotSize: 'closeup', action: 'grabs her arm, urgent'
+      type: 'i2v',
+      characterIds: ['c1'],
+      dialogue: '别走',
+      shotSize: 'closeup',
+      action: 'grabs her arm, urgent',
     })
     const out = buildH3Prompt(shot, p, true, 3, 'dramatic')
     expect(out).toContain('<d>[Chinese] 别走</d>')
@@ -232,7 +278,13 @@ describe('buildH3Prompt · H3 结构化提示词组装', () => {
   })
 
   it('有角色且有 appearanceLock → identityLockBlock 输出（LOCKED IDENTITY / STRICT HAIR LOCK / STRICT OUTFIT LOCK）', () => {
-    const shot = mkShot({ type: 'i2v', characterIds: ['c1'], sceneBoardId: 'b1', action: 'walk in', shotSize: 'medium' })
+    const shot = mkShot({
+      type: 'i2v',
+      characterIds: ['c1'],
+      sceneBoardId: 'b1',
+      action: 'walk in',
+      shotSize: 'medium',
+    })
     const out = buildH3Prompt(shot, p, false, 4, '')
     expect(out).toContain('LOCKED IDENTITY')
     expect(out).toContain('STRICT HAIR LOCK')
@@ -244,7 +296,9 @@ describe('buildH3Prompt · H3 结构化提示词组装', () => {
   it('有角色但无 appearanceLock / description → 无 identity 锁定段（lookEn 为空）', () => {
     const pNoLook = mkProject({
       genre: '都市',
-      characters: [{ id: 'c1', name: '周野', refImagePath: '', description: '', voice: '', voiceRate: '', appearanceLock: '' }]
+      characters: [
+        { id: 'c1', name: '周野', refImagePath: '', description: '', voice: '', voiceRate: '', appearanceLock: '' },
+      ],
     })
     const shot = mkShot({ type: 'i2v', characterIds: ['c1'], action: 'walk in', shotSize: 'medium' })
     const out = buildH3Prompt(shot, pNoLook, false, 4, '')
@@ -265,8 +319,10 @@ describe('buildH3Prompt · H3 结构化提示词组装', () => {
 
   it('sceneEn 含 noodles/soup/chopsticks 等食物实体词 → 被剥离（防模型给人物塞碗）', () => {
     const shot = mkShot({
-      type: 'i2v', characterIds: ['c1'], action: 'sits down',
-      sceneEn: 'steaming noodles, soup, bowl, chopsticks, food, interior'
+      type: 'i2v',
+      characterIds: ['c1'],
+      action: 'sits down',
+      sceneEn: 'steaming noodles, soup, bowl, chopsticks, food, interior',
     })
     const out = buildH3Prompt(shot, p, false, 4, '')
     // sceneCue（in xxx interior）不应再有 noodles/soup 等实体词
@@ -280,7 +336,12 @@ describe('buildH3Prompt · H3 结构化提示词组装', () => {
   })
 
   it('有 auditFix → Revision directive 被拼接', () => {
-    const shot = mkShot({ type: 'i2v', characterIds: ['c1'], action: 'walks', auditFix: 'fix face identity, add more emotion' })
+    const shot = mkShot({
+      type: 'i2v',
+      characterIds: ['c1'],
+      action: 'walks',
+      auditFix: 'fix face identity, add more emotion',
+    })
     const out = buildH3Prompt(shot, p, false, 4, '')
     expect(out).toContain('Revision directive')
     expect(out).toContain('fix face identity')

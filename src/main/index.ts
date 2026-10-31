@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Notification, protocol } from 'electron'
+import { app, BrowserWindow, Notification, protocol, session } from 'electron'
 import { join } from 'node:path'
 import { existsSync } from 'node:fs'
 import {
@@ -7,7 +7,7 @@ import {
   type DirectorProgressEvent,
   type DirectorLogEvent,
   type DirectorFinishedEvent,
-  type ConversationToolEvent
+  type ConversationToolEvent,
 } from '../shared/ipcTypes'
 import { ProjectStore } from './core/projectStore'
 import { handleIpc, resolveInsideRoot, DATA_ROOT, setMainWindow } from './ipc/shared'
@@ -46,6 +46,7 @@ import { ComfyMcpService } from './core/comfyMcpService'
 import { MemoryStore } from './core/memoryStore'
 import { SelfCheckService } from './core/selfCheckService'
 import { GENRE_TEMPLATES } from '../shared/ipcTypes'
+import { DEFAULT_COMFY_BASE_URL } from '../shared/comfyDefaults'
 import { installGlobalErrorHandlers } from './core/errorHandler'
 import { childProcessManager } from './core/childProcessManager'
 import { createLogger, initFileLogger } from './core/logger'
@@ -90,7 +91,9 @@ app.on('second-instance', () => {
 
 /**
  * Electron 原生本地媒体协议（必须在 app ready 之前注册）。
- * stream:true 才能给 <video> 做 Range 拖动；bypassCSP 避免开发态 http 源拦截。
+ * stream:true 才能给 <video> 做 Range 拖动。
+ * SEC-09：不开启 bypassCSP——该协议只读取 DATA_ROOT 内文件（路径校验见 resolveInsideRoot），
+ * 让 CSP 继续作为本地文件的兜底防线，不要为兼容开发态 HMR 放开整个协议的 CSP 豁免。
  * URL：app-file://local/projects/<id>/final_master.mp4
  */
 protocol.registerSchemesAsPrivileged([
@@ -101,10 +104,9 @@ protocol.registerSchemesAsPrivileged([
       secure: true,
       supportFetchAPI: true,
       stream: true,
-      bypassCSP: true,
-      corsEnabled: true
-    }
-  }
+      corsEnabled: true,
+    },
+  },
 ])
 
 // DATA_ROOT / resolveInsideRoot / normPath 统一来自 ./ipc/shared（单一事实源）
@@ -150,8 +152,8 @@ function createWindow(): void {
       contextIsolation: true,
       nodeIntegration: false,
       // preload 仅使用 contextBridge/ipcRenderer，满足沙箱约束（I-5）
-      sandbox: true
-    }
+      sandbox: true,
+    },
   })
   // 同步到 shared.ts 单例，使 IPC 层 sendToWindow 也能向该窗口推送事件
   // （此前未调用 setMainWindow，promptBulkFillProgress 等通道事件永远无法送达）
@@ -197,7 +199,7 @@ const resolveResourceDir = (sub: string): string => {
   for (const dir of order) {
     if (existsSync(dir)) return dir
   }
-  return order[0]
+  return order[0] ?? process.resourcesPath
 }
 const workflowDir = resolveResourceDir('workflows')
 const workflowLoader = new WorkflowLoader(workflowDir)
@@ -205,20 +207,30 @@ const workflowLoader = new WorkflowLoader(workflowDir)
 // 扫描不到时降级为空库（不影响其他功能；用户可在设置页配置本机路径）
 const workflowLibrary = new WorkflowLibrary('')
 // 从设置中读取 ComfyUI 地址（启动时异步加载，先默认后覆盖）
-const comfyuiClient = new ComfyUIClient({ baseUrl: 'http://127.0.0.1:8188', clientId: 'drama-studio' })
+const comfyuiClient = new ComfyUIClient({ baseUrl: DEFAULT_COMFY_BASE_URL, clientId: 'drama-studio' })
 // 仅初始化时序：原先下方两次 settingsStore.get() 各读一次 settings.json，合并为一次读取，
 // 减少冷启动时的重复 fs 读；副作用与触发时机不变（都在 settings 异步就绪后各自应用）。
-settingsStore.get().then(s => {
-  if (s.comfyui?.workflowLibraryDir) workflowLibrary.setLibDir(s.comfyui.workflowLibraryDir)
-  if (s.comfyui.baseUrl) comfyuiClient.setBaseUrl(s.comfyui.baseUrl).catch(() => {})
-}).catch(() => {})
+settingsStore
+  .get()
+  .then((s) => {
+    if (s.comfyui?.workflowLibraryDir) workflowLibrary.setLibDir(s.comfyui.workflowLibraryDir)
+    if (s.comfyui.baseUrl) comfyuiClient.setBaseUrl(s.comfyui.baseUrl).catch(() => {})
+  })
+  .catch(() => {})
 const ttsService = new TTSService(DATA_ROOT, comfyuiClient, workflowLoader)
 const ffmpegService = new FFmpegService()
 
 const llmService = new LLMService(() => settingsStore.get(), GENRE_TEMPLATES)
 const skillLibrary = new SkillLibrary(resolveResourceDir('skills'))
 const taskQueue = new TaskQueue(
-  DATA_ROOT, comfyuiClient, workflowLoader, ttsService, ffmpegService, projectStore, settingsStore, llmService
+  DATA_ROOT,
+  comfyuiClient,
+  workflowLoader,
+  ttsService,
+  ffmpegService,
+  projectStore,
+  settingsStore,
+  llmService,
 )
 const subtitleService = new SubtitleService(ffmpegService, DATA_ROOT)
 const imageService = new ImageService(comfyuiClient, workflowLoader)
@@ -226,20 +238,43 @@ const imageService = new ImageService(comfyuiClient, workflowLoader)
 // 首绘不依赖 rules.json，渲染启动时 taskQueue 会强制重读；此处不再于模块顶层抢 fs。
 const candidatePicker = new CandidatePickService(llmService)
 const directorAgent = new DirectorAgent(
-  DATA_ROOT, projectStore, llmService, imageService,
-  taskQueue, ffmpegService, subtitleService, settingsStore, skillLibrary
+  DATA_ROOT,
+  projectStore,
+  llmService,
+  imageService,
+  taskQueue,
+  ffmpegService,
+  subtitleService,
+  settingsStore,
+  skillLibrary,
 )
 const skillService = new SkillService(DATA_ROOT)
 const memoryStore = new MemoryStore(DATA_ROOT)
 const comfyMcpService = new ComfyMcpService(settingsStore)
 const conversationService = new ConversationService(
-  DATA_ROOT, llmService, skillService, directorAgent,
-  taskQueue, projectStore, comfyuiClient, workflowLoader, memoryStore, ffmpegService, settingsStore,
-  skillLibrary, workflowLibrary, comfyMcpService
+  DATA_ROOT,
+  llmService,
+  skillService,
+  directorAgent,
+  taskQueue,
+  projectStore,
+  comfyuiClient,
+  workflowLoader,
+  memoryStore,
+  ffmpegService,
+  settingsStore,
+  skillLibrary,
+  workflowLibrary,
+  comfyMcpService,
 )
 const selfCheckService = new SelfCheckService(
-  DATA_ROOT, projectStore, skillService, workflowLoader,
-  ffmpegService, comfyuiClient, settingsStore
+  DATA_ROOT,
+  projectStore,
+  skillService,
+  workflowLoader,
+  ffmpegService,
+  comfyuiClient,
+  settingsStore,
 )
 
 // IPC 注册：对话框会话登记（dialogSavedFiles/dialogSelectedDirs/hasDialogSession）
@@ -263,7 +298,7 @@ function registerIpc(): void {
   registerSystemIpc({
     selfCheckService,
     dataRoot: DATA_ROOT,
-    cleanupTmp: () => taskQueue.cleanupTmpFiles()
+    cleanupTmp: () => taskQueue.cleanupTmpFiles(),
   })
   registerWorkflowIpc({ workflowLoader })
   registerSettingsIpc({ settingsStore, comfyuiClient, imageService })
@@ -301,6 +336,11 @@ function registerIpc(): void {
 }
 
 app.whenReady().then(() => {
+  // SEC-08：本应用不需要摄像头/麦克风/地理位置/通知等任何 Web 权限（系统通知走主进程 Notification），
+  // Electron 默认放行这些请求，等于把浏览器级能力直接暴露给渲染层，这里统一拒绝。
+  session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) => callback(false))
+  session.defaultSession.setPermissionCheckHandler(() => false)
+
   // Electron 原生文件协议：直接把本地 mp4 映射给渲染进程 <video>（含 Range）
   protocol.registerFileProtocol('app-file', (request, callback) => {
     try {
@@ -325,7 +365,7 @@ app.whenReady().then(() => {
   comfyStatusWatcher = createComfyStatusWatcher({
     check: () => comfyuiClient.healthCheck(),
     onChange: (connected) => sendToWindow(IpcChannels.comfyStatusChanged, connected),
-    intervalMs: 15_000
+    intervalMs: 15_000,
   })
   comfyStatusWatcher.start()
 
@@ -354,7 +394,7 @@ app.whenReady().then(() => {
           ...r.cinematicQuality.camera,
           ...r.cinematicQuality.lighting,
           ...r.cinematicQuality.fx,
-          ...r.cinematicQuality.scene
+          ...r.cinematicQuality.scene,
         ].join(', ')
         taskQueue.qualityBlock = qb
         imageService.qualityBlock = qb
@@ -380,8 +420,8 @@ app.whenReady().then(() => {
 
   // 启动后静默做一次工作流环境自检（等 ComfyUI 就绪），有缺失才在主进程日志告警
   setTimeout(() => {
-    (async () => {
-      if (!await comfyuiClient.healthCheck()) return
+    ;(async () => {
+      if (!(await comfyuiClient.healthCheck())) return
       try {
         const reports = await validateWorkflowTemplates(comfyuiClient, workflowLoader)
         for (const r of reports) {
@@ -423,7 +463,7 @@ app.on('before-quit', async (event) => {
       (async () => {
         await comfyMcpService.dispose().catch(() => undefined)
       })(),
-      new Promise(resolve => setTimeout(resolve, 5000))
+      new Promise((resolve) => setTimeout(resolve, 5000)),
     ])
   } finally {
     app.exit(0)

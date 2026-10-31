@@ -11,184 +11,193 @@
     </div>
 
     <div class="console page">
-    <!-- ===== 左栏：模块导航 + 项目概览 ===== -->
-    <aside class="console-aside glass-panel">
-      <div class="aside-title">导演控制台</div>
-      <el-menu :default-active="activeModule" class="aside-menu" @select="onModuleSelect">
-        <el-menu-item index="workflow">
-          <el-icon><DataLine /></el-icon><span>工作流监控</span>
-        </el-menu-item>
-        <el-menu-item index="skills">
-          <el-icon><MagicStick /></el-icon><span>技能管理</span>
-        </el-menu-item>
-        <el-menu-item index="memory">
-          <el-icon><Collection /></el-icon><span>记忆库</span>
-        </el-menu-item>
-        <el-menu-item index="comfyui">
-          <el-icon><Cpu /></el-icon><span>ComfyUI</span>
-        </el-menu-item>
-        <el-menu-item index="selfcheck">
-          <el-icon><Odometer /></el-icon><span>系统自检</span>
-          <el-tag v-if="selfBadCount" size="small" type="danger" effect="plain" class="selfcheck-badge">
-            {{ selfBadCount }}
-          </el-tag>
-        </el-menu-item>
-      </el-menu>
-
-      <div v-if="state" class="aside-project">
-        <div class="aside-subtitle">项目概览</div>
-        <div class="kv"><span class="k">片名</span><span class="v">{{ state.title }}</span></div>
-        <div class="kv">
-          <span class="k">镜头</span>
-          <span class="v">{{ state.doneShots }}/{{ state.totalShots }} 完成
-            <el-tag v-if="state.failedShotIds.length" size="small" type="danger" effect="plain">
-              {{ state.failedShotIds.length }} 失败
+      <!-- ===== 左栏：模块导航 + 项目概览 ===== -->
+      <aside class="console-aside glass-panel">
+        <div class="aside-title">导演控制台</div>
+        <el-menu :default-active="activeModule" class="aside-menu" @select="onModuleSelect">
+          <el-menu-item index="workflow">
+            <el-icon><DataLine /></el-icon><span>工作流监控</span>
+          </el-menu-item>
+          <el-menu-item index="skills">
+            <el-icon><MagicStick /></el-icon><span>技能管理</span>
+          </el-menu-item>
+          <el-menu-item index="memory">
+            <el-icon><Collection /></el-icon><span>记忆库</span>
+          </el-menu-item>
+          <el-menu-item index="comfyui">
+            <el-icon><Cpu /></el-icon><span>ComfyUI</span>
+          </el-menu-item>
+          <el-menu-item index="selfcheck">
+            <el-icon><Odometer /></el-icon><span>系统自检</span>
+            <el-tag v-if="selfBadCount" size="small" type="danger" effect="plain" class="selfcheck-badge">
+              {{ selfBadCount }}
             </el-tag>
-          </span>
-        </div>
-        <div v-if="state.reviewIssues?.length" class="review-issues">
-          <div class="aside-subtitle">复审问题</div>
-          <div v-for="(iss, i) in (reviewExpanded ? state.reviewIssues : state.reviewIssues.slice(0, 5))" :key="i" class="issue-item">{{ iss }}</div>
-          <div v-if="state.reviewIssues.length > 5" class="review-more">
-            <el-button link type="danger" size="small" @click="reviewExpanded = !reviewExpanded">
-              {{ reviewExpanded ? '收起' : `查看更多（共 ${state.reviewIssues.length} 条问题）` }}
+          </el-menu-item>
+        </el-menu>
+
+        <div v-if="state" class="aside-project">
+          <div class="aside-subtitle">项目概览</div>
+          <div class="kv">
+            <span class="k">片名</span><span class="v">{{ state.title }}</span>
+          </div>
+          <div class="kv">
+            <span class="k">镜头</span>
+            <span class="v"
+              >{{ state.doneShots }}/{{ state.totalShots }} 完成
+              <el-tag v-if="state.failedShotIds.length" size="small" type="danger" effect="plain">
+                {{ state.failedShotIds.length }} 失败
+              </el-tag>
+            </span>
+          </div>
+          <div v-if="state.reviewIssues?.length" class="review-issues">
+            <div class="aside-subtitle">复审问题</div>
+            <div
+              v-for="(iss, i) in reviewExpanded ? state.reviewIssues : state.reviewIssues.slice(0, 5)"
+              :key="i"
+              class="issue-item"
+            >
+              {{ iss }}
+            </div>
+            <div v-if="state.reviewIssues.length > 5" class="review-more">
+              <el-button link type="danger" size="small" @click="reviewExpanded = !reviewExpanded">
+                {{ reviewExpanded ? '收起' : `查看更多（共 ${state.reviewIssues.length} 条问题）` }}
+              </el-button>
+            </div>
+          </div>
+          <div v-if="state.finalPath" class="final-path">
+            <el-button size="small" @click="openFinalFolder">
+              <el-icon><FolderOpened /></el-icon>&nbsp;成片所在目录
             </el-button>
           </div>
         </div>
-        <div v-if="state.finalPath" class="final-path">
-          <el-button size="small" @click="openFinalFolder">
-            <el-icon><FolderOpened /></el-icon>&nbsp;成片所在目录
-          </el-button>
-        </div>
-      </div>
-    </aside>
+      </aside>
 
-    <!-- ===== 中栏：按 activeModule 切换的面板 ===== -->
-    <section class="console-main glass-panel">
-      <!-- RC-12：hydrate 失败单独出错误态卡片，不与「没有进行中的任务」空态混淆 -->
-      <ErrorStateCard
-        v-if="activeModule === 'workflow' && hydrateError"
-        title="导演状态加载失败"
-        description="这不是「没有进行中的任务」，只是本次状态读取失败，可重试加载。"
-        :detail="hydrateError"
-        :retrying="hydrateLoading"
-        class="hydrate-error"
-        @retry="runHydrate"
-      >
-        <el-button size="small" @click="router.push('/')">回项目列表</el-button>
-      </ErrorStateCard>
-      <WorkflowPanel
-        v-if="activeModule === 'workflow' && !hydrateError"
-        :state="state"
-        :local-logs="localLogs"
-        :expanded-stages="expandedStages"
-        :gate-options="gateOptions"
-        :running="running"
-        :paused="paused"
-        :start-dialog-visible="startDialogVisible"
-        :starting="starting"
-        :project="project"
-        :asset-urls="assetUrls"
-        :rerendering-shot-id="rerenderingShotId"
-        @pause="onPause"
-        @resume="onResume"
-        @cancel="onCancel"
-        @clear="onClearTask"
-        @open-final-folder="openFinalFolder"
-        @resume-from="onResumeFrom"
-        @retry-failed="retryFailedShots"
-        @retry-pending="retryPendingShots"
-        @rerender-shot="onRerenderShot"
-        @rerender-shots="onRerenderShots"
-        @regenerate-asset="onAssetRegenerate"
-        @asset-refreshed="() => loadProjectData(project?.id)"
-        @update:expanded-stages="val => expandedStages = val"
-        @update:start-dialog-visible="val => startDialogVisible = val"
-        @start="confirmStart"
-      />
-      <SkillsPanel
-        v-else-if="activeModule === 'skills'"
-        :skills="skills"
-        :skill-dialog="skillDialog"
-        :editing-skill="editingSkill"
-        :skill-saving="skillSaving"
-        @toggle="toggleSkill"
-        @remove="removeSkill"
-        @open-dialog="openSkillDialog"
-        @save-dialog="saveSkill"
-        @close-dialog="closeSkillDialog"
-      />
-      <MemoryPanel
-        v-else-if="activeModule === 'memory'"
-        :memories="memories"
-        :memory-kind="memoryKind"
-        :memory-kind-options="memoryKindOptions"
-        :memory-dialog="memoryDialog"
-        :editing-memory="editingMemory"
-        :memory-saving="memorySaving"
-        @update:memory-kind="val => memoryKind = val"
-        @remove="removeMemory"
-        @open-dialog="openMemoryDialog"
-        @save-dialog="saveMemory"
-        @close-dialog="closeMemoryDialog"
-      />
-      <ComfyPanel
-        v-else-if="activeModule === 'comfyui'"
-        :comfy-stats="comfyStats"
-        :node-names="nodeNames"
-        :node-query="nodeQuery"
-        :matched-nodes="matchedNodes"
-        :comfy-loading="comfyLoading"
-        :workflows="workflows"
-        :workflow-params="workflowParams"
-        :expanded-workflows="expandedWorkflows"
-        :validate-reports="validateReports"
-        :validate-loading="validateLoading"
-        :validate-run="validateRun"
-        :validate-bad-count="validateBadCount"
-        :models-dir="modelsDir"
-        @refresh="refreshComfy"
-        @wf-expand="onWfExpand"
-        @update-param="updateWfParam"
-        @run-validate="runValidate"
-        @open-models-dir="openModelsDir"
-        @update:node-query="val => nodeQuery = val"
-      />
-      <SelfCheckPanel
-        v-else-if="activeModule === 'selfcheck'"
-        :items="selfItems"
-        :loading="selfLoading"
-        @rerun="runSelfcheck"
-      />
-    </section>
+      <!-- ===== 中栏：按 activeModule 切换的面板 ===== -->
+      <section class="console-main glass-panel">
+        <!-- RC-12：hydrate 失败单独出错误态卡片，不与「没有进行中的任务」空态混淆 -->
+        <ErrorStateCard
+          v-if="activeModule === 'workflow' && hydrateError"
+          title="导演状态加载失败"
+          description="这不是「没有进行中的任务」，只是本次状态读取失败，可重试加载。"
+          :detail="hydrateError"
+          :retrying="hydrateLoading"
+          class="hydrate-error"
+          @retry="runHydrate"
+        >
+          <el-button size="small" @click="router.push('/')">回项目列表</el-button>
+        </ErrorStateCard>
+        <WorkflowPanel
+          v-if="activeModule === 'workflow' && !hydrateError"
+          :state="state"
+          :local-logs="localLogs"
+          :expanded-stages="expandedStages"
+          :gate-options="gateOptions"
+          :running="running"
+          :paused="paused"
+          :start-dialog-visible="startDialogVisible"
+          :starting="starting"
+          :project="project"
+          :asset-urls="assetUrls"
+          :rerendering-shot-id="rerenderingShotId"
+          @pause="onPause"
+          @resume="onResume"
+          @cancel="onCancel"
+          @clear="onClearTask"
+          @open-final-folder="openFinalFolder"
+          @resume-from="onResumeFrom"
+          @retry-failed="retryFailedShots"
+          @retry-pending="retryPendingShots"
+          @rerender-shot="onRerenderShot"
+          @rerender-shots="onRerenderShots"
+          @regenerate-asset="onAssetRegenerate"
+          @asset-refreshed="() => loadProjectData(project?.id)"
+          @update:expanded-stages="(val) => (expandedStages = val)"
+          @update:start-dialog-visible="(val) => (startDialogVisible = val)"
+          @start="confirmStart"
+        />
+        <SkillsPanel
+          v-else-if="activeModule === 'skills'"
+          :skills="skills"
+          :skill-dialog="skillDialog"
+          :editing-skill="editingSkill"
+          :skill-saving="skillSaving"
+          @toggle="toggleSkill"
+          @remove="removeSkill"
+          @open-dialog="openSkillDialog"
+          @save-dialog="saveSkill"
+          @close-dialog="closeSkillDialog"
+        />
+        <MemoryPanel
+          v-else-if="activeModule === 'memory'"
+          :memories="memories"
+          :memory-kind="memoryKind"
+          :memory-kind-options="memoryKindOptions"
+          :memory-dialog="memoryDialog"
+          :editing-memory="editingMemory"
+          :memory-saving="memorySaving"
+          @update:memory-kind="(val) => (memoryKind = val)"
+          @remove="removeMemory"
+          @open-dialog="openMemoryDialog"
+          @save-dialog="saveMemory"
+          @close-dialog="closeMemoryDialog"
+        />
+        <ComfyPanel
+          v-else-if="activeModule === 'comfyui'"
+          :comfy-stats="comfyStats"
+          :node-names="nodeNames"
+          :node-query="nodeQuery"
+          :matched-nodes="matchedNodes"
+          :comfy-loading="comfyLoading"
+          :workflows="workflows"
+          :workflow-params="workflowParams"
+          :expanded-workflows="expandedWorkflows"
+          :validate-reports="validateReports"
+          :validate-loading="validateLoading"
+          :validate-run="validateRun"
+          :validate-bad-count="validateBadCount"
+          :models-dir="modelsDir"
+          @refresh="refreshComfy"
+          @wf-expand="onWfExpand"
+          @update-param="updateWfParam"
+          @run-validate="runValidate"
+          @open-models-dir="openModelsDir"
+          @update:node-query="(val) => (nodeQuery = val)"
+        />
+        <SelfCheckPanel
+          v-else-if="activeModule === 'selfcheck'"
+          :items="selfItems"
+          :loading="selfLoading"
+          @rerun="runSelfcheck"
+        />
+      </section>
 
-    <!-- ===== 右栏：导演真实对话 ===== -->
-    <aside class="console-right glass-panel">
-      <DirectorChat
-        :messages="messages"
-        :input-text="inputText"
-        :sending="sending"
-        :expanded-tools="expandedTools"
-        :quick-prompts="quickPrompts"
-        :scroll-tick="scrollTick"
-        :render-md="renderMd"
-        :task-running="running"
-        :task-paused="paused"
-        @toggle-tool="toggleTool"
-        @use-quick="useQuick"
-        @copy-msg="copyMsg"
-        @resend-msg="resendMsg"
-        @rollback-msg="rollbackMsg"
-        @regenerate="regenerateMsg"
-        @send="sendMessage()"
-        @stop="stopSend"
-        @upload="uploadAndSend"
-        @self-learn="selfLearn"
-        @clear="clearChatGuarded"
-        @cancel-task="onCancel"
-        @update:input-text="val => inputText = val"
-      />
-    </aside>
+      <!-- ===== 右栏：导演真实对话 ===== -->
+      <aside class="console-right glass-panel">
+        <DirectorChat
+          :messages="messages"
+          :input-text="inputText"
+          :sending="sending"
+          :expanded-tools="expandedTools"
+          :quick-prompts="quickPrompts"
+          :scroll-tick="scrollTick"
+          :render-md="renderMd"
+          :task-running="running"
+          :task-paused="paused"
+          @toggle-tool="toggleTool"
+          @use-quick="useQuick"
+          @copy-msg="copyMsg"
+          @resend-msg="resendMsg"
+          @rollback-msg="rollbackMsg"
+          @regenerate="regenerateMsg"
+          @send="sendMessage()"
+          @stop="stopSend"
+          @upload="uploadAndSend"
+          @self-learn="selfLearn"
+          @clear="clearChatGuarded"
+          @cancel-task="onCancel"
+          @update:input-text="(val) => (inputText = val)"
+        />
+      </aside>
     </div>
   </div>
 </template>
@@ -198,7 +207,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { DataLine, MagicStick, Collection, Cpu, FolderOpened, Odometer, ChatDotRound } from '@element-plus/icons-vue'
-import type { DirectorStage, Project, SelfCheckItem, AssetRegenerateInput } from '../../../shared/ipcTypes'
+import type { DirectorStartInput, Project, SelfCheckItem, AssetRegenerateInput } from '../../../shared/ipcTypes'
 import { useDirectorState } from '../composables/useDirectorState'
 import { useDirectorChat } from '../composables/useDirectorChat'
 import { useSkillsManager } from '../composables/useSkillsManager'
@@ -237,7 +246,10 @@ const domainLabel = computed(() => {
 
 async function loadSuggestProject(): Promise<void> {
   const id = currentProjectId.value
-  if (!id || projectId.value) { suggestProject.value = null; return }
+  if (!id || projectId.value) {
+    suggestProject.value = null
+    return
+  }
   try {
     const p = await window.api.project.get(id)
     suggestProject.value = p ? { id: p.id, title: p.title } : null
@@ -257,11 +269,24 @@ function switchToProjectChat(): void {
 
 // ===== 装配 5 个 composable =====
 const {
-  state, localLogs, expandedStages, gateOptions,
-  running, paused,
-  hydrate, hydrateLatest, subscribe, unsubscribeAll, resetForRouteSwitch,
-  onPause, onResume, onCancel, onClearTask, openFinalFolder,
-  onResumeFrom, retryFailedShots
+  state,
+  localLogs,
+  expandedStages,
+  gateOptions,
+  running,
+  paused,
+  hydrate,
+  hydrateLatest,
+  subscribe,
+  unsubscribeAll,
+  resetForRouteSwitch,
+  onPause,
+  onResume,
+  onCancel,
+  onClearTask,
+  openFinalFolder,
+  onResumeFrom,
+  retryFailedShots,
 } = useDirectorState(projectId)
 
 /** RC-12：hydrate 失败错误态（与「没有任务」空态严格区分；重试按钮可恢复） */
@@ -283,28 +308,75 @@ async function runHydrate(): Promise<void> {
 }
 
 const {
-  messages, inputText, sending, expandedTools, scrollTick, quickPrompts,
-  loadChat, toggleTool, useQuick, renderMd, copyMsg, resendMsg,
-  sendMessage, stopSend, rollbackMsg, regenerateMsg, uploadAndSend, selfLearn, clearChat,
-  subscribe: subscribeChat, unsubscribeAll: unsubscribeChat
+  messages,
+  inputText,
+  sending,
+  expandedTools,
+  scrollTick,
+  quickPrompts,
+  loadChat,
+  toggleTool,
+  useQuick,
+  renderMd,
+  copyMsg,
+  resendMsg,
+  sendMessage,
+  stopSend,
+  rollbackMsg,
+  regenerateMsg,
+  uploadAndSend,
+  selfLearn,
+  clearChat,
+  subscribe: subscribeChat,
+  unsubscribeAll: unsubscribeChat,
 } = useDirectorChat(chatScope, state)
 
 const {
-  skills, editingSkill, skillSaving, skillDialog,
-  loadSkills, toggleSkill, openSkillDialog, closeSkillDialog, saveSkill, removeSkill
+  skills,
+  editingSkill,
+  skillSaving,
+  skillDialog,
+  loadSkills,
+  toggleSkill,
+  openSkillDialog,
+  closeSkillDialog,
+  saveSkill,
+  removeSkill,
 } = useSkillsManager()
 
 const {
-  memories, memoryKind, memoryKindOptions, memoryDialog, editingMemory, memorySaving,
-  loadMemories, openMemoryDialog, closeMemoryDialog, saveMemory, removeMemory
+  memories,
+  memoryKind,
+  memoryKindOptions,
+  memoryDialog,
+  editingMemory,
+  memorySaving,
+  loadMemories,
+  openMemoryDialog,
+  closeMemoryDialog,
+  saveMemory,
+  removeMemory,
 } = useMemoryManager()
 
 const {
-  comfyStats, nodeNames, nodeQuery, comfyLoading,
-  workflows, workflowParams, expandedWorkflows, matchedNodes,
-  validateReports, validateLoading, validateRun, validateBadCount,
-  modelsDir, openModelsDir,
-  runValidate, refreshComfy, onWfExpand, updateWfParam
+  comfyStats,
+  nodeNames,
+  nodeQuery,
+  comfyLoading,
+  workflows,
+  workflowParams,
+  expandedWorkflows,
+  matchedNodes,
+  validateReports,
+  validateLoading,
+  validateRun,
+  validateBadCount,
+  modelsDir,
+  openModelsDir,
+  runValidate,
+  refreshComfy,
+  onWfExpand,
+  updateWfParam,
 } = useComfyPanel(activeModule)
 
 // ===== 项目产物数据（工作流面板实时预览用） =====
@@ -320,9 +392,15 @@ async function loadProjectData(pid: string | undefined): Promise<void> {
     if (!p) return
     project.value = p
     const paths = [
-      ...(p.characters || []).flatMap(c => [c.faceImagePath, c.refImagePath, c.bodySheetPath]),
-      ...(p.sceneBoards || []).map(b => b.emptyPlatePath),
-      ...(p.shots || []).flatMap(s => [s.firstFramePath, s.lastFramePath, s.sceneImagePath, s.rawVideoPath, s.segmentPath])
+      ...(p.characters || []).flatMap((c) => [c.faceImagePath, c.refImagePath, c.bodySheetPath]),
+      ...(p.sceneBoards || []).map((b) => b.emptyPlatePath),
+      ...(p.shots || []).flatMap((s) => [
+        s.firstFramePath,
+        s.lastFramePath,
+        s.sceneImagePath,
+        s.rawVideoPath,
+        s.segmentPath,
+      ]),
     ].filter(Boolean) as string[]
     await ensureFileUrls(paths)
   } catch {
@@ -339,13 +417,17 @@ type RerenderPayload = { shotId: string; prompt: string; dialogue: string; negat
 async function rerenderOneShot(payload: RerenderPayload, opts: { skipGate?: boolean } = {}): Promise<void> {
   const p = project.value
   if (!p) throw new Error('项目数据未加载，请刷新后重试')
-  const shot = p.shots.find(s => s.id === payload.shotId)
+  const shot = p.shots.find((s) => s.id === payload.shotId)
   if (!shot) throw new Error('镜头不存在，可能已被删除')
   // 重渲会作废首帧审核：warn 模式下先确认，取消则不改动分镜状态
-  if (!opts.skipGate && !(await confirmUnreviewedRender(p, [shot.id], {
-    reason: '提示词/工作流已改动，首帧审核会作废。',
-    treatAllAsUnreviewed: true
-  }))) return
+  if (
+    !opts.skipGate &&
+    !(await confirmUnreviewedRender(p, [shot.id], {
+      reason: '提示词/工作流已改动，首帧审核会作废。',
+      treatAllAsUnreviewed: true,
+    }))
+  )
+    return
   // 工作台编辑的是渲染实际使用的 promptEn（留空则渲染时回退 action 模板）；
   // 不覆盖 shot.action——它还承担分镜动作/首帧 cue，避免工作台改动污染分镜数据
   shot.promptEn = payload.prompt || undefined
@@ -371,7 +453,7 @@ async function onRerenderShot(payload: RerenderPayload): Promise<void> {
   rerenderingShotId.value = payload.shotId
   try {
     await rerenderOneShot(payload)
-    const idx = project.value?.shots.find(s => s.id === payload.shotId)?.index
+    const idx = project.value?.shots.find((s) => s.id === payload.shotId)?.index
     ElMessage.success(`第 ${idx ?? payload.shotId} 镜已重新入队渲染`)
   } catch (e) {
     ElMessage.error(`重渲失败：${e instanceof Error ? e.message : String(e)}`)
@@ -382,10 +464,18 @@ async function onRerenderShot(payload: RerenderPayload): Promise<void> {
 /** 批量重渲：逐镜串行入队（render.start 内部已有队列/去重）；结果按成功/失败如实反馈 */
 async function onRerenderShots(payloads: RerenderPayload[]): Promise<void> {
   if (rerenderingShotId.value || payloads.length === 0) return
-  if (project.value && !(await confirmUnreviewedRender(project.value, payloads.map(pl => pl.shotId), {
-    reason: '提示词/工作流已改动，首帧审核会作废。',
-    treatAllAsUnreviewed: true
-  }))) return
+  if (
+    project.value &&
+    !(await confirmUnreviewedRender(
+      project.value,
+      payloads.map((pl) => pl.shotId),
+      {
+        reason: '提示词/工作流已改动，首帧审核会作废。',
+        treatAllAsUnreviewed: true,
+      },
+    ))
+  )
+    return
   rerenderingShotId.value = 'batch'
   let ok = 0
   const failures: string[] = []
@@ -395,7 +485,7 @@ async function onRerenderShots(payloads: RerenderPayload[]): Promise<void> {
         await rerenderOneShot(pl, { skipGate: true })
         ok++
       } catch (e) {
-        const idx = project.value?.shots.find(s => s.id === pl.shotId)?.index
+        const idx = project.value?.shots.find((s) => s.id === pl.shotId)?.index
         failures.push(`第${idx ?? pl.shotId}镜：${e instanceof Error ? e.message : String(e)}`)
       }
     }
@@ -430,9 +520,7 @@ async function onAssetRegenerate(payload: AssetRegenerateInput): Promise<void> {
 const startDialogVisible = ref(false)
 const starting = ref(false)
 
-async function confirmStart(input: {
-  title: string; genre: string; script: string; gateStages?: DirectorStage[]; bgmAbsolutePath?: string
-}): Promise<void> {
+async function confirmStart(input: DirectorStartInput): Promise<void> {
   starting.value = true
   try {
     const newId = await window.api.director.start(input)
@@ -455,7 +543,7 @@ async function confirmStart(input: {
 async function retryPendingShots(): Promise<void> {
   const p = project.value
   if (!p) return
-  const pendingIds = p.shots.filter(s => s.status === 'pending').map(s => s.id)
+  const pendingIds = p.shots.filter((s) => s.status === 'pending').map((s) => s.id)
   if (!pendingIds.length) return
   try {
     await window.api.render.start(p.id, pendingIds, false)
@@ -468,14 +556,14 @@ async function retryPendingShots(): Promise<void> {
 // ===== 系统自检：启动即跑一次，异常数显示在侧栏徽标 =====
 const selfItems = ref<SelfCheckItem[]>([])
 const selfLoading = ref(false)
-const selfBadCount = computed(() => selfItems.value.filter(i => !i.ok).length)
+const selfBadCount = computed(() => selfItems.value.filter((i) => !i.ok).length)
 
 async function runSelfcheck(): Promise<void> {
   if (selfLoading.value) return
   selfLoading.value = true
   try {
     selfItems.value = await window.api.system.selfcheck()
-    if (selfItems.value.some(i => !i.ok)) {
+    if (selfItems.value.some((i) => !i.ok)) {
       ElMessage.warning('系统自检发现异常项，请查看「系统自检」面板')
     }
   } catch (e) {
@@ -538,11 +626,11 @@ async function clearChatGuarded(): Promise<void> {
         type: 'warning',
         confirmButtonText: '清空并取消任务',
         cancelButtonText: '仅清空对话',
-        distinguishCancelAndClose: true
-      }
+        distinguishCancelAndClose: true,
+      },
     )
       .then(() => 'confirm' as const)
-      .catch((a: unknown) => (a === 'cancel' ? 'cancel' as const : 'close' as const))
+      .catch((a: unknown) => (a === 'cancel' ? ('cancel' as const) : ('close' as const)))
     if (action === 'close') return
     if (action === 'confirm') {
       const pid = state.value?.projectId || projectId.value
@@ -581,7 +669,9 @@ async function clearChatGuarded(): Promise<void> {
   font-weight: 600;
   color: var(--text-primary);
 }
-.crumb-suggest { color: var(--text-muted); }
+.crumb-suggest {
+  color: var(--text-muted);
+}
 .console {
   display: flex;
   gap: 14px;
@@ -623,7 +713,10 @@ async function clearChatGuarded(): Promise<void> {
   background: var(--bg-menu-active);
   box-shadow: inset 0 0 0 1px rgba(212, 165, 116, 0.22);
 }
-.selfcheck-badge { margin-left: auto; margin-right: 8px; }
+.selfcheck-badge {
+  margin-left: auto;
+  margin-right: 8px;
+}
 .aside-project {
   margin-top: auto;
   border-top: 1px solid var(--border-weak);
@@ -635,18 +728,38 @@ async function clearChatGuarded(): Promise<void> {
   font-size: 12px;
   margin-bottom: 8px;
 }
-.kv { display: flex; justify-content: space-between; margin-bottom: 6px; color: var(--text-secondary); }
-.kv .v { color: var(--text-primary); display: flex; align-items: center; gap: 6px; }
-.review-issues { margin-top: 10px; }
+.kv {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  color: var(--text-secondary);
+}
+.kv .v {
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.review-issues {
+  margin-top: 10px;
+}
 .issue-item {
   color: var(--danger);
   font-size: 12px;
   line-height: 1.5;
   margin-bottom: 4px;
 }
-.review-more { margin-top: 2px; }
-.review-more .el-button.is-link { padding: 0; height: auto; font-size: 12px; }
-.final-path { margin-top: 10px; }
+.review-more {
+  margin-top: 2px;
+}
+.review-more .el-button.is-link {
+  padding: 0;
+  height: auto;
+  font-size: 12px;
+}
+.final-path {
+  margin-top: 10px;
+}
 
 .console-main {
   flex: 1;
@@ -658,7 +771,9 @@ async function clearChatGuarded(): Promise<void> {
   padding: 12px;
 }
 
-.hydrate-error { margin: 0; }
+.hydrate-error {
+  margin: 0;
+}
 
 .console-right {
   width: min(380px, 34vw);
@@ -680,7 +795,9 @@ async function clearChatGuarded(): Promise<void> {
     flex-direction: column;
     min-height: 0;
   }
-  .console-aside { width: 100%; }
+  .console-aside {
+    width: 100%;
+  }
   .console-right {
     width: 100%;
     min-height: 420px;

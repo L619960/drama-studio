@@ -14,7 +14,9 @@ describe('MemoryStore', () => {
     dir = mkdtempSync(join(tmpdir(), 'mem-'))
     store = new MemoryStore(dir)
   })
-  afterEach(() => { rmSync(dir, { recursive: true, force: true }) })
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true })
+  })
 
   describe('list / create', () => {
     it('空存储返回空数组', async () => {
@@ -52,8 +54,8 @@ describe('MemoryStore', () => {
       const item = await store.create({ kind: 'preference', title: 't', content: 'old' })
       await store.update(item.id, { content: 'new' })
       const after = await store.list()
-      expect(after[0].content).toBe('new')
-      expect(after[0].updatedAt).toBeGreaterThanOrEqual(item.updatedAt)
+      expect(after[0]?.content).toBe('new')
+      expect(after[0]?.updatedAt).toBeGreaterThanOrEqual(item.updatedAt)
     })
 
     it('update 不存在的 id 抛错', async () => {
@@ -104,15 +106,13 @@ describe('MemoryStore', () => {
       const store2 = new MemoryStore(dir)
       const list = await store2.list()
       expect(list).toHaveLength(1)
-      expect(list[0].title).toBe('持久')
+      expect(list[0]?.title).toBe('持久')
     })
   })
 
   describe('并发写入安全（writeChain 串行化）', () => {
     it('多次 create 并发执行后全部落盘', async () => {
-      const promises = KINDS.map((k, i) =>
-        store.create({ kind: k, title: `t${i}`, content: `c${i}` })
-      )
+      const promises = KINDS.map((k, i) => store.create({ kind: k, title: `t${i}`, content: `c${i}` }))
       const items = await Promise.all(promises)
       expect(items).toHaveLength(3)
       expect(await store.list()).toHaveLength(3)
@@ -124,11 +124,11 @@ describe('MemoryStore', () => {
       await Promise.all([
         store.update(a.id, { content: 'a2' }),
         store.remove(b.id),
-        store.create({ kind: 'lesson', title: 'C', content: 'c' })
+        store.create({ kind: 'lesson', title: 'C', content: 'c' }),
       ])
       const list = await store.list()
       expect(list).toHaveLength(2)
-      const titles = list.map(i => i.title).sort()
+      const titles = list.map((i) => i.title).sort()
       expect(titles).toEqual(['A', 'C'])
     })
   })

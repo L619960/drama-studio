@@ -8,7 +8,7 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 
 const recorded = vi.hoisted(() => ({
-  calls: [] as Array<{ input: string; inputOpts: string[]; outputOpts: string[]; saveTo: string }>
+  calls: [] as Array<{ input: string; inputOpts: string[]; outputOpts: string[]; saveTo: string }>,
 }))
 
 vi.mock('fluent-ffmpeg', () => {
@@ -17,23 +17,34 @@ vi.mock('fluent-ffmpeg', () => {
     private _inputOpts: string[] = []
     private _outputOpts: string[] = []
     private handlers: Record<string, Array<() => void>> = {}
-    input(p: string) { this._input = p; return this }
-    inputOptions(o: string[]) { this._inputOpts = o; return this }
-    outputOptions(o: string[]) { this._outputOpts = o; return this }
+    input(p: string) {
+      this._input = p
+      return this
+    }
+    inputOptions(o: string[]) {
+      this._inputOpts = o
+      return this
+    }
+    outputOptions(o: string[]) {
+      this._outputOpts = o
+      return this
+    }
     on(evt: string, cb: () => void) {
-      (this.handlers[evt] ||= []).push(cb)
+      ;(this.handlers[evt] ||= []).push(cb)
       return this
     }
     save(p: string) {
       recorded.calls.push({ input: this._input, inputOpts: this._inputOpts, outputOpts: this._outputOpts, saveTo: p })
       // run() 监听 end 后才 resolve；模拟 ffmpeg 进程结束
-      setTimeout(() => { (this.handlers['end'] || []).forEach(h => h()) }, 0)
+      setTimeout(() => {
+        ;(this.handlers['end'] || []).forEach((h) => h())
+      }, 0)
     }
   }
   // default 必须是可调用对象，且挂着 setFfmpegPath/setFfprobePath（detectBinaries 会调）
   const fakeFfmpeg = Object.assign(() => new FakeCommand(), {
     setFfmpegPath: () => undefined,
-    setFfprobePath: () => undefined
+    setFfprobePath: () => undefined,
   })
   return { default: fakeFfmpeg }
 })
@@ -56,6 +67,7 @@ describe('FFmpegService.trimClip 命令拼接', () => {
 
     expect(recorded.calls).toHaveLength(1)
     const call = recorded.calls[0]
+    if (!call) throw new Error('测试夹具缺少 recorded.calls[0]')
     expect(call.input).toBe('in.mp4')
     expect(call.inputOpts.join(' ')).toBe('-ss 1.50')
     const opts = call.outputOpts.join(' ')
@@ -75,6 +87,7 @@ describe('FFmpegService.trimClip 命令拼接', () => {
     await fs.writeFile(out + '.part.mp4', 'fake')
     await svc.trimClip('in.mp4', -5, 0.01, out)
     const call = recorded.calls[0]
+    if (!call) throw new Error('测试夹具缺少 recorded.calls[0]')
     expect(call.inputOpts.join(' ')).toBe('-ss 0.00')
     expect(call.outputOpts.join(' ')).toContain('-t 0.10')
   })

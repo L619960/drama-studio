@@ -55,9 +55,9 @@ export class SkillService {
         }
       }
     }
-    const savedMap = new Map(saved.map(s => [s.id, s]))
+    const savedMap = new Map(saved.map((s) => [s.id, s]))
     // 内置以代码为准（描述升级生效），启用状态沿用用户配置
-    const merged: Skill[] = BUILTIN_SKILLS.map(b => {
+    const merged: Skill[] = BUILTIN_SKILLS.map((b) => {
       const old = savedMap.get(b.id)
       return old ? { ...b, enabled: old.enabled } : b
     })
@@ -92,7 +92,7 @@ export class SkillService {
         builtin: false,
         kind: 'prompt',
         promptTemplate: input.promptTemplate,
-        createdAt: Date.now()
+        createdAt: Date.now(),
       }
       all.push(skill)
       this.cache = all
@@ -103,13 +103,14 @@ export class SkillService {
 
   async update(
     id: string,
-    patch: Partial<Pick<Skill, 'name' | 'description' | 'enabled' | 'promptTemplate'>>
+    patch: Partial<Pick<Skill, 'name' | 'description' | 'enabled' | 'promptTemplate'>>,
   ): Promise<void> {
     await this.enqueueWrite(async () => {
       const all = await this.list()
-      const idx = all.findIndex(s => s.id === id)
-      if (idx < 0) throw new Error('技能不存在')
-      all[idx] = { ...all[idx], ...patch }
+      const idx = all.findIndex((s) => s.id === id)
+      const cur = all[idx]
+      if (!cur) throw new Error('技能不存在')
+      all[idx] = { ...cur, ...patch }
       this.cache = all
       await this.persist()
     })
@@ -118,10 +119,10 @@ export class SkillService {
   async remove(id: string): Promise<void> {
     await this.enqueueWrite(async () => {
       const all = await this.list()
-      const target = all.find(s => s.id === id)
+      const target = all.find((s) => s.id === id)
       if (!target) return
       if (target.builtin) throw new Error('内置技能不可删除')
-      this.cache = all.filter(s => s.id !== id)
+      this.cache = all.filter((s) => s.id !== id)
       await this.persist()
     })
   }

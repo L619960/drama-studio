@@ -1,7 +1,5 @@
 import type { Project } from '../../../shared/ipcTypes'
-import {
-  unreviewedRenderShots, warnedBatchKey, isWarnSuppressed
-} from '../../../shared/pipelineGuards'
+import { renderTargetShots, reviewedIsValid, warnedBatchKey, isWarnSuppressed } from '../../../shared/pipelineGuards'
 import router from '../router'
 import { confirmUnreviewedBatch } from './confirm'
 
@@ -18,19 +16,25 @@ const warnedBatches = new Map<string, number>()
 export async function confirmUnreviewedRender(
   project: Project,
   shotIds?: string[],
-  opts: { reason?: string; treatAllAsUnreviewed?: boolean } = {}
+  opts: { reason?: string; treatAllAsUnreviewed?: boolean } = {},
 ): Promise<boolean> {
   const settings = await window.api.settings.get()
   if ((settings?.render?.shotReviewGate ?? 'block') !== 'warn') return true
 
-  const unreviewed = unreviewedRenderShots(project.shots, shotIds, opts.treatAllAsUnreviewed)
+  const targets = renderTargetShots(project.shots, shotIds)
+  const unreviewed = opts.treatAllAsUnreviewed
+    ? targets.filter((s) => s.type === 'i2v')
+    : targets.filter((s) => s.type === 'i2v' && !reviewedIsValid(s.type, s.reviewed, s.firstFramePath))
   if (unreviewed.length === 0) return true
 
-  const ids = unreviewed.map(s => s.id)
+  const ids = unreviewed.map((s) => s.id)
   const key = warnedBatchKey(project.id, ids)
   if (isWarnSuppressed(warnedBatches.get(key), Date.now())) return true
 
-  const list = unreviewed.slice(0, 8).map(s => `第${s.index}镜`).join('、')
+  const list = unreviewed
+    .slice(0, 8)
+    .map((s) => `第${s.index}镜`)
+    .join('、')
   const more = unreviewed.length > 8 ? ` 等 ${unreviewed.length} 镜` : ''
   const message = `${opts.reason ? opts.reason + ' ' : ''}${list}${more}的首帧尚未核对，继续将按「告警放行」直接入队渲染，发现问题需重新渲染。`
   const choice = await confirmUnreviewedBatch(message)
@@ -43,7 +47,7 @@ export async function confirmUnreviewedRender(
     // 复用 REQ-02 的审看定位：分镜页消费 ?review=<shotId> 并自动打开审核弹窗
     void router.push({
       path: `/project/${project.id}/storyboard`,
-      query: { review: ids[0] }
+      query: { review: ids[0] },
     })
   }
   return false

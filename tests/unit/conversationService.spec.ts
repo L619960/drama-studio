@@ -35,7 +35,7 @@ function makeService(opts: Record<string, any> = {}): ConversationService {
     opts.memory || ({ summary: vi.fn(async () => '') } as any),
     {} as any,
     opts.settings || ({ get: vi.fn(async () => ({ general: { autoLearn: false } })) } as any),
-    opts.skillLibrary
+    opts.skillLibrary,
   )
 }
 
@@ -46,7 +46,10 @@ describe('send 串行化与取消', () => {
     let release: () => void = () => undefined
     svc.doSend = vi.fn(async (_scope: string, text: string) => {
       order.push(`start:${text}`)
-      if (text === 'a') await new Promise<void>(r => { release = r })
+      if (text === 'a')
+        await new Promise<void>((r) => {
+          release = r
+        })
       order.push(`end:${text}`)
       return []
     })
@@ -65,8 +68,13 @@ describe('send 串行化与取消', () => {
   it('不同 scope 相互独立并行', async () => {
     const svc = makeService()
     let release: () => void = () => undefined
-    const gate = new Promise<void>(r => { release = r })
-    svc.doSend = vi.fn(async () => { await gate; return [] })
+    const gate = new Promise<void>((r) => {
+      release = r
+    })
+    svc.doSend = vi.fn(async () => {
+      await gate
+      return []
+    })
 
     const p1 = svc.send('a', 'x')
     const p2 = svc.send('b', 'y')
@@ -98,7 +106,7 @@ describe('send 串行化与取消', () => {
     expect(await svc.stop('s1')).toBe(true)
     await expect(p).rejects.toThrow('aborted')
     expect(aborted).toHaveLength(1)
-    expect(aborted[0].signal.aborted).toBe(true)
+    expect(aborted[0]?.signal.aborted).toBe(true)
 
     // 无在册发送时 stop 返回 false
     svc.aborts.delete('s1')
@@ -112,7 +120,7 @@ describe('rollback', () => {
     const history = [
       { id: 'm1', role: 'user', text: 'a' },
       { id: 'm2', role: 'assistant', text: 'b' },
-      { id: 'm3', role: 'user', text: 'c' }
+      { id: 'm3', role: 'user', text: 'c' },
     ] as any[]
     svc.stop = vi.fn(async () => true)
     svc.list = vi.fn(async () => history)
@@ -149,7 +157,7 @@ describe('ensureDailyAutoLearn', () => {
     const baseDir = await makeTmpDir()
     const svc = makeService({
       baseDir,
-      settings: { get: vi.fn(async () => ({ general: { autoLearn: true } })) }
+      settings: { get: vi.fn(async () => ({ general: { autoLearn: true } })) },
     })
     const send = vi.fn(async () => [])
     svc.send = send as any
@@ -168,7 +176,7 @@ describe('buildSystemPrompt', () => {
   it('全局对话：声明无项目并注入长期记忆与方法论规则', async () => {
     const svc = makeService({
       memory: { summary: vi.fn(async () => '用户偏好悬疑短剧') },
-      skillLibrary: { load: vi.fn(async () => ({ methodRules: ['短镜化', '身份铁律'] })) }
+      skillLibrary: { load: vi.fn(async () => ({ methodRules: ['短镜化', '身份铁律'] })) },
     })
 
     const prompt = await svc.buildSystemPrompt('global')
@@ -185,17 +193,24 @@ describe('buildSystemPrompt', () => {
     const svc = makeService({
       projects: {
         get: vi.fn(async () => ({
-          title: '伞', genre: '悬疑',
-          characters: [{ name: '林夏' }], shots: [{}, {}]
-        }))
+          title: '伞',
+          genre: '悬疑',
+          characters: [{ name: '林夏' }],
+          shots: [{}, {}],
+        })),
       },
       director: {
         getState: vi.fn(() => ({
-          running: true, paused: false, doneShots: 1, totalShots: 2,
-          failedShotIds: ['s2'], gateStages: ['render'], finalPath: ''
-        }))
+          running: true,
+          paused: false,
+          doneShots: 1,
+          totalShots: 2,
+          failedShotIds: ['s2'],
+          gateStages: ['render'],
+          finalPath: '',
+        })),
       },
-      memory: { summary: vi.fn(async () => '') }
+      memory: { summary: vi.fn(async () => '') },
     })
 
     const prompt = await svc.buildSystemPrompt('p1')
@@ -212,8 +227,12 @@ describe('buildSystemPrompt', () => {
 
   it('项目不存在时提示尚未建档', async () => {
     const svc = makeService({
-      projects: { get: vi.fn(async () => { throw new Error('not found') }) },
-      memory: { summary: vi.fn(async () => '') }
+      projects: {
+        get: vi.fn(async () => {
+          throw new Error('not found')
+        }),
+      },
+      memory: { summary: vi.fn(async () => '') },
     })
 
     const prompt = await svc.buildSystemPrompt('p1')

@@ -1,4 +1,4 @@
-﻿﻿import { EventEmitter } from 'node:events'
+﻿import { EventEmitter } from 'node:events'
 import * as fs from 'node:fs/promises'
 import * as path from 'node:path'
 import * as os from 'node:os'
@@ -13,12 +13,29 @@ import { ConsistencyService, type LoadedRgb, type ConsistencyResult } from './co
 import { isTransientError, isOomError, classifyError } from './errorClassify'
 import { GENRE_TEMPLATES, SHOT_TIMING, type Project, type Shot, type ProgressEvent } from '../../shared/ipcTypes'
 import {
-  videoMotionPrompt, cleanAction, identityLockBlock, CINEMATIC_QUALITY_BLOCK, videoNegativeFor,
-  oocWardrobeNegativeFor, mergeNegative, sanitizeCinematicPrompt, stripOocWardrobe,
-  stripOtherPersonClauses, timelineProtocolBlock, DISPLACEMENT_ACTION_RE, faceExpressionLockFor,
-  castPromptPoisoned, repairCastText, periodLockFor, motionCueFromAction, scrubSummoningTerms,
-  negativeForSlot, keepDialogueChinese, WAN_QUALITY_NEGATIVE, ageDriftNegativeFor,
-  isPlaybackOrVoiceoverAction
+  videoMotionPrompt,
+  cleanAction,
+  identityLockBlock,
+  CINEMATIC_QUALITY_BLOCK,
+  videoNegativeFor,
+  oocWardrobeNegativeFor,
+  mergeNegative,
+  sanitizeCinematicPrompt,
+  stripOocWardrobe,
+  stripOtherPersonClauses,
+  timelineProtocolBlock,
+  DISPLACEMENT_ACTION_RE,
+  faceExpressionLockFor,
+  castPromptPoisoned,
+  repairCastText,
+  periodLockFor,
+  motionCueFromAction,
+  scrubSummoningTerms,
+  negativeForSlot,
+  keepDialogueChinese,
+  WAN_QUALITY_NEGATIVE,
+  ageDriftNegativeFor,
+  isPlaybackOrVoiceoverAction,
 } from '../../shared/imagePrompts'
 import { resolveCreation } from '../../shared/creationSettings'
 import { orientVideoSize } from '../../shared/pipelineGuards'
@@ -26,9 +43,7 @@ import { assertMediaPath } from './assetPathGuard'
 import { CandidatePickService } from './candidatePickService'
 import type { LLMService } from './llmService'
 import { createLogger } from './logger'
-import {
-  CANCEL_ERROR, LORA_T2V_TURBO, LORA_R2V_TURBO, type QueuedTask
-} from './taskQueueShared'
+import { CANCEL_ERROR, LORA_T2V_TURBO, LORA_R2V_TURBO, type QueuedTask } from './taskQueueShared'
 import { driftLockBlock, usablePromptEn, buildH3Prompt } from './taskQueuePrompts'
 import { referenceIsPortrait, resolveRefImageRel, resolveSceneImageRel } from './taskQueueRefs'
 import {
@@ -36,21 +51,34 @@ import {
   recheckProjectConsistency as recheckProjectConsistencyFn,
   recheckProjectRoleConfusion as recheckProjectRoleConfusionFn,
   computeShotRoleConfusion as computeShotRoleConfusionFn,
-  type ConsistencyRuntime
+  type ConsistencyRuntime,
 } from './taskQueueConsistency'
 import {
   prepareShotAudio as prepareShotAudioFn,
   repairSilentDialogue as repairSilentDialogueFn,
-  type AudioRuntime
+  type AudioRuntime,
 } from './taskQueueAudio'
 import { isPlaceholderDialogueText } from './subtitleService'
 import {
-  selectEngineMode, computeWanDurationSec, computeH3NeedSec, computeH3Length,
-  applyOomLightDowngrade, applyOomTierDowngrade,
-  computeWantedCandidates, computeLipProfile, isFlf2vWorkflow, resolveFlfWorkflowName,
-  injectH3TurboLora, type EngineMode
+  selectEngineMode,
+  computeWanDurationSec,
+  computeH3NeedSec,
+  computeH3Length,
+  applyOomLightDowngrade,
+  applyOomTierDowngrade,
+  computeWantedCandidates,
+  computeLipProfile,
+  isFlf2vWorkflow,
+  resolveFlfWorkflowName,
+  injectH3TurboLora,
+  type EngineMode,
 } from './taskQueueRender'
-import { deriveProjectStatus, isProjectQueueIdle, createCancellationWatcher, buildQueueSnapshot } from './taskQueueScheduler'
+import {
+  deriveProjectStatus,
+  isProjectQueueIdle,
+  createCancellationWatcher,
+  buildQueueSnapshot,
+} from './taskQueueScheduler'
 import { decideRetryAction } from './taskQueueRetry'
 
 const log = createLogger('TaskQueue')
@@ -91,7 +119,7 @@ export class TaskQueue extends EventEmitter {
     private ffmpeg: FFmpegService,
     private store: ProjectStore,
     private settings: SettingsStore,
-    private llm?: LLMService
+    private llm?: LLMService,
   ) {
     super()
     this.lipSync = new LipSyncService(comfyui, workflow)
@@ -115,7 +143,7 @@ export class TaskQueue extends EventEmitter {
       getConsistencyService: () => this.getConsistencyService(),
       resolveInBase: (p: string) => this.resolveInBase(p),
       resolveRefImageRel: (shot: Shot, project: Project) => resolveRefImageRel(shot, project),
-      emitProgress: (e: Omit<ProgressEvent, 'type'>) => this.emitProgress(e)
+      emitProgress: (e: Omit<ProgressEvent, 'type'>) => this.emitProgress(e),
     }
   }
 
@@ -131,7 +159,7 @@ export class TaskQueue extends EventEmitter {
       resolveInBase: (p: string) => this.resolveInBase(p),
       checkCancelled: (pid: string, sid: string) => this.checkCancelled(pid, sid),
       emitProgress: (e: Omit<ProgressEvent, 'type'>) => this.emitProgress(e),
-      patchShot: (pid: string, shot: Shot) => this.patchShot(pid, shot)
+      patchShot: (pid: string, shot: Shot) => this.patchShot(pid, shot),
     }
   }
 
@@ -159,10 +187,7 @@ export class TaskQueue extends EventEmitter {
 
   /** ffmpeg 解码 size×size RGB24 裸帧（letterbox，绕开 sharp）；临时文件保留到 dispose，供人脸子进程读取 */
   private async loadRgb(srcPath: string, timeSec?: number, size = 640): Promise<LoadedRgb> {
-    const tmp = path.join(
-      this.baseDir, '.tmp',
-      `rgb_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.rgb`
-    )
+    const tmp = path.join(this.baseDir, '.tmp', `rgb_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.rgb`)
     await this.ffmpeg.dumpRgb24(srcPath, tmp, size, timeSec)
     const data = await fs.readFile(tmp)
     const rgb = new Uint8Array(data)
@@ -172,7 +197,7 @@ export class TaskQueue extends EventEmitter {
       height: size,
       channels: 3,
       filePath: tmp,
-      dispose: () => fs.unlink(tmp).catch(() => undefined)
+      dispose: () => fs.unlink(tmp).catch(() => undefined),
     }
   }
 
@@ -185,18 +210,18 @@ export class TaskQueue extends EventEmitter {
     const run = async (): Promise<void> => {
       await this.ffmpeg.ready()
       // 复合键去重：跨项目可能存在相同 shotId，仅按 shotId 会误拦其他项目的镜头
-      const queued = new Set(this.queue.map(t => TaskQueue.shotKey(t.projectId, t.shotId)))
+      const queued = new Set(this.queue.map((t) => TaskQueue.shotKey(t.projectId, t.shotId)))
       if (this.current) queued.add(TaskQueue.shotKey(this.current.projectId, this.current.shotId))
       const toEnqueue: string[] = []
 
       await this.store.update(projectId, (project) => {
         let targets: Shot[]
         if (shotIds && shotIds.length > 0) {
-          targets = project.shots.filter(s => shotIds.includes(s.id))
+          targets = project.shots.filter((s) => shotIds.includes(s.id))
         } else {
-          targets = project.shots.filter(s => s.status === 'pending' || s.status === 'failed')
+          targets = project.shots.filter((s) => s.status === 'pending' || s.status === 'failed')
         }
-        targets = targets.filter(s => !queued.has(TaskQueue.shotKey(projectId, s.id)))
+        targets = targets.filter((s) => !queued.has(TaskQueue.shotKey(projectId, s.id)))
         for (const shot of targets) {
           shot.status = 'pending'
           shot.error = undefined
@@ -239,24 +264,22 @@ export class TaskQueue extends EventEmitter {
    */
   async cancel(projectId: string, shotId?: string): Promise<void> {
     if (shotId) {
-      this.queue = this.queue.filter(
-        t => !(t.projectId === projectId && t.shotId === shotId)
-      )
+      this.queue = this.queue.filter((t) => !(t.projectId === projectId && t.shotId === shotId))
       if (this.current?.projectId === projectId && this.current.shotId === shotId) {
         const key = TaskQueue.shotKey(projectId, shotId)
         this.cancelledShotIds.add(key)
         await this.comfyui.interrupt()
         this.comfyui.rejectPending(CANCEL_ERROR)
-        while (this.current?.shotId === shotId) {
-          await new Promise(r => setTimeout(r, 100))
-        }
+        // CORE-09：必须同时比对 projectId + shotId——只比 shotId 时，
+        // 另一项目同号镜头在渲会让这里死等；再加超时兜底防取消调用永久挂起。
+        await this.waitCurrent(60_000, (cur) => cur.projectId === projectId && cur.shotId === shotId, `取消镜头 ${key}`)
         this.cancelledShotIds.delete(key)
       }
       return
     }
 
     this.cancelledProjects.add(projectId)
-    this.queue = this.queue.filter(t => t.projectId !== projectId)
+    this.queue = this.queue.filter((t) => t.projectId !== projectId)
     // 只有本项目正在渲染时才中断 ComfyUI：interrupt 是全局的，
     // 取消排队中的项目不应误伤其他项目正在进行的渲染
     if (this.current?.projectId === projectId) {
@@ -264,9 +287,7 @@ export class TaskQueue extends EventEmitter {
       this.comfyui.rejectPending(CANCEL_ERROR)
       // 只等本项目的在渲镜头结束（cancellationWatcher 会中断它），
       // 不等整个队列排空——否则会被其他项目的长任务阻塞数分钟
-      while (this.current?.projectId === projectId) {
-        await new Promise(r => setTimeout(r, 100))
-      }
+      await this.waitCurrent(60_000, (cur) => cur.projectId === projectId, `取消项目 ${projectId}`)
     }
     // 任务全部未消费就被取消的项目从未进 touchedProjects，process() 的 finally
     // 不会为它补发 queue-finished——waitForFinish 永久挂起、project.status 残留
@@ -287,6 +308,28 @@ export class TaskQueue extends EventEmitter {
   }
 
   /**
+   * CORE-09：等待「当前在渲任务」收尾。100ms 轮询 + 最大等待时间兜底——
+   * interrupt 后正常数百毫秒内结束；异常情况下也不能让取消调用无限挂起。
+   */
+  private async waitCurrent(
+    timeoutMs: number,
+    match: (cur: { projectId: string; shotId: string }) => boolean,
+    label: string,
+  ): Promise<boolean> {
+    const deadline = Date.now() + timeoutMs
+    while (this.current && match(this.current)) {
+      if (Date.now() >= deadline) {
+        log.warn(
+          `${label} 等待超时（${timeoutMs}ms），当前任务仍在渲染: ${this.current.projectId}/${this.current.shotId}`,
+        )
+        return false
+      }
+      await new Promise((r) => setTimeout(r, 100))
+    }
+    return true
+  }
+
+  /**
    * 跳过镜头（REQ-11 MP-08）：取消在跑/排队任务并落盘 skipped=true，
    * 拼接成片时按 skipped 自然剔除；队列继续渲染后续镜头。
    */
@@ -294,11 +337,11 @@ export class TaskQueue extends EventEmitter {
     const targetId =
       shotId ||
       (this.current?.projectId === projectId ? this.current.shotId : undefined) ||
-      this.queue.find(t => t.projectId === projectId)?.shotId
+      this.queue.find((t) => t.projectId === projectId)?.shotId
     if (!targetId) throw new Error('当前没有可跳过的镜头')
     await this.cancel(projectId, targetId)
-    await this.store.update(projectId, project => {
-      const shot = project.shots.find(s => s.id === targetId)
+    await this.store.update(projectId, (project) => {
+      const shot = project.shots.find((s) => s.id === targetId)
       if (!shot) throw new Error('镜头不存在，可能已被删除')
       shot.skipped = true
     })
@@ -337,7 +380,7 @@ export class TaskQueue extends EventEmitter {
     try {
       const projects = await this.store.list()
       for (const project of projects) {
-        const staleShots = project.shots.filter(s => s.status === 'rendering')
+        const staleShots = project.shots.filter((s) => s.status === 'rendering')
         if (project.status !== 'rendering' && staleShots.length === 0) continue
         for (const shot of staleShots) {
           // 产物已在盘则视为已完成：重启前渲染其实已出片，只是状态没来得及落盘。
@@ -346,7 +389,9 @@ export class TaskQueue extends EventEmitter {
             let exists = false
             try {
               exists = (await fs.stat(this.resolveInBase(shot.segmentPath))).isFile()
-            } catch { /* 文件不在盘 */ }
+            } catch {
+              /* 文件不在盘 */
+            }
             if (exists) {
               shot.status = 'done'
               shot.error = undefined
@@ -396,17 +441,17 @@ export class TaskQueue extends EventEmitter {
           await fs.unlink(path.join(tmpDir, name)).catch(() => undefined)
         }
       }
-    } catch { /* .tmp 不存在 */ }
+    } catch {
+      /* .tmp 不存在 */
+    }
 
     // 2) os.tmpdir() 下本应用前缀的临时目录/文件
     const osTmp = os.tmpdir()
-    const orphanPatterns = [
-      /^concatfit_/, /^smartconcat_/, /^concat_\d+\.txt$/, /^ds_sub_.*\.ass$/, /^qc_\d+_.*\.png$/
-    ]
+    const orphanPatterns = [/^concatfit_/, /^smartconcat_/, /^concat_\d+\.txt$/, /^ds_sub_.*\.ass$/, /^qc_\d+_.*\.png$/]
     try {
       const entries = await fs.readdir(osTmp)
       for (const name of entries) {
-        if (!orphanPatterns.some(re => re.test(name))) continue
+        if (!orphanPatterns.some((re) => re.test(name))) continue
         const abs = path.join(osTmp, name)
         const st = await fs.stat(abs).catch(() => null)
         if (!st) continue
@@ -416,7 +461,9 @@ export class TaskQueue extends EventEmitter {
           await fs.unlink(abs).catch(() => undefined)
         }
       }
-    } catch { /* tmpdir 不可读 */ }
+    } catch {
+      /* tmpdir 不可读 */
+    }
 
     // 3) 项目目录下的 *.part.* 中间产物（崩溃时 ffmpeg 没来得及 rename）
     try {
@@ -438,7 +485,9 @@ export class TaskQueue extends EventEmitter {
           }
         }
       }
-    } catch { /* projects 目录不可读 */ }
+    } catch {
+      /* projects 目录不可读 */
+    }
   }
 
   private async process(): Promise<void> {
@@ -462,6 +511,8 @@ export class TaskQueue extends EventEmitter {
           // 兜住 try 块之外的前置段（project.json 损坏时 store.get 抛错、
           // 磁盘满/EPERM 时 patchShot 抛错）以及 catch 分支里 patchShot 的二次异常。
           log.error(`镜头渲染异常 ${task.projectId}/${task.shotId}: ${(e as Error).message}`)
+          // CORE-01：最后防线也要落状态，避免镜头永久停在 rendering
+          await this.recoverStuckShot(task, e)
         }
         this.current = null
         this.currentProgress = null
@@ -566,34 +617,76 @@ export class TaskQueue extends EventEmitter {
    *  不用渲染开始时的内存快照整镜覆盖，否则用户渲染期间通过 IPC 修改的
    *  台词/景别/工作流等会被旧快照冲掉（M-5）。 */
   private async patchShot(projectId: string, shot: Shot): Promise<void> {
-    await this.store.update(projectId, draft => {
-      const idx = draft.shots.findIndex(s => s.id === shot.id)
+    await this.store.update(projectId, (draft) => {
+      const idx = draft.shots.findIndex((s) => s.id === shot.id)
       if (idx < 0) return
       const prev = draft.shots[idx]
-      draft.shots[idx] = {
+      if (!prev) return
+      // CORE-04：产物/状态字段以内存 shot 为权威，直接赋值（含 undefined）——
+      // 用 `??` 会让「本轮已清空」的字段被磁盘旧值回填（如占位台词清掉 audioPath 后
+      // 旧语音仍参与合轨、重渲后旧 segmentPath 仍被拼接）。
+      // 仅「本轮可能未参与、需沿用旧值」的配置类字段才用 `??`。
+      const nextFrameSeconds = shot.frameSeconds ?? prev.frameSeconds
+      const nextRenderProfile = shot.renderProfile ?? prev.renderProfile
+      const next: Shot = {
         ...prev,
-        // 以下为 renderShot 全部会写入的字段（白名单）
         status: shot.status,
         error: shot.error,
         errorKind: shot.errorKind,
         retryCount: shot.retryCount,
         retryBudget: shot.retryBudget,
-        audioPath: shot.audioPath ?? prev.audioPath,
-        audioFailed: shot.audioFailed ?? prev.audioFailed,
-        audioFailedReason: shot.audioFailedReason ?? prev.audioFailedReason,
+        audioPath: shot.audioPath,
+        audioFailedReason: shot.audioFailedReason,
         frames: shot.frames,
-        frameSeconds: shot.frameSeconds ?? prev.frameSeconds,
-        rawVideoPath: shot.rawVideoPath ?? prev.rawVideoPath,
-        segmentPath: shot.segmentPath ?? prev.segmentPath,
+        ...(nextFrameSeconds !== undefined ? { frameSeconds: nextFrameSeconds } : {}),
+        segmentPath: shot.segmentPath,
         seed: shot.seed ?? prev.seed,
         width: shot.width,
         height: shot.height,
-        renderProfile: shot.renderProfile ?? prev.renderProfile,
-        consistencyScore: shot.consistencyScore ?? prev.consistencyScore,
+        ...(nextRenderProfile !== undefined ? { renderProfile: nextRenderProfile } : {}),
         // 低一致性标记：renderShot 内存对象为权威（重渲通过会被清除），直接覆盖
-        lowConsistency: shot.lowConsistency
+        lowConsistency: shot.lowConsistency,
       }
+      // 无值即缺省（JSON 中 undefined 与缺键等价）：这些字段必须先剔除 prev 的旧值再按需写回
+      if (shot.audioFailed === undefined) delete next.audioFailed
+      else next.audioFailed = shot.audioFailed
+      if (shot.rawVideoPath === undefined) delete next.rawVideoPath
+      else next.rawVideoPath = shot.rawVideoPath
+      if (shot.consistencyScore === undefined) delete next.consistencyScore
+      else next.consistencyScore = shot.consistencyScore
+      draft.shots[idx] = next
     })
+  }
+
+  /**
+   * CORE-01 最后防线：renderShot 若在 try 之外抛错（store.get 失败、初始 patchShot 失败等），
+   * 镜头会停在 rendering。这里按磁盘最新数据回写终态，取消 → pending，其余 → failed。
+   * 已是 done / pending / failed 的镜头不做任何改写。
+   */
+  private async recoverStuckShot(task: QueuedTask, err: unknown): Promise<void> {
+    const { projectId, shotId } = task
+    try {
+      const cancelled =
+        this.cancelledProjects.has(projectId) || this.cancelledShotIds.has(TaskQueue.shotKey(projectId, shotId))
+      const project = await this.store.get(projectId)
+      const shot = project.shots.find((s) => s.id === shotId)
+      if (!shot || shot.status !== 'rendering') return
+      shot.status = cancelled ? 'pending' : 'failed'
+      shot.error = cancelled ? undefined : err instanceof Error ? err.message : String(err)
+      shot.errorKind = cancelled ? undefined : classifyError(err)
+      shot.retryCount = undefined
+      shot.retryBudget = undefined
+      await this.patchShot(projectId, shot)
+      this.emitProgress({
+        projectId,
+        shotId,
+        step: cancelled ? 'queued' : 'failed',
+        percent: cancelled ? 0 : 100,
+        message: cancelled ? '已取消' : (shot.error ?? '渲染失败'),
+      })
+    } catch (e) {
+      log.error(`兜底回写镜头状态失败 ${projectId}/${shotId}: ${(e as Error).message}`)
+    }
   }
 
   /** 同步检查点：若项目或镜头已被取消则立即抛出 */
@@ -607,7 +700,10 @@ export class TaskQueue extends EventEmitter {
    * 取消竞态：在长耗时 await（ComfyUI 渲染）期间被取消时，
    * 该 Promise 以 CANCEL_ERROR reject，使 Promise.race 提前结束。
    */
-  private cancellationWatcher(projectId: string, shotId: string): {
+  private cancellationWatcher(
+    projectId: string,
+    shotId: string,
+  ): {
     promise: Promise<never>
     stop(): void
   } {
@@ -616,7 +712,7 @@ export class TaskQueue extends EventEmitter {
       this.cancelledShotIds,
       (pid, sid) => TaskQueue.shotKey(pid, sid),
       projectId,
-      shotId
+      shotId,
     )
   }
 
@@ -626,10 +722,7 @@ export class TaskQueue extends EventEmitter {
   }
 
   /** 项目尚无缩略图时，取本镜分段首帧 */
-  private async ensureProjectThumbnail(
-    projectId: string,
-    segmentAbsPath: string
-  ): Promise<void> {
+  private async ensureProjectThumbnail(projectId: string, segmentAbsPath: string): Promise<void> {
     const thumbAbsPath = path.join(this.baseDir, `projects/${projectId}/thumbnail.jpg`)
     if (await this.ffmpeg.fileExists(thumbAbsPath)) return
     try {
@@ -644,7 +737,9 @@ export class TaskQueue extends EventEmitter {
    * 用途：旧项目被旧逻辑误杀标记的镜头摘帽——新逻辑（小脸门控+分方法聚合）复评，
    * 误杀摘帽回成片，真漂移保持标记；随后从「拼接成片」续跑即可。
    */
-  async recheckProjectConsistency(projectId: string): Promise<{ rechecked: number; cleared: number; stillLow: number; skipped: number }> {
+  async recheckProjectConsistency(
+    projectId: string,
+  ): Promise<{ rechecked: number; cleared: number; stillLow: number; skipped: number }> {
     return recheckProjectConsistencyFn(this.consistencyRuntime, projectId)
   }
 
@@ -661,7 +756,7 @@ export class TaskQueue extends EventEmitter {
   async checkShotRoleConfusion(
     projectId: string,
     shot: Shot,
-    project: Project
+    project: Project,
   ): Promise<Awaited<ReturnType<typeof computeShotRoleConfusionFn>>> {
     return computeShotRoleConfusionFn(this.consistencyRuntime, projectId, shot, project)
   }
@@ -678,27 +773,11 @@ export class TaskQueue extends EventEmitter {
   private async renderShot(projectId: string, shotId: string): Promise<void> {
     this.lastProjectId = projectId
     const project = await this.store.get(projectId)
-    const shot = project.shots.find(s => s.id === shotId)
+    const shot = project.shots.find((s) => s.id === shotId)
     if (!shot) return
 
     shot.status = 'rendering'
     await this.patchShot(projectId, shot)
-
-    // 2026-10-25 预防加固（专家D P1）：渲染前磁盘余量预检——历史 D 盘 0.98GB 时渲染中断/磁盘满
-    // 报错只能靠 catch，没有事前闸门。低于 0.5GB 硬停（单镜产物约 200MB），低于 1.5GB 提示。
-    try {
-      const st = await fs.statfs(this.baseDir)
-      const freeGb = (st.bavail * st.bsize) / 2 ** 30
-      if (freeGb < 0.5) {
-        throw new Error(`磁盘余量不足（${freeGb.toFixed(2)}GB < 0.5GB），渲染已停止；请清理磁盘后恢复任务`)
-      }
-      if (freeGb < 1.5) {
-        this.emitProgress({ projectId, shotId, step: 'render', percent: 5, message: `磁盘余量 ${freeGb.toFixed(2)}GB（偏低，渲染前预检通过）` })
-      }
-    } catch (e) {
-      if (e instanceof Error && e.message.includes('磁盘余量不足')) throw e
-      log.warn(`磁盘预检不可用（不阻断）: ${e}`)
-    }
 
     const watcher = this.cancellationWatcher(projectId, shotId)
     /** 自动重试预算（降档/瞬时重试合计）：供 UI 展示「已自动降档重试 1/2」 */
@@ -706,25 +785,52 @@ export class TaskQueue extends EventEmitter {
     let autoRetryCount = 0
 
     try {
+      // 2026-10-25 预防加固（专家D P1）：渲染前磁盘余量预检——历史 D 盘 0.98GB 时渲染中断/磁盘满
+      // 报错只能靠 catch，没有事前闸门。低于 0.5GB 硬停（单镜产物约 200MB），低于 1.5GB 提示。
+      // CORE-01：预检必须在主 try 内，否则抛错会逃逸出 renderShot，
+      // 镜头永久停在 rendering（队列看似空闲，项目状态错乱）。
+      try {
+        const st = await fs.statfs(this.baseDir)
+        const freeGb = (st.bavail * st.bsize) / 2 ** 30
+        if (freeGb < 0.5) {
+          throw new Error(`磁盘余量不足（${freeGb.toFixed(2)}GB < 0.5GB），渲染已停止；请清理磁盘后恢复任务`)
+        }
+        if (freeGb < 1.5) {
+          this.emitProgress({
+            projectId,
+            shotId,
+            step: 'render',
+            percent: 5,
+            message: `磁盘余量 ${freeGb.toFixed(2)}GB（偏低，渲染前预检通过）`,
+          })
+        }
+      } catch (e) {
+        if (e instanceof Error && e.message.includes('磁盘余量不足')) throw e
+        log.warn(`磁盘预检不可用（不阻断）: ${e}`)
+      }
+
       let refImageRel = resolveRefImageRel(shot, project)
       // 显存档位先取（只依赖设置 + 显存探测），用于给 TTS 一个「本档位单镜能装多少秒语音」
       // 的硬上限：台词超长时提前提速，避免音频长于引擎输出被截断/出现静音空洞。
       const manualTier = (await this.settings.get()).render.resolutionTier
-      let tier: VramTier = manualTier && manualTier !== 'auto'
-        ? VRAM_TIERS[manualTier] ?? await this.comfyui.getVramTier()
-        : await this.comfyui.getVramTier()
+      let tier: VramTier =
+        manualTier && manualTier !== 'auto'
+          ? (VRAM_TIERS[manualTier] ?? (await this.comfyui.getVramTier()))
+          : await this.comfyui.getVramTier()
       // 容量按本镜实际引擎算：H3 是 17k+5 帧网格（≈(maxFrames-5)/17×0.75 秒），
       // Wan 是秒数上限。取两者最小值会让 H3 长镜被 Wan 的 5s 上限误压短。
       const wfHint = shot.workflow || project.defaultWorkflow || 'wan22_i2v'
       const engineCapSec = Math.min(
         SHOT_TIMING.maxSec,
-        wfHint.startsWith('minimax_h3')
-          ? ((tier.maxFrames - 5) / 17) * 0.75
-          : tier.maxWanSec
+        wfHint.startsWith('minimax_h3') ? ((tier.maxFrames - 5) / 17) * 0.75 : tier.maxWanSec,
       )
       const { syncAudioRelPath, audioSec } = await prepareShotAudioFn(
         this.audioRuntime,
-        projectId, shot, project, watcher, { capSec: engineCapSec }
+        projectId,
+        shot,
+        project,
+        watcher,
+        { capSec: engineCapSec },
       )
 
       // 台词镜 r2v 口型修复（实测根因）：H3 原生口型精度依赖 ref_image_1 的脸部细节。
@@ -739,10 +845,13 @@ export class TaskQueue extends EventEmitter {
         // 若改喂定妆大头照，H3 会从摄影棚灰幕起画（实测成片所有台词镜都从灰幕起跑）。
         // 只有缺首帧的中景台词镜才退回面部定妆图锁脸。
         if (
-          preferH3Early && !isPlaceholderDialogueText(shot.dialogue) && lipModeEarly !== 'latentsync' &&
-          shot.shotSize !== 'closeup' && !shot.firstFramePath
+          preferH3Early &&
+          !isPlaceholderDialogueText(shot.dialogue) &&
+          lipModeEarly !== 'latentsync' &&
+          shot.shotSize !== 'closeup' &&
+          !shot.firstFramePath
         ) {
-          const rChar = project.characters.find(c => c.id === shot.characterIds[0])
+          const rChar = project.characters.find((c) => c.id === shot.characterIds[0])
           if (rChar?.faceImagePath) refImageRel = rChar.faceImagePath
         }
       }
@@ -764,13 +873,21 @@ export class TaskQueue extends EventEmitter {
       // 站立微动/对话/单动作完成镜即使有尾帧也不切（首尾帧自由插值=位移漂移第一重灾区）。
       // 位移判定与 llmService 尾帧必填判定共用同一份正则（DISPLACEMENT_ACTION_RE），口径禁止分裂
       let effectiveWorkflow = baseWorkflow
-      if (!shot.workflow && shot.lastFramePath && isPlaceholderDialogueText(shot.dialogue) && DISPLACEMENT_ACTION_RE.test(shot.action || '')) {
+      if (
+        !shot.workflow &&
+        shot.lastFramePath &&
+        isPlaceholderDialogueText(shot.dialogue) &&
+        DISPLACEMENT_ACTION_RE.test(shot.action || '')
+      ) {
         const flfName = resolveFlfWorkflowName(metas)
         if (flfName) {
           effectiveWorkflow = flfName
           this.emitProgress({
-            projectId, shotId, step: 'render', percent: 15,
-            message: `检测到分镜尾帧 → 改用首尾帧工作流 ${flfName}（首帧+尾帧双图衔接）`
+            projectId,
+            shotId,
+            step: 'render',
+            percent: 15,
+            message: `检测到分镜尾帧 → 改用首尾帧工作流 ${flfName}（首帧+尾帧双图衔接）`,
           })
         }
       }
@@ -780,8 +897,11 @@ export class TaskQueue extends EventEmitter {
       // auto：H3 台词镜走原生口型 r2v；latentsync：强制 i2v+LatentSync；h3-native：r2v 不回退
       // 录音/画外音才 forceI2v；默认工作流名 minimax_h3_i2v 不能钉死整片台词镜
       let mode: EngineMode = selectEngineMode({
-        preferFlf, preferH3, hasLine, lipMode,
-        forceI2v: isPlaybackOrVoiceoverAction(shot.action)
+        preferFlf,
+        preferH3,
+        hasLine,
+        lipMode,
+        forceI2v: isPlaybackOrVoiceoverAction(shot.action),
       })
       if (preferFlf) baseWorkflow = effectiveWorkflow
 
@@ -793,10 +913,15 @@ export class TaskQueue extends EventEmitter {
       let h3Length = h3Len.length
       if (h3Len.capped) {
         this.emitProgress({
-          projectId, shotId, step: 'render', percent: 15,
-          message: `台词需求 ${h3Len.needSecRounded}s 超过本档位 ${h3Len.capSec}s 上限，尾音可能被截断；建议拆分长句或提升分辨率档位`
+          projectId,
+          shotId,
+          step: 'render',
+          percent: 15,
+          message: `台词需求 ${h3Len.needSecRounded}s 超过本档位 ${h3Len.capSec}s 上限，尾音可能被截断；建议拆分长句或提升分辨率档位`,
         })
-        log.warn(`[${shot.id}] 台词时长 ${h3Len.needSecRounded}s > 档位 ${tier.name} 容量 ${h3Len.capSec}s（maxFrames=${tier.maxFrames}），尾音可能被截断`)
+        log.warn(
+          `[${shot.id}] 台词时长 ${h3Len.needSecRounded}s > 档位 ${tier.name} 容量 ${h3Len.capSec}s（maxFrames=${tier.maxFrames}），尾音可能被截断`,
+        )
       }
       // H3 采样步数：12 → 8（官方训练范围内，5060Ti 单镜提速约 33%；
       // 更少的步数在短镜上画质损失可接受，长镜/特写如需更高保真可在设置中调档）
@@ -825,7 +950,7 @@ export class TaskQueue extends EventEmitter {
       const runProduction = async (): Promise<void> => {
         let graph: Record<string, unknown>
         let workflowName: string
-        const portrait = referenceIsPortrait(shot, project, s0, (p: string) => this.resolveInBase(p))
+        const portrait = await referenceIsPortrait(shot, project, s0, (p: string) => this.resolveInBase(p))
         const canvas = orientVideoSize(tier.width, tier.height, portrait)
         shot.width = canvas.width
         shot.height = canvas.height
@@ -855,15 +980,15 @@ export class TaskQueue extends EventEmitter {
             const flfName = resolveFlfWorkflowName(metas)
             if (flfName) workflowName = flfName
           }
-          const tpl = GENRE_TEMPLATES.find(t => t.key === project.genre)
-          const char = project.characters.find(c => c.id === shot.characterIds[0])
-          const board = (project.sceneBoards || []).find(b => b.id === shot.sceneBoardId)
+          const tpl = GENRE_TEMPLATES.find((t) => t.key === project.genre)
+          const char = project.characters.find((c) => c.id === shot.characterIds[0])
+          const board = (project.sceneBoards || []).find((b) => b.id === shot.sceneBoardId)
           // 身份/发型/服装代码层强锁：压在最前，无论主提示词来源
           const lookEn = char?.appearanceLock || char?.description
           const identityLock = lookEn ? identityLockBlock(lookEn) : ''
           // 上下镜衔接：本镜尾帧为下一镜提供的连续状态
           const handoff = shot.handoffToNext ? `, HANDOFF TO NEXT SHOT: ${shot.handoffToNext}` : ''
-          const meta = metas.find(w => w.name === workflowName)
+          const meta = metas.find((w) => w.name === workflowName)
           // 首尾帧转场提示词（flf2v 专用）：分镜 transitionEn 优先——它是起始帧→结束帧的
           // 动态转场过程描述（A/B 分类策略 + 10 秒拆解），比普通 promptEn 更贴合首尾帧桥接；
           // 无 transitionEn 回退常规组装。组装后强制逻辑原子化清洗。
@@ -871,49 +996,74 @@ export class TaskQueue extends EventEmitter {
           // 防漂移强锁块（代码层兜底，补 LLM promptEn 缺的位置/原子/机位/平滑约束）
           const driftLock = driftLockBlock(shot)
           const promptEn = usablePromptEn(shot, lookEn || '')
-          const transitionEn = shot.transitionEn && !castPromptPoisoned(shot.action || '', shot.transitionEn, lookEn || '')
-            ? shot.transitionEn
-            : undefined
-          const prompt = transitionEn && isFlf2v
-            ? sanitizeCinematicPrompt(stripOocWardrobe(stripOtherPersonClauses(`${identityLock}, ${transitionEn}${handoff}, ${this.qualityBlock}`), lookEn || ''))
-            : promptEn
-              ? sanitizeCinematicPrompt(stripOocWardrobe(stripOtherPersonClauses(`${identityLock}, ${promptEn}, ${driftLock}${handoff}, ${this.qualityBlock}`), lookEn || ''))
-              : sanitizeCinematicPrompt(videoMotionPrompt({
-                  action: cleanAction(shot.action),
-                  lookEn,
-                  scene: board?.name || shot.scene,
-                  emotion: shot.emotion,
-                  camera: shot.camera,
-                  dialogue: shot.dialogue,
-                  genreStyle: tpl?.promptStyle,
-                  shotSize: shot.shotSize,
-                  lighting: shot.lighting,
-                  facing: shot.facing,
-                  continuity: shot.continuity
-                }))
+          const transitionEn =
+            shot.transitionEn && !castPromptPoisoned(shot.action || '', shot.transitionEn, lookEn || '')
+              ? shot.transitionEn
+              : undefined
+          const prompt =
+            transitionEn && isFlf2v
+              ? sanitizeCinematicPrompt(
+                  stripOocWardrobe(
+                    stripOtherPersonClauses(`${identityLock}, ${transitionEn}${handoff}, ${this.qualityBlock}`),
+                    lookEn || '',
+                  ),
+                )
+              : promptEn
+                ? sanitizeCinematicPrompt(
+                    stripOocWardrobe(
+                      stripOtherPersonClauses(
+                        `${identityLock}, ${promptEn}, ${driftLock}${handoff}, ${this.qualityBlock}`,
+                      ),
+                      lookEn || '',
+                    ),
+                  )
+                : sanitizeCinematicPrompt(
+                    videoMotionPrompt({
+                      action: cleanAction(shot.action),
+                      ...(lookEn !== undefined ? { lookEn } : {}),
+                      scene: board?.name || shot.scene,
+                      ...(shot.emotion !== undefined ? { emotion: shot.emotion } : {}),
+                      ...(shot.camera !== undefined ? { camera: shot.camera } : {}),
+                      dialogue: shot.dialogue,
+                      ...(tpl?.promptStyle !== undefined ? { genreStyle: tpl.promptStyle } : {}),
+                      ...(shot.shotSize !== undefined ? { shotSize: shot.shotSize } : {}),
+                      ...(shot.lighting !== undefined ? { lighting: shot.lighting } : {}),
+                      ...(shot.facing !== undefined ? { facing: shot.facing } : {}),
+                      ...(shot.continuity !== undefined ? { continuity: shot.continuity } : {}),
+                    }),
+                  )
           const periodLock = periodLockFor(project.genre)
           // 面部表情锁定：H3 同款问题，Wan i2v 用首帧做起点图锁定较强，但表演段仍可能脸型漂移
           const faceLock = shot.characterIds.length ? `, ${faceExpressionLockFor(shot.emotion, shot.action)}` : ''
           // 时间轴稳定块（sanitize 之后拼接：Wan 引擎 16fps，总时长=DURATION 秒）
           const look = lookEn || ''
+          const timelineFirst = repairCastText(shot.firstFrameEn, shot.action || '', look, 'frame')
+          const timelineMid = repairCastText(shot.midFrameEn, shot.action || '', look, 'frame')
+          const timelineLast = repairCastText(shot.lastFrameEn, shot.action || '', look, 'frame')
           const timeline = timelineProtocolBlock({
             sec: wanDurationSec,
             fps: 16,
-            transition: shot.transition,
-            firstFrameEn: repairCastText(shot.firstFrameEn, shot.action || '', look, 'frame'),
-            midFrameEn: repairCastText(shot.midFrameEn, shot.action || '', look, 'frame'),
-            lastFrameEn: repairCastText(shot.lastFrameEn, shot.action || '', look, 'frame'),
-            motionEn: promptEn || motionCueFromAction(shot.action)
+            ...(shot.transition !== undefined ? { transition: shot.transition } : {}),
+            ...(timelineFirst !== undefined ? { firstFrameEn: timelineFirst } : {}),
+            ...(timelineMid !== undefined ? { midFrameEn: timelineMid } : {}),
+            ...(timelineLast !== undefined ? { lastFrameEn: timelineLast } : {}),
+            motionEn: promptEn || motionCueFromAction(shot.action),
           })
           const vars: Record<string, string | number | boolean> = {
             PROMPT: keepDialogueChinese(scrubSummoningTerms(`${prompt}${faceLock}. ${periodLock}. ${timeline}`)),
             REF_IMAGE: imageName,
             SEED: renderSeed,
-            DURATION: wanDurationSec
+            DURATION: wanDurationSec,
           }
           const wanNegative = negativeForSlot(
             Boolean(meta?.placeholders.includes('NEGATIVE')),
-            mergeNegative(WAN_QUALITY_NEGATIVE, shot.negativeEn, videoNegativeFor(shot.action), oocWardrobeNegativeFor(lookEn || ''), ageDriftNegativeFor(lookEn || ''))
+            mergeNegative(
+              WAN_QUALITY_NEGATIVE,
+              shot.negativeEn,
+              videoNegativeFor(shot.action),
+              oocWardrobeNegativeFor(lookEn || ''),
+              ageDriftNegativeFor(lookEn || ''),
+            ),
           )
           if (wanNegative) vars.NEGATIVE = wanNegative
           if (meta?.placeholders.includes('END_IMAGE')) {
@@ -935,7 +1085,7 @@ export class TaskQueue extends EventEmitter {
             this.emitProgress({ projectId, shotId, step: 'upload', percent: 12, message: '上传参考音频...' })
             audioName = await Promise.race([
               this.comfyui.uploadAudio(this.resolveInBase(syncAudioRelPath!), s0.comfyui.inputDir),
-              watcher.promise
+              watcher.promise,
             ])
           }
           // r2v 场景双参考：ref_image_2 用场景板空景锁背景（r2v 对背景延续弱，
@@ -963,7 +1113,7 @@ export class TaskQueue extends EventEmitter {
             WIDTH: h3Width,
             HEIGHT: h3Height,
             LENGTH: h3Length,
-            PREFIX: `drama/${projectId}`
+            PREFIX: `drama/${projectId}`,
           }
           if (audioName && mode === 'h3-r2v') vars.AUDIO = audioName
           // 2026-10-25 修复（全面排查 P1）：R2V 场景图缺失/上传失败时回退人物首帧当 ref_image_2
@@ -971,7 +1121,8 @@ export class TaskQueue extends EventEmitter {
           // vars 缺 SCENE_IMAGE → buildGraph 抛未替换占位符 → R2V 台词镜确定性判 failed。
           if (mode === 'h3-r2v') {
             vars.SCENE_IMAGE = sceneImageName || imageName
-            if (!sceneImageName) log.warn(`[${shot.id}] 场景图缺失/上传失败，SCENE_IMAGE 回退人物首帧（单参考出片，背景锁弱化）`)
+            if (!sceneImageName)
+              log.warn(`[${shot.id}] 场景图缺失/上传失败，SCENE_IMAGE 回退人物首帧（单参考出片，背景锁弱化）`)
           }
           graph = await this.workflow.buildGraph(workflowName, vars)
           const sched = graph['42'] as { inputs?: Record<string, unknown> } | undefined
@@ -980,8 +1131,11 @@ export class TaskQueue extends EventEmitter {
           // 采样器/引导器的 model 引用改挂 LoRA 输出；i2v=8步LoRA、r2v=4步LoRA
           if (injectH3TurboLora(graph, mode, turboH3, LORA_T2V_TURBO, LORA_R2V_TURBO)) {
             this.emitProgress({
-              projectId, shotId, step: 'render', percent: 16,
-              message: `H3 turbo 加速：${mode === 'h3-r2v' ? 'ref2v_turbo_4step/4步' : 'fl2v_turbo_8step/8步'}`
+              projectId,
+              shotId,
+              step: 'render',
+              percent: 16,
+              message: `H3 turbo 加速：${mode === 'h3-r2v' ? 'ref2v_turbo_4step/4步' : 'fl2v_turbo_8step/8步'}`,
             })
           }
         }
@@ -990,7 +1144,7 @@ export class TaskQueue extends EventEmitter {
         const objectInfo = await this.comfyui.getObjectInfo()
         const envIssues = this.workflow.validateBuiltGraph(workflowName, graph, objectInfo)
         if (envIssues.length) {
-          throw new Error('工作流环境自检失败：\n' + envIssues.map(i => `· ${i.message}`).join('\n'))
+          throw new Error('工作流环境自检失败：\n' + envIssues.map((i) => `· ${i.message}`).join('\n'))
         }
 
         // 5. 提交并等待（取消竞态包裹）
@@ -998,14 +1152,20 @@ export class TaskQueue extends EventEmitter {
         this.emitProgress({ projectId, shotId, step: 'render', percent: 20, message: '渲染中...' })
         const timeoutMs = Math.max(60, resolveCreation(s0).edit.comfyTimeoutSec || 600) * 1000
         const output = await Promise.race([
-          this.comfyui.waitForCompletion(promptId, (percent) => {
-            this.emitProgress({
-              projectId, shotId, step: 'render',
-              percent: 20 + Math.round(percent * 0.6),
-              message: `渲染中... ${percent}%`
-            })
-          }, timeoutMs),
-          watcher.promise
+          this.comfyui.waitForCompletion(
+            promptId,
+            (percent) => {
+              this.emitProgress({
+                projectId,
+                shotId,
+                step: 'render',
+                percent: 20 + Math.round(percent * 0.6),
+                message: `渲染中... ${percent}%`,
+              })
+            },
+            timeoutMs,
+          ),
+          watcher.promise,
         ])
 
         // 6. 下载原始视频
@@ -1026,12 +1186,11 @@ export class TaskQueue extends EventEmitter {
         // - wan 引擎台词镜 → LatentSync
         // - 强制 latentsync 路线 / r2v 失败回退的 h3-i2v 台词镜 → LatentSync 补口型
         // - h3-r2v 原生口型、无台词镜 → 跳过
-        const needLipSync = hasLine && s0.render.lipSync && shot.type === 'i2v' &&
-          (mode === 'wan' || mode === 'h3-i2v')
+        const needLipSync = hasLine && s0.render.lipSync && shot.type === 'i2v' && (mode === 'wan' || mode === 'h3-i2v')
         let sourceRawAbs = rawAbsPath
         /** 口型失败回退原因（写入 renderProfile，队列进度也会展示） */
         let lipSyncFallback: string | undefined
-        if (needLipSync && await this.lipSync.available()) {
+        if (needLipSync && (await this.lipSync.available())) {
           this.checkCancelled(projectId, shotId)
           this.emitProgress({ projectId, shotId, step: 'render', percent: 86, message: '口型同步中...' })
           try {
@@ -1043,24 +1202,33 @@ export class TaskQueue extends EventEmitter {
               // 必须用带开口留白的音频驱动口型，与最终合轨同源，否则嘴型比声音早 lead 秒
               path.join(this.baseDir, syncAudioRelPath!),
               lipAbs,
-              (percent) => this.emitProgress({
-                projectId, shotId, step: 'render',
-                percent: 86 + Math.round(percent * 0.04),
-                message: `口型同步中... ${percent}%`
-              })
+              (percent) =>
+                this.emitProgress({
+                  projectId,
+                  shotId,
+                  step: 'render',
+                  percent: 86 + Math.round(percent * 0.04),
+                  message: `口型同步中... ${percent}%`,
+                }),
             )
             sourceRawAbs = lipAbs
             await fs.unlink(pre25Abs).catch(() => undefined)
           } catch (lipErr) {
-            if ((lipErr as Error).message === CANCEL_ERROR || this.cancelledShotIds.has(TaskQueue.shotKey(projectId, shotId))) {
+            if (
+              (lipErr as Error).message === CANCEL_ERROR ||
+              this.cancelledShotIds.has(TaskQueue.shotKey(projectId, shotId))
+            ) {
               throw lipErr
             }
             const reason = lipErr instanceof Error ? lipErr.message : String(lipErr)
             lipSyncFallback = reason.slice(0, 120)
             log.warn(`LatentSync 失败，回退原片: ${reason}`)
             this.emitProgress({
-              projectId, shotId, step: 'render', percent: 89,
-              message: `口型同步失败，已用原片继续（${lipSyncFallback}）`
+              projectId,
+              shotId,
+              step: 'render',
+              percent: 89,
+              message: `口型同步失败，已用原片继续（${lipSyncFallback}）`,
             })
           }
         }
@@ -1070,26 +1238,29 @@ export class TaskQueue extends EventEmitter {
         // Wan 或走 LatentSync 的 H3 → 与 TTS 智能对齐合轨（leadSec=0，留白已在音频里）
         this.emitProgress({ projectId, shotId, step: 'combine', percent: 90, message: '合成段落...' })
         if (mode.startsWith('h3') && !needLipSync) {
-          await this.ffmpeg.normalizeSegment(
-            rawAbsPath,
-            segmentAbsPath,
-            (percent) => this.emitProgress({
-              projectId, shotId, step: 'combine',
+          await this.ffmpeg.normalizeSegment(rawAbsPath, segmentAbsPath, (percent) =>
+            this.emitProgress({
+              projectId,
+              shotId,
+              step: 'combine',
               percent: 90 + Math.round(percent * 0.1),
-              message: `合成段落... ${percent}%`
-            })
+              message: `合成段落... ${percent}%`,
+            }),
           )
         } else {
           await this.ffmpeg.prepareSegment(
             sourceRawAbs,
             syncAudioRelPath ? path.join(this.baseDir, syncAudioRelPath) : undefined,
             segmentAbsPath,
-            (percent) => this.emitProgress({
-              projectId, shotId, step: 'combine',
-              percent: 90 + Math.round(percent * 0.1),
-              message: `合成段落... ${percent}%`
-            }),
-            0
+            (percent) =>
+              this.emitProgress({
+                projectId,
+                shotId,
+                step: 'combine',
+                percent: 90 + Math.round(percent * 0.1),
+                message: `合成段落... ${percent}%`,
+              }),
+            0,
           )
         }
         // 合成（ffmpeg 分钟级）结束后的取消检查点：已取消镜头不得落 segmentPath 走到 done
@@ -1103,13 +1274,13 @@ export class TaskQueue extends EventEmitter {
           engine: mode,
           workflow: workflowName,
           seed: renderSeed,
-          frames: mode.startsWith('h3') ? h3Length : undefined,
-          steps: mode.startsWith('h3') ? h3Steps : undefined,
-          durationSec: mode === 'wan' ? wanDurationSec : undefined,
-          oomDowngraded: oomDowngraded || undefined,
+          ...(mode.startsWith('h3') ? { frames: h3Length } : {}),
+          ...(mode.startsWith('h3') ? { steps: h3Steps } : {}),
+          ...(mode === 'wan' ? { durationSec: wanDurationSec } : {}),
+          ...(oomDowngraded ? { oomDowngraded: true } : {}),
           lipSync: lipProfile,
-          lipSyncFallback: lipSyncFallback || undefined,
-          renderedAt: Date.now()
+          ...(lipSyncFallback ? { lipSyncFallback } : {}),
+          renderedAt: Date.now(),
         }
       }
 
@@ -1128,7 +1299,8 @@ export class TaskQueue extends EventEmitter {
         } catch (err) {
           const cancelled =
             (err instanceof Error && err.message === CANCEL_ERROR) ||
-            this.cancelledShotIds.has(TaskQueue.shotKey(projectId, shotId)) || this.cancelledProjects.has(projectId)
+            this.cancelledShotIds.has(TaskQueue.shotKey(projectId, shotId)) ||
+            this.cancelledProjects.has(projectId)
           if (cancelled) throw err
 
           const isOOM = this.isOOMError(err)
@@ -1148,7 +1320,7 @@ export class TaskQueue extends EventEmitter {
             lipMode,
             lipSyncEnabled: Boolean(s0.render.lipSync),
             transientRetries,
-            isTransient: isTransientError(err)
+            isTransient: isTransientError(err),
           })
 
           if (decision.kind === 'oom-light') {
@@ -1159,8 +1331,11 @@ export class TaskQueue extends EventEmitter {
             h3Steps = downgraded.h3Steps
             wanDurationSec = downgraded.wanDurationSec
             this.emitProgress({
-              projectId, shotId, step: 'render', percent: 20,
-              message: `显存不足，已减负（${mode.startsWith('h3') ? `${h3Length}帧/8步` : `${wanDurationSec}秒`}）重试...`
+              projectId,
+              shotId,
+              step: 'render',
+              percent: 20,
+              message: `显存不足，已减负（${mode.startsWith('h3') ? `${h3Length}帧/8步` : `${wanDurationSec}秒`}）重试...`,
             })
             continue
           }
@@ -1174,8 +1349,11 @@ export class TaskQueue extends EventEmitter {
             h3Length = clamped.h3Length
             wanDurationSec = clamped.wanDurationSec
             this.emitProgress({
-              projectId, shotId, step: 'render', percent: 20,
-              message: `显存仍不足，降分辨率至 ${tier.width}×${tier.height}（${tier.label}）重试...`
+              projectId,
+              shotId,
+              step: 'render',
+              percent: 20,
+              message: `显存仍不足，降分辨率至 ${tier.width}×${tier.height}（${tier.label}）重试...`,
             })
             continue
           }
@@ -1184,8 +1362,11 @@ export class TaskQueue extends EventEmitter {
             mode = 'h3-i2v'
             audioName = undefined
             this.emitProgress({
-              projectId, shotId, step: 'render', percent: 20,
-              message: 'H3 原生口型生成失败，回退 LatentSync 口型方案...'
+              projectId,
+              shotId,
+              step: 'render',
+              percent: 20,
+              message: 'H3 原生口型生成失败，回退 LatentSync 口型方案...',
             })
             continue
           }
@@ -1195,8 +1376,11 @@ export class TaskQueue extends EventEmitter {
             autoRetryCount++
             const delay = transientRetries * 4000
             this.emitProgress({
-              projectId, shotId, step: 'render', percent: 20,
-              message: `瞬时异常（${(err as Error).message.slice(0, 60)}），${delay / 1000}s 后自动重试（${transientRetries}/2）...`
+              projectId,
+              shotId,
+              step: 'render',
+              percent: 20,
+              message: `瞬时异常（${(err as Error).message.slice(0, 60)}），${delay / 1000}s 后自动重试（${transientRetries}/2）...`,
             })
             // 超时类错误重试前先中断 ComfyUI 旧任务：否则旧 prompt 仍在跑，
             // 重提交会双份渲染浪费显存（单消费者设计下在渲的只会是本任务，interrupt 安全）
@@ -1207,7 +1391,7 @@ export class TaskQueue extends EventEmitter {
             const deadline = Date.now() + delay
             while (Date.now() < deadline) {
               this.checkCancelled(projectId, shotId)
-              await new Promise(r => setTimeout(r, 200))
+              await new Promise((r) => setTimeout(r, 200))
             }
             continue
           }
@@ -1237,7 +1421,7 @@ export class TaskQueue extends EventEmitter {
             log.info(`[${shot.id}] 一致性兜底切换引擎 ${prev} → ${forceEngine}（工作流=${baseWorkflow}）`)
           }
           await runProduction()
-        }
+        },
       })
 
       // 多候选渲染抽卡：再渲 N-1 条不同 seed，结合一致性分数 + LLM 留最优
@@ -1249,19 +1433,24 @@ export class TaskQueue extends EventEmitter {
         const c0Rel = `projects/${projectId}/segments/${shotId}_c0.mp4`
         const c0Abs = path.join(this.baseDir, c0Rel)
         await fs.copyFile(segmentAbsPath, c0Abs)
-        const candSegs: Array<{ rel: string; seed: number; score: number }> = [{
-          rel: c0Rel,
-          seed: firstSeed,
-          score: firstScore
-        }]
+        const candSegs: Array<{ rel: string; seed: number; score: number }> = [
+          {
+            rel: c0Rel,
+            seed: firstSeed,
+            score: firstScore,
+          },
+        ]
         for (let ci = 1; ci < wantCand; ci++) {
           this.checkCancelled(projectId, shotId)
           const altSeed = Math.floor(Math.random() * 0xffffffff)
           const altRel = `projects/${projectId}/segments/${shotId}_c${ci}.mp4`
           const altAbs = path.join(this.baseDir, altRel)
           this.emitProgress({
-            projectId, shotId, step: 'render', percent: 70,
-            message: `渲染抽卡 ${ci + 1}/${wantCand}（seed 重试）...`
+            projectId,
+            shotId,
+            step: 'render',
+            percent: 70,
+            message: `渲染抽卡 ${ci + 1}/${wantCand}（seed 重试）...`,
           })
           try {
             renderSeed = altSeed
@@ -1272,24 +1461,28 @@ export class TaskQueue extends EventEmitter {
               try {
                 const svc = this.getConsistencyService()
                 if (await svc.available()) {
-                  const r = await svc.compare(
-                    this.resolveInBase(refImageRel),
-                    altAbs,
-                    0.5
-                  )
+                  const r = await svc.compare(this.resolveInBase(refImageRel), altAbs, 0.5)
                   score = r.score
                 }
-              } catch { /* ignore */ }
+              } catch {
+                /* ignore */
+              }
             }
             candSegs.push({ rel: altRel, seed: altSeed, score })
           } catch (e) {
-            if ((e instanceof Error && e.message === CANCEL_ERROR) ||
-              this.cancelledProjects.has(projectId) || this.cancelledShotIds.has(TaskQueue.shotKey(projectId, shotId))) {
+            if (
+              (e instanceof Error && e.message === CANCEL_ERROR) ||
+              this.cancelledProjects.has(projectId) ||
+              this.cancelledShotIds.has(TaskQueue.shotKey(projectId, shotId))
+            ) {
               throw e
             }
             this.emitProgress({
-              projectId, shotId, step: 'render', percent: 75,
-              message: `抽卡候选 ${ci + 1} 失败已跳过`
+              projectId,
+              shotId,
+              step: 'render',
+              percent: 75,
+              message: `抽卡候选 ${ci + 1} 失败已跳过`,
             })
           }
         }
@@ -1302,9 +1495,9 @@ export class TaskQueue extends EventEmitter {
               relativePath: c.rel,
               seed: c.seed,
               score: c.score,
-              note: `consistency=${c.score.toFixed(3)}`
+              note: `consistency=${c.score.toFixed(3)}`,
             })),
-            llmPick: editCfg.llmPick
+            llmPick: editCfg.llmPick,
           })
           await fs.copyFile(path.join(this.baseDir, picked.winner.relativePath), segmentAbsPath)
           shot.seed = picked.winner.seed
@@ -1317,16 +1510,31 @@ export class TaskQueue extends EventEmitter {
             baseDir: this.baseDir,
             winnerRel: picked.winner.relativePath,
             finalRel: segmentRelPath,
-            rejectedRels: picked.rejected.map(r => r.relativePath),
-            keepRejected: true
+            rejectedRels: picked.rejected.map((r) => r.relativePath),
+            keepRejected: true,
           })
           this.emitProgress({
-            projectId, shotId, step: 'render', percent: 95,
-            message: `渲染抽卡 ${candSegs.length}→1：${picked.reason}`
+            projectId,
+            shotId,
+            step: 'render',
+            percent: 95,
+            message: `渲染抽卡 ${candSegs.length}→1：${picked.reason}`,
           })
         } else {
-          // 仅保留主分段
-          await fs.copyFile(c0Abs, segmentAbsPath).catch(() => undefined)
+          // 仅保留主分段。CORE-02：复制失败不得吞掉，否则 segmentPath 指向缺失文件却进 done
+          await fs.copyFile(c0Abs, segmentAbsPath)
+        }
+      }
+
+      // CORE-02：置 done 前校验产物真实存在且非空（0 字节 = 节点失败但仍返回成功）
+      const segStat = await fs.stat(segmentAbsPath).catch(() => null)
+      if (!segStat || !segStat.isFile() || segStat.size <= 0) {
+        throw new Error(`分段产物缺失或为空（${segmentRelPath}），已标记失败`)
+      }
+      if (shot.rawVideoPath) {
+        const rawStat = await fs.stat(this.resolveInBase(shot.rawVideoPath)).catch(() => null)
+        if (!rawStat || rawStat.size <= 0) {
+          throw new Error(`原片产物缺失或为空（${shot.rawVideoPath}），已标记失败`)
         }
       }
 
@@ -1338,7 +1546,6 @@ export class TaskQueue extends EventEmitter {
       shot.retryBudget = undefined
       await this.patchShot(projectId, shot)
       this.emitProgress({ projectId, shotId, step: 'done', percent: 100, message: '完成' })
-
     } catch (error) {
       const isCancelled =
         (error instanceof Error && error.message === CANCEL_ERROR) ||
@@ -1362,8 +1569,12 @@ export class TaskQueue extends EventEmitter {
         shot.retryBudget = AUTO_RETRY_BUDGET
         await this.patchShot(projectId, shot)
         this.emitProgress({
-          projectId, shotId, step: 'failed', percent: 100,
-          message: shot.error, errorKind: shot.errorKind
+          projectId,
+          shotId,
+          step: 'failed',
+          percent: 100,
+          message: shot.error,
+          errorKind: shot.errorKind,
         })
       }
     } finally {
@@ -1390,7 +1601,7 @@ export class TaskQueue extends EventEmitter {
     const { workflowName, prompt, onProgress } = params
     if (!workflowName || !prompt) throw new Error('缺少 workflowName/prompt')
     const metas = await this.workflow.list()
-    const meta = metas.find(w => w.name === workflowName)
+    const meta = metas.find((w) => w.name === workflowName)
     if (!meta) throw new Error(`工作流不存在：${workflowName}（用 list_workflows 查看可用模板）`)
 
     const vars: Record<string, string | number | boolean> = { PROMPT: prompt }
@@ -1403,8 +1614,10 @@ export class TaskQueue extends EventEmitter {
     if (params.width !== undefined && meta.placeholders.includes('WIDTH')) vars.WIDTH = params.width
     if (params.height !== undefined && meta.placeholders.includes('HEIGHT')) vars.HEIGHT = params.height
     // 双采模板：精修目标尺寸 WIDTH2/HEIGHT2 = 直出尺寸 ×1.5 向下对齐 32（H3 latent 对齐铁律）
-    if (params.width !== undefined && meta.placeholders.includes('WIDTH2')) vars.WIDTH2 = Math.floor((params.width * 1.5) / 32) * 32
-    if (params.height !== undefined && meta.placeholders.includes('HEIGHT2')) vars.HEIGHT2 = Math.floor((params.height * 1.5) / 32) * 32
+    if (params.width !== undefined && meta.placeholders.includes('WIDTH2'))
+      vars.WIDTH2 = Math.floor((params.width * 1.5) / 32) * 32
+    if (params.height !== undefined && meta.placeholders.includes('HEIGHT2'))
+      vars.HEIGHT2 = Math.floor((params.height * 1.5) / 32) * 32
 
     let imageName: string | undefined
     if (params.refImageAbs) {
@@ -1426,16 +1639,20 @@ export class TaskQueue extends EventEmitter {
     const objectInfo = await this.comfyui.getObjectInfo()
     const envIssues = this.workflow.validateBuiltGraph(workflowName, graph, objectInfo)
     if (envIssues.length) {
-      throw new Error('工作流环境自检失败：\n' + envIssues.map(i => `· ${i.message}`).join('\n'))
+      throw new Error('工作流环境自检失败：\n' + envIssues.map((i) => `· ${i.message}`).join('\n'))
     }
 
     onProgress?.('渲染中...', 20)
     const { promptId } = await this.comfyui.submit(graph)
     const s0 = await this.settings.get()
     const timeoutMs = Math.max(60, resolveCreation(s0).edit.comfyTimeoutSec || 600) * 1000
-    const output = await this.comfyui.waitForCompletion(promptId, (pct) => {
-      onProgress?.(`渲染中... ${pct}%`, 20 + Math.round(pct * 0.6))
-    }, timeoutMs)
+    const output = await this.comfyui.waitForCompletion(
+      promptId,
+      (pct) => {
+        onProgress?.(`渲染中... ${pct}%`, 20 + Math.round(pct * 0.6))
+      },
+      timeoutMs,
+    )
 
     // 下载产物（视频或图片，按实际输出类型决定扩展名）
     const item = this.comfyui.findVideoOutput(output)
@@ -1445,7 +1662,9 @@ export class TaskQueue extends EventEmitter {
     const stamp = `${workflowName}_${Date.now()}`.replace(/[^\w一-龥-]/g, '_')
     const ext = /\.(mp4|webm|png|jpg|jpeg|webp)$/i.test(item.filename)
       ? item.filename.match(/\.(mp4|webm|png|jpg|jpeg|webp)$/i)![1]
-      : item.type === 'output' ? 'mp4' : 'png'
+      : item.type === 'output'
+        ? 'mp4'
+        : 'png'
     const outputAbs = path.join(outDir, `${stamp}.${ext}`)
     if (item.fullpath) {
       await this.comfyui.downloadFromFullPath(item.fullpath, outputAbs)

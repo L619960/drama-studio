@@ -26,13 +26,7 @@
     </div>
 
     <div class="toolbar">
-      <el-input
-        v-model="searchQuery"
-        clearable
-        size="small"
-        placeholder="搜索道具中文名 / 英文名"
-        style="width: 240px"
-      >
+      <el-input v-model="searchQuery" clearable size="small" placeholder="搜索道具中文名 / 英文名" style="width: 240px">
         <template #prefix>
           <el-icon><Search /></el-icon>
         </template>
@@ -92,7 +86,8 @@
         </div>
         <div class="prop-actions">
           <el-button size="small" :loading="generatingId === prop.id" @click="generateProp(prop)">
-            <el-icon><MagicStick /></el-icon>{{ generatingId === prop.id ? '生成中...' : (prop.imagePath ? '重新生成' : 'AI 生成') }}
+            <el-icon><MagicStick /></el-icon
+            >{{ generatingId === prop.id ? '生成中...' : prop.imagePath ? '重新生成' : 'AI 生成' }}
           </el-button>
           <el-button size="small" @click="importPropImage(prop)">
             <el-icon><Upload /></el-icon>上传
@@ -185,7 +180,9 @@ import ErrorStateCard from '../components/common/ErrorStateCard.vue'
 const { urlCache, ensureFileUrl, ensureFileUrls } = useFileUrl()
 
 const router = useRouter()
-const projectId = useRouteProjectId((id) => { void loadProject(id) })
+const projectId = useRouteProjectId((id) => {
+  void loadProject(id)
+})
 
 const project = ref<Project | null>(null)
 /** REQ-17：三态区分——加载中 / 加载失败 / 已加载 */
@@ -209,9 +206,7 @@ const searchQuery = ref('')
 const filteredProps = computed(() => {
   const q = searchQuery.value.trim().toLowerCase()
   if (!q) return propsList.value
-  return propsList.value.filter(p =>
-    p.zh.toLowerCase().includes(q) || p.en.toLowerCase().includes(q)
-  )
+  return propsList.value.filter((p) => p.zh.toLowerCase().includes(q) || p.en.toLowerCase().includes(q))
 })
 
 function onMenuKeydown(e: KeyboardEvent) {
@@ -221,7 +216,7 @@ function onMenuKeydown(e: KeyboardEvent) {
 /** 该道具（按 en 匹配）被多少个分镜引用 */
 function usageCount(en: string): number {
   if (!en || !project.value?.shots) return 0
-  return project.value.shots.filter(s => Array.isArray(s.props) && s.props.includes(en)).length
+  return project.value.shots.filter((s) => Array.isArray(s.props) && s.props.includes(en)).length
 }
 
 onMounted(async () => {
@@ -230,14 +225,15 @@ onMounted(async () => {
   // 后台流水线（导演 agent 定妆/逐镜）落盘后自动刷新，无需手动切页
   projectUpdatedUnsub = window.api.director.onProjectUpdated((e) => {
     if (e?.projectId === projectId.value) {
-      clearFileUrlCache()
+      // UI-07：只清本项目前缀，避免误伤其它项目的 URL 缓存
+      clearFileUrlCache(`projects/${projectId.value}/`)
       void loadProject(projectId.value)
     }
   })
   void loadProject(projectId.value)
   try {
     const wf = await window.api.workflow.list()
-    t2iWorkflows.value = wf.filter(w => w.capability === 't2i' || (!w.capability && !w.hasImageInput))
+    t2iWorkflows.value = wf.filter((w) => w.capability === 't2i' || (!w.capability && !w.hasImageInput))
   } catch {
     // 工作流库加载失败不阻断页面
   }
@@ -261,7 +257,7 @@ async function loadProject(id?: string) {
       return
     }
     project.value = p
-    const paths = (p.props || []).map(pr => pr.imagePath).filter(Boolean) as string[]
+    const paths = (p.props || []).map((pr) => pr.imagePath).filter(Boolean) as string[]
     await ensureFileUrls(paths)
   } catch (e) {
     loadError.value = e instanceof Error ? e.message : String(e)
@@ -287,7 +283,7 @@ function editProp(prop: PropAsset): void {
   propForm.value = {
     zh: prop.zh,
     en: prop.en,
-    description: prop.description || ''
+    description: prop.description || '',
   }
   showEditDialog.value = true
   menu.close()
@@ -301,9 +297,8 @@ async function saveProp(): Promise<void> {
     return
   }
   // REQ-13 RA-14：英文名是分镜 props 的关联键，重名会让引用含混，保存前拒绝
-  const dup = (project.value.props || []).find(p =>
-    p.id !== editingProp.value?.id &&
-    normalizeAssetName(p.en) === normalizeAssetName(propForm.value.en)
+  const dup = (project.value.props || []).find(
+    (p) => p.id !== editingProp.value?.id && normalizeAssetName(p.en) === normalizeAssetName(propForm.value.en),
   )
   if (dup) {
     ElMessage.warning(`已存在同名道具「${dup.zh}」（英文名 ${dup.en}），分镜按英文名关联，建议改名`)
@@ -318,7 +313,7 @@ async function saveProp(): Promise<void> {
     if (oldEn && oldEn !== editingProp.value.en) {
       for (const s of project.value.shots) {
         if (Array.isArray(s.props)) {
-          s.props = s.props.map(p => (p === oldEn ? editingProp.value!.en : p))
+          s.props = s.props.map((p) => (p === oldEn ? editingProp.value!.en : p))
         }
       }
     }
@@ -327,7 +322,7 @@ async function saveProp(): Promise<void> {
       id: `prop_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       zh: propForm.value.zh.trim(),
       en: propForm.value.en.trim(),
-      description: propForm.value.description.trim() || undefined
+      description: propForm.value.description.trim() || undefined,
     }
     project.value.props = [...(project.value.props || []), prop]
   }
@@ -368,7 +363,7 @@ async function saveWorkflowChoice(): Promise<void> {
   if (!project.value) return
   project.value.assetWorkflows = {
     ...(project.value.assetWorkflows || {}),
-    prop: propWorkflow.value || undefined
+    ...(propWorkflow.value ? { prop: propWorkflow.value } : {}),
   }
   try {
     await window.api.project.save(snapshot(project.value))
@@ -385,13 +380,11 @@ async function generateProp(prop: PropAsset): Promise<void> {
   generatingId.value = prop.id
   try {
     const rel = `projects/${projectId.value}/props/${prop.id}.png`
-    const lookText = prop.description
-      ? `${prop.en}, ${prop.description}`
-      : prop.en
+    const lookText = prop.description ? `${prop.en}, ${prop.description}` : prop.en
     await window.api.image.generate(
       `${lookText}, isolated prop asset for film production, centered on plain light-gray studio background, soft even lighting, subtle drop shadow, sharp focus, high detail, photorealistic, front three-quarter view, no person, no hands`,
       rel,
-      { width: 768, height: 768, workflowName: propWorkflow.value || undefined }
+      { width: 768, height: 768, ...(propWorkflow.value ? { workflowName: propWorkflow.value } : {}) },
     )
     prop.imagePath = rel
     await persistProps()
@@ -409,25 +402,21 @@ async function deleteProp(prop: PropAsset): Promise<void> {
   if (!throttleTap('prop-del-' + prop.id, 1000)) return
   menu.close()
   // REQ-13 RA-05：与角色/场景板统一为「被引用即硬拦截」，并列出引用镜号
-  const usedShots = (project.value.shots || []).filter(
-    s => Array.isArray(s.props) && s.props.includes(prop.en)
-  )
+  const usedShots = (project.value.shots || []).filter((s) => Array.isArray(s.props) && s.props.includes(prop.en))
   if (usedShots.length > 0) {
-    const indexes = usedShots.map(s => s.index).join('、')
-    ElMessage.warning(
-      `道具「${prop.zh}」正被分镜 ${indexes} 引用，无法删除；请先在分镜编辑里移除该道具引用`
-    )
+    const indexes = usedShots.map((s) => s.index).join('、')
+    ElMessage.warning(`道具「${prop.zh}」正被分镜 ${indexes} 引用，无法删除；请先在分镜编辑里移除该道具引用`)
     return
   }
   const ok = await confirmDanger(`确定删除道具「${prop.zh}」吗？删除后 5 秒内可撤销。`, {
     title: '删除道具',
-    confirmText: '删除'
+    confirmText: '删除',
   })
   if (!ok) return
-  const at = (project.value.props || []).findIndex(p => p.id === prop.id)
+  const at = (project.value.props || []).findIndex((p) => p.id === prop.id)
   if (at < 0) return
   // REQ-16：内存暂存 + 5 秒撤销窗，撤销即原位恢复
-  project.value.props = (project.value.props || []).filter(p => p.id !== prop.id)
+  project.value.props = (project.value.props || []).filter((p) => p.id !== prop.id)
   try {
     await persistProps()
   } catch (e) {
@@ -435,17 +424,21 @@ async function deleteProp(prop: PropAsset): Promise<void> {
     ElMessage.error(`删除失败：${e instanceof Error ? e.message : String(e)}`)
     return
   }
-  showUndoToast(`道具「${prop.zh}」已删除`, async () => {
-    if (!project.value || !project.value.props) return
-    if (project.value.props.some(p => p.id === prop.id)) return
-    project.value.props.splice(Math.min(at, project.value.props.length), 0, prop)
-    try {
-      await persistProps()
-      ElMessage.success('已撤销删除')
-    } catch (e) {
-      ElMessage.error(`撤销失败：${e instanceof Error ? e.message : String(e)}`)
-    }
-  }, () => {})
+  showUndoToast(
+    `道具「${prop.zh}」已删除`,
+    async () => {
+      if (!project.value || !project.value.props) return
+      if (project.value.props.some((p) => p.id === prop.id)) return
+      project.value.props.splice(Math.min(at, project.value.props.length), 0, prop)
+      try {
+        await persistProps()
+        ElMessage.success('已撤销删除')
+      } catch (e) {
+        ElMessage.error(`撤销失败：${e instanceof Error ? e.message : String(e)}`)
+      }
+    },
+    () => {},
+  )
 }
 
 function previewProp(prop: PropAsset): void {
@@ -456,9 +449,19 @@ function previewProp(prop: PropAsset): void {
 </script>
 
 <style scoped>
-.wf-picker { display: flex; align-items: center; gap: 6px; margin-right: 4px; }
-.wf-label { font-size: 12px; color: var(--text-muted); }
-.toolbar { margin-bottom: 12px; }
+.wf-picker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 4px;
+}
+.wf-label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.toolbar {
+  margin-bottom: 12px;
+}
 .prop-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
@@ -475,8 +478,7 @@ function previewProp(prop: PropAsset): void {
   display: grid;
   place-items: center;
   cursor: zoom-in;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--bg-elevated) 40%, transparent), var(--bg-elevated));
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bg-elevated) 40%, transparent), var(--bg-elevated));
 }
 .prop-image img {
   width: 100%;
@@ -534,5 +536,9 @@ function previewProp(prop: PropAsset): void {
   margin-top: 4px;
   line-height: 1.5;
 }
-.menu-tip { margin-left: auto; font-size: 11px; color: var(--text-muted); }
+.menu-tip {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-muted);
+}
 </style>

@@ -38,7 +38,7 @@ const CRC_TABLE = (() => {
 
 function crc32(buf: Buffer): number {
   let c = 0xffffffff
-  for (let i = 0; i < buf.length; i++) c = CRC_TABLE[(c ^ buf[i]) & 0xff] ^ (c >>> 8)
+  for (const byte of buf) c = (CRC_TABLE[(c ^ byte) & 0xff] ?? 0) ^ (c >>> 8)
   return (c ^ 0xffffffff) >>> 0
 }
 
@@ -50,7 +50,7 @@ export function assertSafeEntryPath(path: string): string {
     throw new Error(`项目包含有非法绝对路径：${path}`)
   }
   const segments = normalized.split('/')
-  if (segments.some(s => s === '..' || s === '.')) {
+  if (segments.some((s) => s === '..' || s === '.')) {
     throw new Error(`项目包含有非法路径：${path}`)
   }
   return normalized
@@ -76,7 +76,7 @@ function prepare(entry: ZipEntryInput): PreparedEntry {
     data: entry.data,
     crc: crc32(entry.data),
     method: useDeflate ? METHOD_DEFLATE : METHOD_STORE,
-    compressed: useDeflate ? deflated : entry.data
+    compressed: useDeflate ? deflated : entry.data,
   }
 }
 
@@ -190,9 +190,7 @@ export function readZip(zip: Buffer): ZipEntry[] {
     const raw = zip.subarray(dataStart, dataStart + compSize)
     if (raw.length !== compSize) throw new Error(`项目包损坏：${name} 数据不完整`)
 
-    const data = method === METHOD_DEFLATE
-      ? inflateRawSync(raw)
-      : method === METHOD_STORE ? Buffer.from(raw) : null
+    const data = method === METHOD_DEFLATE ? inflateRawSync(raw) : method === METHOD_STORE ? Buffer.from(raw) : null
     if (data === null) throw new Error(`项目包使用了不支持的压缩方式（${method}）`)
     if (data.length !== uncompSize) throw new Error(`项目包损坏：${name} 长度不符`)
     entries.push({ path: assertSafeEntryPath(name), data })

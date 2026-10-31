@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Electron 渲染进程 JIT 必需 -->
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+  <!-- Electron/V8 会申请可执行内存 -->
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+  <!-- 允许加载随包分发的 ffmpeg/onnxruntime 等未用同一 Team ID 签名的动态库 -->
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+  <!-- 子进程（ComfyUI python / ffmpeg）需要继承 DYLD 环境变量 -->
+  <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+  <true/>
+</dict>
+</plist>

@@ -16,7 +16,7 @@ export function shouldFallbackToWan(
   consistencyMode: 'off' | 'warn' | 'rerender',
   engine: string,
   score: number,
-  threshold: number
+  threshold: number,
 ): boolean {
   if (consistencyMode === 'off') return false
   const isH3 = engine === 'h3-r2v' || engine === 'h3-i2v'
@@ -35,7 +35,7 @@ export const CATASTROPHIC_CONSISTENCY_SCORE = 0.15
 export function orientVideoSize(
   tierWidth: number,
   tierHeight: number,
-  portrait: boolean
+  portrait: boolean,
 ): { width: number; height: number } {
   const tierPortrait = tierHeight >= tierWidth
   if (portrait === tierPortrait) return { width: tierWidth, height: tierHeight }
@@ -76,7 +76,7 @@ export interface CutCandidate {
  * 低一致性只打标，不从时间线上拿掉。
  */
 export function shotsInCut<T extends CutCandidate>(shots: T[]): T[] {
-  return shots.filter(s => s.status === 'done' && Boolean(s.segmentPath && s.segmentPath.trim()) && !s.skipped)
+  return shots.filter((s) => s.status === 'done' && Boolean(s.segmentPath && s.segmentPath.trim()) && !s.skipped)
 }
 
 /** 复审时长与拼接使用同一裁切区间。非法裁切退回整段时长。 */
@@ -93,31 +93,38 @@ export function reviewFailureStops(reviewGate: GateMode): boolean {
   return reviewGate !== 'off'
 }
 
-export function unreviewedI2vShots<T extends { type: string; reviewed?: boolean; firstFramePath?: string }>(shots: T[]): T[] {
-  return shots.filter(s => s.type === 'i2v' && !reviewedIsValid(s.type, s.reviewed, s.firstFramePath))
+export function unreviewedI2vShots<T extends { type: string; reviewed?: boolean; firstFramePath?: string }>(
+  shots: T[],
+): T[] {
+  return shots.filter((s) => s.type === 'i2v' && !reviewedIsValid(s.type, s.reviewed, s.firstFramePath))
 }
 
 /** 开渲目标镜头：显式 shotIds 优先，否则仅 pending/failed（主进程入队与渲染器预判共用） */
 export function renderTargetShots<T extends { id: string; status?: string }>(shots: T[], shotIds?: string[]): T[] {
   return shotIds && shotIds.length > 0
-    ? shots.filter(s => shotIds.includes(s.id))
-    : shots.filter(s => s.status === 'pending' || s.status === 'failed')
+    ? shots.filter((s) => shotIds.includes(s.id))
+    : shots.filter((s) => s.status === 'pending' || s.status === 'failed')
 }
 
 /**
  * 需「告警放行」确认的未核对 i2v 镜头。
  * treatAllAsUnreviewed 用于重渲前预判：重渲会清空 reviewed，当前已核对的 i2v 也将变成未核对。
  */
-export function unreviewedRenderShots<T extends { id: string; status?: string; type: string; reviewed?: boolean; firstFramePath?: string }>(
-  shots: T[],
-  shotIds?: string[],
-  treatAllAsUnreviewed = false
-): T[] {
+export function unreviewedRenderShots<
+  T extends { id: string; status?: string; type: string; reviewed?: boolean; firstFramePath?: string },
+>(shots: T[], shotIds?: string[], treatAllAsUnreviewed = false): T[] {
   const targets = renderTargetShots(shots, shotIds)
-  return treatAllAsUnreviewed ? targets.filter(s => s.type === 'i2v') : unreviewedI2vShots(targets)
+  return treatAllAsUnreviewed ? targets.filter((s) => s.type === 'i2v') : unreviewedI2vShots(targets)
 }
 
-const DONE_MEDIA_KEYS = ['segmentPath', 'rawVideoPath', 'audioPath', 'firstFramePath', 'lastFramePath', 'sceneImagePath'] as const
+const DONE_MEDIA_KEYS = [
+  'segmentPath',
+  'rawVideoPath',
+  'audioPath',
+  'firstFramePath',
+  'lastFramePath',
+  'sceneImagePath',
+] as const
 
 /**
  * 保护已完成镜头时，空的产物路径不能盖掉磁盘上的路径。
@@ -138,9 +145,74 @@ export function mergeProtectedDoneShot<T extends { status?: string }>(oldShot: T
   return merged
 }
 
+/** 分镜重跑时用于判断新旧镜头是否描述同一内容 */
+export interface RebuiltShotLike {
+  scene?: string
+  action?: string
+  dialogue?: string
+}
+
+/** 内容指纹一致才允许保留产物与审校状态（避免旧画面挂在新内容上） */
+export function shotContentEqual(a: RebuiltShotLike, b: RebuiltShotLike): boolean {
+  return (
+    (a.scene ?? '') === (b.scene ?? '') &&
+    (a.action ?? '') === (b.action ?? '') &&
+    (a.dialogue ?? '') === (b.dialogue ?? '')
+  )
+}
+
+/** 重跑分镜时从旧镜头保留的字段（STAGE-01）：人工编辑、审校与已生成产物 */
+const REBUILD_PRESERVED_KEYS = [
+  'id',
+  'status',
+  'reviewed',
+  'segmentPath',
+  'rawVideoPath',
+  'audioPath',
+  'firstFramePath',
+  'lastFramePath',
+  'sceneImagePath',
+  'audioFailed',
+  'audioFailedReason',
+  'renderProfile',
+  'consistencyScore',
+  'lowConsistency',
+  'auditFix',
+  'auditHint',
+  'trimStart',
+  'trimEnd',
+  'skipped',
+  'seed',
+  'width',
+  'height',
+  'frames',
+  'workflow',
+  'voice',
+  'error',
+  'errorKind',
+  'retryCount',
+  'retryBudget',
+] as const
+
+/**
+ * 重跑分镜阶段时，内容未变的镜头沿用旧 id 与运行态产物，避免：
+ * 手工编辑的提示词/裁切、reviewed 标记、已生成的首尾帧与成片全部丢失。
+ * 调用方须先用 shotContentEqual 判定内容一致。
+ */
+export function mergeRebuiltShot<T extends Record<string, unknown>>(prev: T, rebuilt: T): T {
+  const out = { ...rebuilt } as Record<string, unknown>
+  const p = prev as Record<string, unknown>
+  for (const key of REBUILD_PRESERVED_KEYS) {
+    if (p[key] !== undefined) out[key] = p[key]
+  }
+  // 旧状态若停留在 rendering（上次异常中断），重跑时应回到待渲染
+  if (out.status === 'rendering') out.status = 'pending'
+  return out as T
+}
+
 /** 一镜只留一个可读角色名。多余的名字记入说明，由正反打拆镜承担。 */
 export function collapseReadableFaces<T extends { type: string; characterName?: string; characters?: string[] }>(
-  shots: T[]
+  shots: T[],
 ): { shots: T[]; notes: string[] } {
   const notes: string[] = []
   const next = shots.map((shot, i) => {
@@ -166,8 +238,11 @@ export function comfyInstallRoot(startCommand: string): string {
   const argv: string[] = []
   const re = /"([^"]*)"|'([^']*)'|(\S+)/g
   let match: RegExpExecArray | null
-  while ((match = re.exec(startCommand)) !== null) argv.push(match[1] ?? match[2] ?? match[3])
-  const main = argv.find(arg => /main\.py$/i.test(arg))
+  while ((match = re.exec(startCommand)) !== null) {
+    const token = match[1] ?? match[2] ?? match[3]
+    if (token !== undefined) argv.push(token)
+  }
+  const main = argv.find((arg) => /main\.py$/i.test(arg))
   if (!main) return ''
   const slash = Math.max(main.lastIndexOf('/'), main.lastIndexOf('\\'))
   return slash > 0 ? main.slice(0, slash) : ''

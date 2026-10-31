@@ -6,19 +6,19 @@ describe('shared/zipArchive', () => {
     const binary = Buffer.from([0, 1, 2, 255, 254, 128])
     const zip = createZip([
       { path: 'project.json', data: Buffer.from('{"title":"重生"}', 'utf8') },
-      { path: '成片/final.mp4', data: binary }
+      { path: '成片/final.mp4', data: binary },
     ])
     const entries = readZip(zip)
-    expect(entries.map(e => e.path)).toEqual(['project.json', '成片/final.mp4'])
-    expect(entries[0].data.toString('utf8')).toBe('{"title":"重生"}')
-    expect(entries[1].data.equals(binary)).toBe(true)
+    expect(entries.map((e) => e.path)).toEqual(['project.json', '成片/final.mp4'])
+    expect(entries[0]?.data.toString('utf8')).toBe('{"title":"重生"}')
+    expect(entries[1]?.data.equals(binary)).toBe(true)
   })
 
   it('重复内容按 deflate 压缩后仍可还原', () => {
     const text = 'A'.repeat(10_000)
     const zip = createZip([{ path: 'a.txt', data: Buffer.from(text) }])
     const [entry] = readZip(zip)
-    expect(entry.data.toString()).toBe(text)
+    expect(entry?.data.toString()).toBe(text)
   })
 
   it('拒绝目录穿越与绝对路径', () => {

@@ -27,10 +27,10 @@ describe('shared/projectArchive 规则', () => {
       id: 'p_old',
       shots: [{ firstFramePath: 'projects/p_old/shots/a.png' }],
       legacy: 'projects\\p_old\\bgm.mp3',
-      other: 'projects/p_new/x.png'
+      other: 'projects/p_new/x.png',
     }
     const out = rewriteProjectIdPaths(input, 'p_old', 'p_new')
-    expect(out.shots[0].firstFramePath).toBe('projects/p_new/shots/a.png')
+    expect(out.shots[0]?.firstFramePath).toBe('projects/p_new/shots/a.png')
     expect(out.legacy).toBe('projects\\p_new\\bgm.mp3')
     expect(out.other).toBe('projects/p_new/x.png')
     expect(out.id).toBe('p_old')
@@ -52,19 +52,22 @@ describe('main/core/projectArchive 导出与导入', () => {
     await fs.writeFile(path.join(projectDir, 'shots', 'shot_1', 'segment.mp4'), 'video-bytes')
     await fs.writeFile(path.join(projectDir, 'shots', 'shot_1', 'segment.mp4.part.42'), 'partial')
     await fs.writeFile(path.join(projectDir, 'director-state.json'), '{"stage":"render"}')
-    await fs.writeFile(path.join(projectDir, 'project.json'), JSON.stringify({
-      id: 'p_src',
-      title: '重生',
-      genre: '都市',
-      episode: 1,
-      status: 'done',
-      characters: [{ id: 'char_1', name: '林晚', refImagePath: 'projects/p_src/characters/hero.png' }],
-      sceneBoards: [],
-      shots: [{ id: 'shot_1', index: 1, segmentPath: 'projects/p_src/shots/shot_1/segment.mp4' }],
-      fps: 24,
-      createdAt: 1,
-      updatedAt: 1
-    }))
+    await fs.writeFile(
+      path.join(projectDir, 'project.json'),
+      JSON.stringify({
+        id: 'p_src',
+        title: '重生',
+        genre: '都市',
+        episode: 1,
+        status: 'done',
+        characters: [{ id: 'char_1', name: '林晚', refImagePath: 'projects/p_src/characters/hero.png' }],
+        sceneBoards: [],
+        shots: [{ id: 'shot_1', index: 1, segmentPath: 'projects/p_src/shots/shot_1/segment.mp4' }],
+        fps: 24,
+        createdAt: 1,
+        updatedAt: 1,
+      }),
+    )
   })
 
   afterEach(async () => {
@@ -76,21 +79,21 @@ describe('main/core/projectArchive 导出与导入', () => {
     const exported = await exportProjectPackage({ projectDir, targetPath: zipPath })
     expect(exported.files).toBe(3) // project.json + hero.png + segment.mp4（director-state 与 .part 已排除）
     const entries = readZip(await fs.readFile(zipPath))
-    const names = entries.map(e => e.path).sort()
+    const names = entries.map((e) => e.path).sort()
     expect(names).toEqual(['characters/hero.png', 'project.json', 'shots/shot_1/segment.mp4'].sort())
     expect(names).not.toContain('director-state.json')
-    expect(names.some(n => n.includes('.part.'))).toBe(false)
+    expect(names.some((n) => n.includes('.part.'))).toBe(false)
 
     const destRoot = path.join(tmpRoot, 'dest')
     const { project } = await importProjectPackage({
       dataRoot: destRoot,
       zipBuffer: await fs.readFile(zipPath),
-      existingTitles: ['重生']
+      existingTitles: ['重生'],
     })
     expect(project.id).not.toBe('p_src')
     expect(project.title).toBe('重生-副本')
-    expect(project.characters[0].refImagePath).toBe(`projects/${project.id}/characters/hero.png`)
-    expect(project.shots[0].segmentPath).toBe(`projects/${project.id}/shots/shot_1/segment.mp4`)
+    expect(project.characters[0]?.refImagePath).toBe(`projects/${project.id}/characters/hero.png`)
+    expect(project.shots[0]?.segmentPath).toBe(`projects/${project.id}/shots/shot_1/segment.mp4`)
 
     const destDir = path.join(destRoot, 'projects', project.id)
     expect(await fs.readFile(path.join(destDir, 'characters', 'hero.png'), 'utf8')).toBe('png-bytes')
@@ -101,16 +104,18 @@ describe('main/core/projectArchive 导出与导入', () => {
   it('显式 includeDirectorState 时打包导演状态', async () => {
     const zipPath = path.join(tmpRoot, 'pkg-with-state.dspzip')
     await exportProjectPackage({ projectDir, targetPath: zipPath, includeDirectorState: true })
-    const names = readZip(await fs.readFile(zipPath)).map(e => e.path)
+    const names = readZip(await fs.readFile(zipPath)).map((e) => e.path)
     expect(names).toContain('director-state.json')
   })
 
   it('缺少 project.json 的项目包拒绝导入', async () => {
     const destRoot = path.join(tmpRoot, 'dest2')
-    await expect(importProjectPackage({
-      dataRoot: destRoot,
-      zipBuffer: Buffer.from('not a zip'),
-      existingTitles: []
-    })).rejects.toThrow('不是有效的项目包')
+    await expect(
+      importProjectPackage({
+        dataRoot: destRoot,
+        zipBuffer: Buffer.from('not a zip'),
+        existingTitles: [],
+      }),
+    ).rejects.toThrow('不是有效的项目包')
   })
 })

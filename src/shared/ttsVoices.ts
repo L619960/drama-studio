@@ -10,12 +10,13 @@ export interface TtsVoiceOption {
   name: string
 }
 
-export const TTS_VOICES: readonly TtsVoiceOption[] = [
+/** 非空元组：清单至少有一项，首项即默认音色（DEFAULT_TTS_VOICE 依赖此不变量） */
+export const TTS_VOICES: readonly [TtsVoiceOption, ...TtsVoiceOption[]] = [
   { value: 'zh-CN-XiaoxiaoNeural', label: '小晓 (女声)', name: '小晓' },
   { value: 'zh-CN-XiaoyiNeural', label: '小艺 (女声)', name: '小艺' },
   { value: 'zh-CN-YunjianNeural', label: '云健 (男声)', name: '云健' },
   { value: 'zh-CN-YunyeNeural', label: '云野 (男声)', name: '云野' },
-  { value: 'zh-CN-YunjieNeural', label: '云杰 (男声)', name: '云杰' }
+  { value: 'zh-CN-YunjieNeural', label: '云杰 (男声)', name: '云杰' },
 ]
 
 /** 默认音色（首播） */
@@ -24,5 +25,5 @@ export const DEFAULT_TTS_VOICE = TTS_VOICES[0].value
 /** 按音色标识取中文短名，未知音色原样返回 */
 export function ttsVoiceName(value: string | undefined): string {
   if (!value) return ''
-  return TTS_VOICES.find(v => v.value === value)?.name ?? value
+  return TTS_VOICES.find((v) => v.value === value)?.name ?? value
 }

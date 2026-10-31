@@ -17,7 +17,9 @@ import {
   reviewedIsValid,
   WARN_SUPPRESS_WINDOW_MS,
   warnedBatchKey,
-  isWarnSuppressed
+  isWarnSuppressed,
+  shotContentEqual,
+  mergeRebuiltShot,
 } from '../../src/shared/pipelineGuards'
 import { extractKeyProps, propLockFromAction, validateNarrativeContinuity } from '../../src/shared/narrativeBeats'
 import { audioTailSecFor } from '../../src/shared/shotDoctrine'
@@ -42,10 +44,10 @@ describe('成片入选', () => {
     const cut = shotsInCut([
       { status: 'done', segmentPath: 'projects/a.mp4', lowConsistency: true },
       { status: 'done', segmentPath: 'projects/b.mp4', skipped: true },
-      { status: 'done', segmentPath: '   ' }
+      { status: 'done', segmentPath: '   ' },
     ])
     expect(cut).toHaveLength(1)
-    expect(cut[0].segmentPath).toBe('projects/a.mp4')
+    expect(cut[0]?.segmentPath).toBe('projects/a.mp4')
   })
 
   it('非法裁切退回整段时长', () => {
@@ -63,7 +65,7 @@ describe('成片入选', () => {
     const pending = unreviewedI2vShots([
       { type: 'i2v', reviewed: true, firstFramePath: '' },
       { type: 'i2v', reviewed: true, firstFramePath: 'projects/f.png' },
-      { type: 't2v', reviewed: false }
+      { type: 't2v', reviewed: false },
     ])
     expect(pending).toHaveLength(1)
   })
@@ -73,10 +75,10 @@ describe('成片入选', () => {
       { id: 'a', status: 'done' },
       { id: 'b', status: 'pending' },
       { id: 'c', status: 'failed' },
-      { id: 'd', status: 'rendering' }
+      { id: 'd', status: 'rendering' },
     ]
-    expect(renderTargetShots(shots).map(s => s.id)).toEqual(['b', 'c'])
-    expect(renderTargetShots(shots, ['a', 'd']).map(s => s.id)).toEqual(['a', 'd'])
+    expect(renderTargetShots(shots).map((s) => s.id)).toEqual(['b', 'c'])
+    expect(renderTargetShots(shots, ['a', 'd']).map((s) => s.id)).toEqual(['a', 'd'])
   })
 
   it('告警放行预判：只看目标中的 i2v，重渲场景按全部 i2v 提示', () => {
@@ -84,12 +86,12 @@ describe('成片入选', () => {
       { id: 'a', index: 1, status: 'pending', type: 'i2v', reviewed: true, firstFramePath: 'projects/f.png' },
       { id: 'b', index: 2, status: 'pending', type: 'i2v', reviewed: false },
       { id: 'c', index: 3, status: 'done', type: 'i2v', reviewed: false },
-      { id: 'd', index: 4, status: 'pending', type: 't2v', reviewed: false }
+      { id: 'd', index: 4, status: 'pending', type: 't2v', reviewed: false },
     ]
-    expect(unreviewedRenderShots(shots).map(s => s.id)).toEqual(['b'])
-    expect(unreviewedRenderShots(shots, ['a', 'b']).map(s => s.id)).toEqual(['b'])
+    expect(unreviewedRenderShots(shots).map((s) => s.id)).toEqual(['b'])
+    expect(unreviewedRenderShots(shots, ['a', 'b']).map((s) => s.id)).toEqual(['b'])
     // 重渲会清空 reviewed：已核对的 a 也需提示，非 i2v 的 d 不提示
-    expect(unreviewedRenderShots(shots, ['a', 'b', 'd'], true).map(s => s.id)).toEqual(['a', 'b'])
+    expect(unreviewedRenderShots(shots, ['a', 'b', 'd'], true).map((s) => s.id)).toEqual(['a', 'b'])
   })
 })
 
@@ -97,12 +99,12 @@ describe('一镜一张可读脸', () => {
   it('多名角色只保留第一个并给出说明', () => {
     const result = collapseReadableFaces([
       { type: 'i2v', characterName: '林夏', characters: ['林夏', '周衡'] },
-      { type: 't2v', characters: ['路人甲', '路人乙'] }
+      { type: 't2v', characters: ['路人甲', '路人乙'] },
     ])
-    expect(result.shots[0].characters).toEqual(['林夏'])
-    expect(result.shots[0].characterName).toBe('林夏')
+    expect(result.shots[0]?.characters).toEqual(['林夏'])
+    expect(result.shots[0]?.characterName).toBe('林夏')
     expect(result.notes[0]).toContain('周衡')
-    expect(result.shots[1].characters).toEqual(['路人甲', '路人乙'])
+    expect(result.shots[1]?.characters).toEqual(['路人甲', '路人乙'])
   })
 })
 
@@ -110,7 +112,7 @@ describe('已完成镜头落盘保护', () => {
   it('空路径不能盖掉磁盘上的成片路径', () => {
     const merged = mergeProtectedDoneShot(
       { status: 'done', segmentPath: 'projects/a.mp4', audioPath: 'projects/a.wav' },
-      { status: 'pending', segmentPath: '  ', audioPath: '' }
+      { status: 'pending', segmentPath: '  ', audioPath: '' },
     )
     expect(merged.status).toBe('done')
     expect(merged.segmentPath).toBe('projects/a.mp4')
@@ -120,7 +122,7 @@ describe('已完成镜头落盘保护', () => {
   it('新的非空路径可以替换', () => {
     const merged = mergeProtectedDoneShot(
       { status: 'done', segmentPath: 'projects/old.mp4' },
-      { status: 'done', segmentPath: 'projects/new.mp4' }
+      { status: 'done', segmentPath: 'projects/new.mp4' },
     )
     expect(merged.segmentPath).toBe('projects/new.mp4')
   })
@@ -129,7 +131,7 @@ describe('已完成镜头落盘保护', () => {
 describe('Comfy 安装根', () => {
   it('从启动命令里的 main.py 推出目录', () => {
     expect(comfyInstallRoot('"C:\\Comfy\\python\\python.exe" "C:\\Comfy\\ComfyUI\\main.py" --listen 127.0.0.1')).toBe(
-      'C:\\Comfy\\ComfyUI'
+      'C:\\Comfy\\ComfyUI',
     )
     expect(comfyInstallRoot('')).toBe('')
   })
@@ -144,9 +146,9 @@ describe('音频收尾与道具', () => {
     expect(extractKeyProps('她把钥匙和手机递过去')).toEqual(expect.arrayContaining(['手机', '钥匙']))
     expect(propLockFromAction('holds a smartphone')).toContain('mobile phone')
     const warnings = validateNarrativeContinuity('夜', '', '她把手机递过去', [
-      { type: 'i2v', action: 'stands still', dialogue: '' }
+      { type: 'i2v', action: 'stands still', dialogue: '' },
     ])
-    expect(warnings.some(w => w.includes('手机'))).toBe(true)
+    expect(warnings.some((w) => w.includes('手机'))).toBe(true)
   })
 })
 
@@ -226,7 +228,9 @@ describe('pipelineGuards · 流水线契约补测', () => {
   })
 
   describe('shouldPauseAfterAudit：硬失败才暂停', () => {
-    it('failCount > 0 → true', () => { expect(shouldPauseAfterAudit(5, 1)).toBe(true) })
+    it('failCount > 0 → true', () => {
+      expect(shouldPauseAfterAudit(5, 1)).toBe(true)
+    })
     it('failCount = 0 → false（不管 hintCount）', () => {
       expect(shouldPauseAfterAudit(5, 0)).toBe(false)
       expect(shouldPauseAfterAudit(0, 0)).toBe(false)
@@ -235,13 +239,82 @@ describe('pipelineGuards · 流水线契约补测', () => {
   })
 
   describe('reviewedIsValid 补测：边界', () => {
-    it('reviewed = undefined → false', () => { expect(reviewedIsValid('t2v', undefined)).toBe(false) })
-    it('reviewed = false → false', () => { expect(reviewedIsValid('t2v', false)).toBe(false) })
+    it('reviewed = undefined → false', () => {
+      expect(reviewedIsValid('t2v', undefined)).toBe(false)
+    })
+    it('reviewed = false → false', () => {
+      expect(reviewedIsValid('t2v', false)).toBe(false)
+    })
     it('i2v + reviewed + firstFramePath 全空白 → false', () => {
       expect(reviewedIsValid('i2v', true, '   ')).toBe(false)
     })
     it('i2v + reviewed + firstFramePath 非空 → true', () => {
       expect(reviewedIsValid('i2v', true, 'projects/f.png')).toBe(true)
     })
+  })
+})
+
+describe('STAGE-01 重跑分镜合并', () => {
+  const prev = {
+    id: 'shot_old',
+    index: 1,
+    scene: '夜巷',
+    action: '苏棠回头',
+    dialogue: '你来了',
+    status: 'done',
+    reviewed: true,
+    segmentPath: 'projects/p1/segments/shot_old.mp4',
+    rawVideoPath: 'projects/p1/raw/shot_old.mp4',
+    audioPath: 'projects/p1/audio/shot_old.mp3',
+    firstFramePath: 'projects/p1/shots/shot_old_first.png',
+    trimStart: 0.4,
+    skipped: false,
+    seed: 12345,
+  }
+  const rebuilt = {
+    id: 'shot_new',
+    index: 1,
+    scene: '夜巷',
+    action: '苏棠回头',
+    dialogue: '你来了',
+    status: 'pending',
+    reviewed: undefined,
+    segmentPath: undefined,
+    rawVideoPath: undefined,
+    audioPath: undefined,
+    firstFramePath: 'projects/p1/shots/shot_new_first.png',
+    trimStart: undefined,
+    skipped: undefined,
+    seed: 999,
+    promptEn: 'new prompt',
+  }
+
+  it('内容一致 → 保留旧 id、审校标记与已生成产物', () => {
+    expect(shotContentEqual(prev, rebuilt)).toBe(true)
+    const merged = mergeRebuiltShot(
+      prev as unknown as Record<string, unknown>,
+      rebuilt as unknown as Record<string, unknown>,
+    )
+    expect(merged.id).toBe('shot_old')
+    expect(merged.status).toBe('done')
+    expect(merged.reviewed).toBe(true)
+    expect(merged.segmentPath).toBe('projects/p1/segments/shot_old.mp4')
+    expect(merged.audioPath).toBe('projects/p1/audio/shot_old.mp3')
+    expect(merged.trimStart).toBe(0.4)
+    expect(merged.seed).toBe(12345)
+    // 创作字段以新分镜为准
+    expect(merged.promptEn).toBe('new prompt')
+  })
+
+  it('内容变化 → 指纹不一致，不保留旧状态', () => {
+    expect(shotContentEqual(prev, { ...rebuilt, action: '苏棠奔跑' })).toBe(false)
+  })
+
+  it('旧状态停在 rendering → 重跑回到 pending', () => {
+    const merged = mergeRebuiltShot(
+      { ...prev, status: 'rendering' } as unknown as Record<string, unknown>,
+      rebuilt as unknown as Record<string, unknown>,
+    )
+    expect(merged.status).toBe('pending')
   })
 })

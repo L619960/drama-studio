@@ -33,27 +33,50 @@ export function registerConversationIpc(ctx: ConversationIpcCtx): void {
     return ctx.conversationService.rollback(scope, messageId)
   })
   // 对话上传：选择常见文本文件读取内容（超长截断），由渲染层拼进消息发送
-  handleIpc(IpcChannels.conversationUpload, async (): Promise<{ name: string; content: string; truncated: boolean } | null> => {
-    const result = await dialog.showOpenDialog(getMainWindow()!, {
-      properties: ['openFile'],
-      filters: [
-        { name: '文档与数据', extensions: ['txt', 'md', 'json', 'csv', 'srt', 'vtt', 'log', 'yaml', 'yml', 'xml', 'html', 'js', 'ts', 'py', 'css'] },
-        { name: '全部文件', extensions: ['*'] }
-      ]
-    })
-    if (result.canceled || result.filePaths.length === 0) return null
-    const filePath = result.filePaths[0]
-    const stat = await fs.stat(filePath).catch(() => null)
-    if (!stat) throw new Error('文件无法读取')
-    if (stat.size > 2 * 1024 * 1024) throw new Error('文件超过 2MB，请拆分后再上传')
-    const raw = await fs.readFile(filePath, 'utf-8')
-    // 二进制嗅探（I-9）：文本解码后残留 NUL 说明是改了扩展名的二进制文件，拒绝注入对话
-    if (raw.includes('\0')) throw new Error('检测到二进制文件，仅支持文本内容')
-    const MAX_CHARS = 60000
-    return {
-      name: filePath.split(/[\\/]/).pop() || 'file',
-      content: raw.length > MAX_CHARS ? raw.slice(0, MAX_CHARS) : raw,
-      truncated: raw.length > MAX_CHARS
-    }
-  })
+  handleIpc(
+    IpcChannels.conversationUpload,
+    async (): Promise<{ name: string; content: string; truncated: boolean } | null> => {
+      const result = await dialog.showOpenDialog(getMainWindow()!, {
+        properties: ['openFile'],
+        filters: [
+          {
+            name: '文档与数据',
+            extensions: [
+              'txt',
+              'md',
+              'json',
+              'csv',
+              'srt',
+              'vtt',
+              'log',
+              'yaml',
+              'yml',
+              'xml',
+              'html',
+              'js',
+              'ts',
+              'py',
+              'css',
+            ],
+          },
+          { name: '全部文件', extensions: ['*'] },
+        ],
+      })
+      if (result.canceled || result.filePaths.length === 0) return null
+      const filePath = result.filePaths[0]
+      if (!filePath) return null
+      const stat = await fs.stat(filePath).catch(() => null)
+      if (!stat) throw new Error('文件无法读取')
+      if (stat.size > 2 * 1024 * 1024) throw new Error('文件超过 2MB，请拆分后再上传')
+      const raw = await fs.readFile(filePath, 'utf-8')
+      // 二进制嗅探（I-9）：文本解码后残留 NUL 说明是改了扩展名的二进制文件，拒绝注入对话
+      if (raw.includes('\0')) throw new Error('检测到二进制文件，仅支持文本内容')
+      const MAX_CHARS = 60000
+      return {
+        name: filePath.split(/[\\/]/).pop() || 'file',
+        content: raw.length > MAX_CHARS ? raw.slice(0, MAX_CHARS) : raw,
+        truncated: raw.length > MAX_CHARS,
+      }
+    },
+  )
 }

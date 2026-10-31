@@ -12,13 +12,13 @@ export interface Project {
   props?: PropAsset[]
   shots: Shot[]
   fps: number
-  defaultWorkflow?: string  // 项目默认工作流（未设则用全局默认）
+  defaultWorkflow?: string // 项目默认工作流（未设则用全局默认）
   /** 资产生成工作流选择（角色/场景/道具定妆图），未设则用设置页默认 */
   assetWorkflows?: { character?: string; scene?: string; prop?: string }
   /** 原始剧本（入口三分输入或 AI 扩写后保存，可随时回看/编辑重拆） */
   script?: string
-  bgmPath?: string          // BGM 音频相对路径（M4 混音）
-  bgmVolume?: number        // BGM 音量 0-100
+  bgmPath?: string // BGM 音频相对路径（M4 混音）
+  bgmVolume?: number // BGM 音量 0-100
   createdAt: number
   updatedAt: number
 }
@@ -33,7 +33,7 @@ export interface SceneBoard {
   key: string
   /** 展示名（通常取首次出现的原始 scene 文案） */
   name: string
-  description?: string
+  description?: string | undefined
   /** 无人空场景基准图相对路径 */
   emptyPlatePath: string
   /** 全景固定场景：2:1 全景图相对路径（可选，panorama 开启时存在） */
@@ -53,17 +53,17 @@ export interface Character {
    */
   refImagePath: string
   /** 面部定妆特写（正脸/半身，锁身份） */
-  faceImagePath?: string
+  faceImagePath?: string | undefined
   /** 全身三视图角色卡（正/侧/背或 3/4，锁体型与服装） */
-  bodySheetPath?: string
+  bodySheetPath?: string | undefined
   description: string
   voice: string
-  voiceRate?: string
+  voiceRate?: string | undefined
   /**
    * 角色卡锁定短语（英文，来自拆镜 lookEn）：定妆图与每镜首帧图逐字复用的唯一外观来源，
    * 含脸型/发型/锁定服装/高辨识度锚点，防止跨镜重采样漂移（2026 业界 Character Card 做法）
    */
-  appearanceLock?: string
+  appearanceLock?: string | undefined
 }
 
 /** 角色渲染用主参考：脸 > 兼容 ref > 三视图 */
@@ -98,7 +98,7 @@ export const SHOT_TIMING = {
   /** 开口前留白（秒）：台词相对镜入延迟，人物先入画、稳定后再开口 */
   audioLeadSec: 0.4,
   /** 说完留反应（秒）：语音结束到切镜的最小余量，尾音不贴切点 */
-  audioTailSec: 1.2
+  audioTailSec: 1.2,
 } as const
 
 /**
@@ -125,6 +125,12 @@ export interface RenderProfile {
   renderedAt: number
 }
 
+/**
+ * 镜头（落盘 JSON 模型）。
+ * 可选字段统一声明为 `T | undefined`：该模型以 JSON 持久化，缺省与 undefined 等价，
+ * 且 CORE-04 要求「以内存镜为权威整对象回写」（显式 undefined 表示本轮清空），
+ * exactOptionalPropertyTypes 下必须允许显式 undefined 才能表达该语义。
+ */
 export interface Shot {
   id: string
   index: number
@@ -137,86 +143,86 @@ export interface Shot {
   height: number
   frames: number
   seed: number
-  workflow?: string  // 分镜指定工作流（未设则用项目默认）
+  workflow?: string | undefined // 分镜指定工作流（未设则用项目默认）
   /** 分镜级音色覆盖（未设则跟随角色音色 → 全局默认） */
-  voice?: string
+  voice?: string | undefined
   /** 挂接的场景资产 id（Project.sceneBoards） */
-  sceneBoardId?: string
-  sceneImagePath?: string  // 场景参考图相对路径（空镜 t2v 图生视频用；可与场景板同源）
-  shotSize?: ShotSize       // 景别（AI 拆镜给出，决定首帧构图）
+  sceneBoardId?: string | undefined
+  sceneImagePath?: string | undefined // 场景参考图相对路径（空镜 t2v 图生视频用；可与场景板同源）
+  shotSize?: ShotSize | undefined // 景别（AI 拆镜给出，决定首帧构图）
   /** 本镜英文环境短语（LLM 拆镜给出，渲染场景提示；空镜 T2I/视频提示用） */
-  sceneEn?: string
-  firstFramePath?: string  // 镜头专用首帧图（场景+角色+姿态），i2v 优先使用，缺失时回退定妆照
+  sceneEn?: string | undefined
+  firstFramePath?: string | undefined // 镜头专用首帧图（场景+角色+姿态），i2v 优先使用，缺失时回退定妆照
   /** 镜头尾帧图：动作终点姿态；供首尾帧工作流与下镜连镜（上镜尾→下镜首） */
-  lastFramePath?: string
+  lastFramePath?: string | undefined
   /** 五元组·镜头语言：英文机位/运镜短语（static close-up, slow push-in, handheld 等） */
-  camera?: string
+  camera?: string | undefined
   /** 切镜方式（hard 硬切 / dissolve 叠化 / smash 强切）：决定剪辑转场与节奏 */
-  transition?: 'hard' | 'dissolve' | 'smash'
+  transition?: 'hard' | 'dissolve' | 'smash' | undefined
   /** 五元组·情绪：英文情绪短语（tense, heartbroken, relieved 等），驱动表演与光影 */
-  emotion?: string
+  emotion?: string | undefined
   /** 镜头光线条件（英文短语：时刻+条件+主光方向，如 golden hour rim light from left / rainy night street lamp spill / warm practical lamp key from above）。全剧同一场景相邻镜保持同光源方向 */
-  lighting?: string
+  lighting?: string | undefined
   /** 人物朝向与画面位置（英文：facing camera / three-quarter toward frame-left / walking right-to-left）。锁定跨镜位置，防人物瞬移 */
-  facing?: string
+  facing?: string | undefined
   /** 动作起点承接（英文：本镜开始时承接上一镜结尾的姿态/位置，如 standing at the door, hand on the handle）。防动作过程断裂 */
-  continuity?: string
+  continuity?: string | undefined
   /** 关键道具清单（LLM 分镜输出/人工补充）：注入首帧与视频提示词，防道具变样/消失 */
-  props?: string[]
+  props?: string[] | undefined
   /** 分镜图审核确认（视角/表情/人物数/场景/道具/构图六项核对后勾选） */
-  reviewed?: boolean
+  reviewed?: boolean | undefined
   /** 末帧人物一致性相似度（0~1，CLIP 余弦），仅人物镜渲染后填充 */
-  consistencyScore?: number
+  consistencyScore?: number | undefined
   /** 剪辑台：手动裁剪入点（秒，相对镜头原片起点；未设则用智能裁剪） */
-  trimStart?: number
+  trimStart?: number | undefined
   /** 剪辑台：手动裁剪出点（秒，相对镜头原片起点；未设则用智能裁剪） */
-  trimEnd?: number
+  trimEnd?: number | undefined
   /** 剪辑台：跳过该镜（不参与成片合成） */
-  skipped?: boolean
+  skipped?: boolean | undefined
   /** 一致性重渲后仍低于阈值：该镜未达质量线，拼接成片时将被剔除并显式提示（防漂移镜混入成片） */
-  lowConsistency?: boolean
+  lowConsistency?: boolean | undefined
   /** 角色混淆标记（多角色剧防张冠李戴）：渲染后相对判别，本镜输出人物更像另一角色的定妆（跨角色比对取最近），置 true 触发重渲/阻断 */
-  roleConfusion?: boolean
+  roleConfusion?: boolean | undefined
   /** 逐镜审核整改指令（LLM 审图未过审时生成的英文修正提示，注入下次渲染提示词） */
-  auditFix?: string
+  auditFix?: string | undefined
   /** 提示式审核留痕：渲染完成后快速技术审核未过的原因（不阻塞渲染，供用户后期逐镜整改） */
-  auditHint?: string
+  auditHint?: string | undefined
   /** 分镜级完整英文正向提示词（LLM 分析生成，渲染优先使用；未生成则回退工业级模板拼装） */
-  promptEn?: string
+  promptEn?: string | undefined
   /** 分镜级专属英文负向提示词（该镜穿帮/漂移风险，渲染并入视频负向指令） */
-  negativeEn?: string
+  negativeEn?: string | undefined
   /** 本镜时长规划（秒，3~6 秒短镜；按台词长度+动作复杂度计算） */
-  frameSeconds?: number
+  frameSeconds?: number | undefined
   /** 首帧提示词（动作起点姿态/站位/景别/表情/光线） */
-  firstFrameEn?: string
+  firstFrameEn?: string | undefined
   /** 中帧提示词（可选）：动作进行中的关键过渡姿态 */
-  midFrameEn?: string
+  midFrameEn?: string | undefined
   /** 尾帧提示词（动作完成态/离开方向/光效收束） */
-  lastFrameEn?: string
+  lastFrameEn?: string | undefined
   /** 下镜衔接状态（英文短语）：本镜尾帧为下一镜首帧提供什么（姿态/位置/道具状态） */
-  handoffToNext?: string
+  handoffToNext?: string | undefined
   /** 首尾帧转场提示词（英文，flf2v 首尾帧视频专用）：起始帧→结束帧的动态转场过程描述，
    *  按 A/B 差异分类选择策略（A 关联强→原地演变；B 差异大→运镜驱动），含 10 秒拆解，禁人名/技能词 */
-  transitionEn?: string
+  transitionEn?: string | undefined
   /** 实际渲染参数档案（引擎/seed/帧数/口型路径等），每次生产成功后覆盖 */
-  renderProfile?: RenderProfile
+  renderProfile?: RenderProfile | undefined
   status: 'pending' | 'rendering' | 'done' | 'failed'
-  audioPath?: string
+  audioPath?: string | undefined
   /** TTS 生成失败（含风控限流）时置 true：本镜静音出片，待补配音 */
-  audioFailed?: boolean
+  audioFailed?: boolean | undefined
   /** TTS 失败原因（展示用） */
-  audioFailedReason?: string
+  audioFailedReason?: string | undefined
   /** 重拆镜标记：导演重拆分镜时旧镜保留待删（normalize 时清除），投影层据此识别幽灵镜 */
-  intentReset?: boolean
-  rawVideoPath?: string
-  segmentPath?: string
-  error?: string
+  intentReset?: boolean | undefined
+  rawVideoPath?: string | undefined
+  segmentPath?: string | undefined
+  error?: string | undefined
   /** 失败分层（REQ-11 MP-04）：决定 UI 差异化引导（oom→检查显存 / transient→自动重试中 / permanent→改提示词） */
-  errorKind?: ErrorKind
+  errorKind?: ErrorKind | undefined
   /** 已发生的自动重试次数（降档/瞬时重试合计） */
-  retryCount?: number
+  retryCount?: number | undefined
   /** 自动重试预算（展示「已自动降档重试 1/2」） */
-  retryBudget?: number
+  retryBudget?: number | undefined
 }
 
 /** 失败分层：复用 errorClassify 的判定结果，跨进程暴露给 UI */
@@ -258,7 +264,14 @@ export type ComfyWSMessage =
   | { type: 'execution_start'; data: { prompt_id: string; timestamp: number } }
   | { type: 'execution_cached'; data: { prompt_id: string; timestamp: number; nodes: string[] } }
   | { type: 'executing'; data: { node: string | null; prompt_id: string; display_node?: string } }
-  | { type: 'executed'; data: { node: string; prompt_id: string; output: { images?: Array<{ filename: string; subfolder: string; type: string }> } } }
+  | {
+      type: 'executed'
+      data: {
+        node: string
+        prompt_id: string
+        output: { images?: Array<{ filename: string; subfolder: string; type: string }> }
+      }
+    }
   | { type: 'progress'; data: { value: number; max: number; prompt_id: string; node: string } }
   | { type: 'execution_success'; data: { prompt_id: string; timestamp: number } }
   | { type: 'execution_error'; data: { prompt_id: string; exception_message: string; traceback: string[] } }
@@ -349,21 +362,42 @@ export interface PromptAuditIssue {
   fixable: boolean
 }
 
-export interface PromptAuditTask {
+/** 体检任务公共部分（各归属的差异字段由下方判别联合收窄） */
+interface PromptAuditTaskBase {
   /** 任务唯一 id = 实体 id（shot id / character id / sceneBoard id / prop id） */
   id: string
-  scope: PromptAuditScope
   taskType: PromptAuditTaskType
   title: string
-  shotIndex?: number
-  shotId?: string
-  characterId?: string
-  sceneBoardId?: string
-  propId?: string
   fields: PromptAuditField[]
   issues: PromptAuditIssue[]
   status: PromptAuditStatus
 }
+
+/** P2-2：按 scope 判别收窄——消费方 `switch (task.scope)` 后可直接拿到对应实体 id，
+ *  不再需要 `task.shotId!` 这类断言，也不会出现「scope=prop 却带 shotId」的非法组合。 */
+export interface PromptAuditShotTask extends PromptAuditTaskBase {
+  scope: 'shot'
+  shotIndex: number
+  shotId: string
+}
+
+export interface PromptAuditCharacterTask extends PromptAuditTaskBase {
+  scope: 'character'
+  characterId: string
+}
+
+export interface PromptAuditSceneBoardTask extends PromptAuditTaskBase {
+  scope: 'sceneBoard'
+  sceneBoardId: string
+}
+
+export interface PromptAuditPropTask extends PromptAuditTaskBase {
+  scope: 'prop'
+  propId: string
+}
+
+export type PromptAuditTask =
+  PromptAuditShotTask | PromptAuditCharacterTask | PromptAuditSceneBoardTask | PromptAuditPropTask
 
 export interface PromptAuditReport {
   projectId: string
@@ -409,8 +443,8 @@ export interface PromptBulkFillFieldResult {
   field: string
   status: 'filled' | 'skipped' | 'failed' | 'unchanged'
   before: string
-  after?: string
-  error?: string
+  after?: string | undefined
+  error?: string | undefined
 }
 
 /** 批量 AI 补写进度事件（主进程逐字段推送，用于前端实时反馈） */
@@ -418,9 +452,9 @@ export interface PromptBulkFillProgress {
   projectId: string
   done: number
   total: number
-  currentTaskId?: string
-  currentField?: string
-  lastResult?: PromptBulkFillFieldResult
+  currentTaskId?: string | undefined
+  currentField?: string | undefined
+  lastResult?: PromptBulkFillFieldResult | undefined
 }
 
 /** 批量 AI 补写返回 */
@@ -446,8 +480,8 @@ export interface IpcApi {
     save(project: Project): Promise<void>
     delete(id: string): Promise<void>
     duplicate(id: string): Promise<Project>
-    importBgm(projectId: string): Promise<string>  // 选择并复制 BGM 到项目目录，返回相对路径
-    importPropImage(projectId: string, propId: string): Promise<string>  // 道具上传本地图片并复制到项目目录，返回相对路径
+    importBgm(projectId: string): Promise<string> // 选择并复制 BGM 到项目目录，返回相对路径
+    importPropImage(projectId: string, propId: string): Promise<string> // 道具上传本地图片并复制到项目目录，返回相对路径
     /** 导出项目包（zip）：项目文件 + 资产 + 成片；返回落盘路径，取消返回 null（REQ-20） */
     exportPackage(projectId: string, includeDirectorState?: boolean): Promise<string | null>
     /** 选择项目包并导入：总是分配新项目 id，重名标题自动加「-副本」；取消返回 null（REQ-20） */
@@ -492,7 +526,17 @@ export interface IpcApi {
   }
   ffmpeg: {
     concat(segmentPaths: string[], outputPath: string): Promise<string>
-    smartConcat(segments: Array<{ path: string; scene?: string; hasDialogue?: boolean; transition?: 'hard' | 'dissolve' | 'smash'; trimStart?: number; trimEnd?: number }>, outputPath: string): Promise<string>
+    smartConcat(
+      segments: Array<{
+        path: string
+        scene?: string
+        hasDialogue?: boolean
+        transition?: 'hard' | 'dissolve' | 'smash'
+        trimStart?: number
+        trimEnd?: number
+      }>,
+      outputPath: string,
+    ): Promise<string>
     mergeVideoAudio(videoPath: string, audioPath: string, outputPath: string): Promise<string>
     getDuration(filePath: string): Promise<number>
     burnSubtitles(videoPath: string, srtPath: string, outputPath: string): Promise<string>
@@ -505,7 +549,14 @@ export interface IpcApi {
     splitScript(script: string, genre: string): Promise<GeneratedShot[]>
     writeScript(idea: string, genre: string, title?: string): Promise<string>
     /** AI 剧本医生：审查剧本逻辑 bug，返回问题清单 + 修改后完整剧本 */
-    reviewScript(script: string, genre: string, title?: string): Promise<{ issues: Array<{ severity: 'block' | 'warn'; scene: string; problem: string; suggestion: string }>; revisedScript: string }>
+    reviewScript(
+      script: string,
+      genre: string,
+      title?: string,
+    ): Promise<{
+      issues: Array<{ severity: 'block' | 'warn'; scene: string; problem: string; suggestion: string }>
+      revisedScript: string
+    }>
     /** 视频拆解写剧本：抽帧后由多模态 LLM 看图扩写成短剧剧本 */
     writeScriptFromVideo(videoPath: string, genre: string): Promise<string>
   }
@@ -513,7 +564,7 @@ export interface IpcApi {
     importSceneImage(projectId: string): Promise<string>
   }
   subtitle: {
-    generate(projectId: string): Promise<string>  // 生成 SRT，返回相对路径
+    generate(projectId: string): Promise<string> // 生成 SRT，返回相对路径
   }
   /** 场景板：重建全景方位图 */
   scene: {
@@ -547,6 +598,8 @@ export interface IpcApi {
     resolvePath(relativePath: string): Promise<string>
     /** 本地媒体可播放 URL（本机 HTTP + Range，供 video/img src） */
     mediaUrl(relativePath: string): Promise<string>
+    /** 降采样缩略图 URL（长列表卡片用；主进程按 mtime 缓存 160px JPEG） */
+    thumbUrl(relativePath: string): Promise<string>
   }
   shell: {
     showItem(relativePath: string): Promise<void>
@@ -556,12 +609,17 @@ export interface IpcApi {
   tts: {
     preview(voice: string): Promise<string>
     /** Qwen3-TTS 语音克隆：参考音频 + 文本 → 克隆语音（相对路径） */
-    clone(text: string, refAudioPath: string, relativeOutput: string, opts?: { refText?: string; seed?: number }): Promise<string>
+    clone(
+      text: string,
+      refAudioPath: string,
+      relativeOutput: string,
+      opts?: { refText?: string; seed?: number },
+    ): Promise<string>
   }
   workflow: {
     list(): Promise<WorkflowMeta[]>
     getMeta(name: string): Promise<WorkflowMeta>
-    import(absolutePath: string): Promise<string>  // 导入工作流 JSON，返回工作流名称
+    import(absolutePath: string): Promise<string> // 导入工作流 JSON，返回工作流名称
     getParams(name: string): Promise<WorkflowParam[]>
     updateParam(name: string, nodeId: string, key: string, value: string | number | boolean): Promise<void>
   }
@@ -569,25 +627,27 @@ export interface IpcApi {
     generate(
       prompt: string,
       relativeOutput: string,
-      workflowNameOrOpts?: string | {
-        workflowName?: string
-        width?: number
-        height?: number
-        /** 参考图（i2i/融合工作流用），绝对或相对项目根路径 */
-        referenceImagePath?: string
-        referenceImagePaths?: string[]
-        /** 严格按工作流参数渲染（禁用尺寸/seed 覆盖） */
-        strictWorkflow?: boolean
-        /** 分镜级负向提示词（并入视频/图像负向指令） */
-        negative?: string
-        seed?: number
-        shouldAbort?: () => boolean
-      }
+      workflowNameOrOpts?:
+        | string
+        | {
+            workflowName?: string
+            width?: number
+            height?: number
+            /** 参考图（i2i/融合工作流用），绝对或相对项目根路径 */
+            referenceImagePath?: string
+            referenceImagePaths?: string[]
+            /** 严格按工作流参数渲染（禁用尺寸/seed 覆盖） */
+            strictWorkflow?: boolean
+            /** 分镜级负向提示词（并入视频/图像负向指令） */
+            negative?: string
+            seed?: number
+            shouldAbort?: () => boolean
+          },
     ): Promise<string>
     checkpoints(): Promise<string[]>
   }
   director: {
-    start(input: DirectorStartInput): Promise<string>  // 返回 projectId
+    start(input: DirectorStartInput): Promise<string> // 返回 projectId
     cancel(projectId: string): Promise<void>
     /** 请求暂停：当前阶段结束后停在确认点（不中断进行中的渲染） */
     pause(projectId: string): Promise<void>
@@ -599,7 +659,9 @@ export interface IpcApi {
      */
     resumeFrom(projectId: string, stage: DirectorStage): Promise<void>
     /** 重跑项目全部 i2v 镜一致性校验（新逻辑摘帽误杀标记，不触发重渲），返回复评统计 */
-    recheckConsistency(projectId: string): Promise<{ rechecked: number; cleared: number; stillLow: number; skipped: number }>
+    recheckConsistency(
+      projectId: string,
+    ): Promise<{ rechecked: number; cleared: number; stillLow: number; skipped: number }>
     /** 重拆镜：用当前剧本重新分析并替换分镜（保留资产），返回 {shots, characters, props} 计数 */
     reanalyze(projectId: string): Promise<{ shots: number; characters: number; props: number }>
     getState(projectId: string): Promise<DirectorState | null>
@@ -625,7 +687,10 @@ export interface IpcApi {
   skills: {
     list(): Promise<Skill[]>
     create(input: { name: string; description: string; promptTemplate: string }): Promise<Skill>
-    update(id: string, patch: Partial<Pick<Skill, 'name' | 'description' | 'enabled' | 'promptTemplate'>>): Promise<void>
+    update(
+      id: string,
+      patch: Partial<Pick<Skill, 'name' | 'description' | 'enabled' | 'promptTemplate'>>,
+    ): Promise<void>
     remove(id: string): Promise<void>
     toggle(id: string, enabled: boolean): Promise<void>
   }
@@ -672,9 +737,12 @@ export interface IpcApi {
 // ===== 工作流元数据 =====
 /** 工作流能力标签：供导演按用户意图自动匹配工作流（文生视频/图生视频/首尾帧/文生图/图生图/音频） */
 export type WorkflowCapability =
-  | 't2v' | 'i2v' | 'flf2v'   // 视频：文生/图生/首尾帧
-  | 't2i' | 'i2i'             // 图片：文生/图生
-  | 'audio'                   // 音频/TTS/音乐
+  | 't2v'
+  | 'i2v'
+  | 'flf2v' // 视频：文生/图生/首尾帧
+  | 't2i'
+  | 'i2i' // 图片：文生/图生
+  | 'audio' // 音频/TTS/音乐
   | 'other'
 
 export interface WorkflowMeta {
@@ -696,8 +764,8 @@ export interface WorkflowParam {
   key: string
   value: string | number | boolean
   type: 'string' | 'number' | 'boolean'
-  isPlaceholder: boolean  // 值为 $XXX$ 占位符（只读）
-  isConnection: boolean   // 值为节点连接引用数组（只读）
+  isPlaceholder: boolean // 值为 $XXX$ 占位符（只读）
+  isConnection: boolean // 值为节点连接引用数组（只读）
 }
 
 // ===== 工作流环境自检报告 =====
@@ -839,7 +907,7 @@ export interface AppSettings {
     defaultHeight: number
     defaultFrames: number
     timeout: number
-    lipSync: boolean  // 有台词镜头渲染后做音频驱动口型同步（需 ComfyUI 装 LatentSync 节点）
+    lipSync: boolean // 有台词镜头渲染后做音频驱动口型同步（需 ComfyUI 装 LatentSync 节点）
     /** 口型技术路线：auto=按引擎自动(H3原生口型, Wan走LatentSync)；latentsync=强制LatentSync；h3-native=仅H3原生口型不回退 */
     lipSyncMode: 'auto' | 'latentsync' | 'h3-native'
     /** 显存不足(OOM)时自动降帧数/步数重试一次 */
@@ -916,7 +984,7 @@ export interface AppSettings {
     volume: number
   }
   workflow: {
-    default: string  // 全局默认工作流名称
+    default: string // 全局默认工作流名称
     /** P2-2：按阶段覆盖工作流；留空回退 global.default / 内置默认（casting/scene/shot/prop） */
     casting?: string
     scene?: string
@@ -934,9 +1002,19 @@ export interface AppSettings {
     prop: string
   }
   llm: {
-    apiKey: string   // 火山方舟 API Key
-    baseUrl: string  // OpenAI 兼容端点，默认 https://ark.cn-beijing.volces.com/api/v3
-    model: string    // 推理接入点 / 模型 ID，如 ark-code-latest
+    /**
+     * API Key。SEC-04：`settings:get` 回传渲染层时恒为空串（明文只留在主进程内存），
+     * 保存时仅当 `apiKeyDirty === true` 才采用本字段，否则沿用磁盘旧值。
+     */
+    apiKey: string
+    /** SEC-04：渲染层只读标记——磁盘已存在密钥（不携带明文） */
+    hasApiKey?: boolean
+    /** SEC-04：渲染层只读标记——密钥掩码（如 `****abcd`），用于输入框占位提示 */
+    apiKeyMasked?: string
+    /** SEC-04：用户本次确实修改过 Key（含清空）时才置 true，避免「未改动即清空」误删密钥 */
+    apiKeyDirty?: boolean
+    baseUrl: string // OpenAI 兼容端点，默认 https://api.deepseek.com
+    model: string // 推理接入点 / 模型 ID，如 deepseek-chat
     /** 接口地址下拉记忆：用户保存过的 baseUrl 历史（去重置顶，最多 12 条） */
     baseUrlHistory?: string[]
   }
@@ -949,52 +1027,52 @@ export interface AppSettings {
 // ===== AI 拆分镜输出 =====
 export interface GeneratedShot {
   scene: string
-  action: string    // 英文动作提示词
+  action: string // 英文动作提示词
   dialogue: string
   type: 'i2v' | 't2v'
-  camera?: string   // 英文镜头语言短语（机位/运镜，需含机位高度）
-  transition?: 'hard' | 'dissolve' | 'smash' // 切镜方式
-  emotion?: string  // 英文情绪短语
-  lighting?: string // 光线条件（时刻+主光方向），全剧统一光源方向
-  facing?: string   // 人物朝向与画面位置
-  continuity?: string // 动作起点承接（衔接上一镜结尾）
+  camera?: string | undefined // 英文镜头语言短语（机位/运镜，需含机位高度）
+  transition?: 'hard' | 'dissolve' | 'smash' | undefined // 切镜方式
+  emotion?: string | undefined // 英文情绪短语
+  lighting?: string | undefined // 光线条件（时刻+主光方向），全剧统一光源方向
+  facing?: string | undefined // 人物朝向与画面位置
+  continuity?: string | undefined // 动作起点承接（衔接上一镜结尾）
   /** 镜头内出现的角色名列表（同镜多人时给出全部，空镜省略）；i2v 至少一个 */
-  characters?: string[]
+  characters?: string[] | undefined
   /** 镜头关键道具（英文名词，如 umbrella / sedan），提示词强约束 + 审核清单用 */
-  props?: string[]
+  props?: string[] | undefined
 }
 
 // ===== AI 导演：剧本分析结果 =====
 export interface AnalyzedCharacter {
-  name: string                  // 标准名（全名优先）
+  name: string // 标准名（全名优先）
   gender: 'male' | 'female'
-  age?: string                  // 年龄段（中文）
-  appearance: string            // 中文外貌描述
-  lookEn: string                // 英文外貌短语（逗号分隔，供 T2I）
-  aliases?: string[]            // 同一角色的其他指称（称呼/小名/头衔）
-  confidence?: 'high' | 'medium' | 'low'
+  age?: string | undefined // 年龄段（中文）
+  appearance: string // 中文外貌描述
+  lookEn: string // 英文外貌短语（逗号分隔，供 T2I）
+  aliases?: string[] | undefined // 同一角色的其他指称（称呼/小名/头衔）
+  confidence?: 'high' | 'medium' | 'low' | undefined
 }
 
 export interface AnalyzedShot extends GeneratedShot {
-  characterName?: string        // i2v 镜头的主角名（兼容单主角；多主角见 characters）
-  sceneEn?: string              // 英文场景短语（供空镜 T2I）
-  shotSize?: ShotSize           // 景别
+  characterName?: string | undefined // i2v 镜头的主角名（兼容单主角；多主角见 characters）
+  sceneEn?: string | undefined // 英文场景短语（供空镜 T2I）
+  shotSize?: ShotSize | undefined // 景别
   /** 本镜完整英文正向提示词（60~140 词）：场景/光线/运镜/动作/人物状态/道具/情绪/一致性约束，渲染时直接喂模型 */
-  promptEn?: string
+  promptEn?: string | undefined
   /** 本镜专属英文负向提示词（10~30 词）：该镜穿帮/漂移风险点，渲染时并入负向约束 */
-  negativeEn?: string
+  negativeEn?: string | undefined
   /** 首尾帧转场提示词（英文，flf2v 专用）：起始帧→结束帧动态转场，A/B 分类策略+10 秒拆解，禁人名/技能词 */
-  transitionEn?: string
+  transitionEn?: string | undefined
   /** 本镜时长规划（秒，3~6 秒短镜；按台词长度+动作复杂度计算） */
-  frameSeconds?: number
+  frameSeconds?: number | undefined
   /** 首帧提示词（动作起点姿态/站位/景别/表情/光线） */
-  firstFrameEn?: string
+  firstFrameEn?: string | undefined
   /** 中帧提示词（可选）：动作进行中的关键过渡姿态 */
-  midFrameEn?: string
+  midFrameEn?: string | undefined
   /** 尾帧提示词（动作完成态/离开方向/光效收束） */
-  lastFrameEn?: string
+  lastFrameEn?: string | undefined
   /** 下镜衔接状态（英文短语）：本镜尾帧为下一镜首帧提供什么（姿态/位置/道具状态） */
-  handoffToNext?: string
+  handoffToNext?: string | undefined
 }
 
 /** 场景清单：分镜阶段提取的场景视觉提示词，写入场景板 description 供场景图生成 */
@@ -1002,18 +1080,18 @@ export interface AnalyzeScene {
   /** 中文场景名（与分镜 scene 完全一致） */
   name: string
   /** 英文场景视觉提示词（25~60 词：天气/光线/空间/氛围/剧情事件） */
-  en?: string
+  en?: string | undefined
 }
 
 export interface AnalyzeResult {
-  logline?: string
+  logline?: string | undefined
   characters: AnalyzedCharacter[]
   shots: AnalyzedShot[]
   /** 全剧关键道具清单（LLM 从剧本提取；每项要求至少写入一镜 props/action，并生成道具定妆图资产） */
-  props?: PropAsset[]
+  props?: PropAsset[] | undefined
   /** 场景清单：场景名 → 场景图提示词（写入场景板 description） */
-  scenes?: AnalyzeScene[]
-  warnings?: string[]           // 后处理校验告警（如角色名无法匹配的镜头）
+  scenes?: AnalyzeScene[] | undefined
+  warnings?: string[] | undefined // 后处理校验告警（如角色名无法匹配的镜头）
 }
 
 /** 道具资产：分镜阶段提取的关键道具，含定妆图（生成后回填 imagePath） */
@@ -1024,15 +1102,14 @@ export interface PropAsset {
   /** 英文名（如 paper bag） */
   en: string
   /** 英文形态描述：锁形用，注入渲染提示词（如 brown paper bag with a rope handle, slightly worn） */
-  description?: string
+  description?: string | undefined
   /** 道具定妆图相对路径（projects/{pid}/props/xxx.png），生成后回填 */
-  imagePath?: string
+  imagePath?: string | undefined
 }
 
 // ===== AI 导演：流水线状态 =====
 export type DirectorStage =
-  | 'analyze' | 'casting' | 'scenes' | 'render'
-  | 'combine' | 'subtitle' | 'review' | 'bgm' | 'done'
+  'analyze' | 'casting' | 'scenes' | 'render' | 'combine' | 'subtitle' | 'review' | 'bgm' | 'done'
 
 /** 单镜审批/复审问题 */
 export interface ReviewIssue {
@@ -1151,11 +1228,11 @@ export interface DirectorStartInput {
   title: string
   genre: string
   script: string
-  bgmAbsolutePath?: string
+  bgmAbsolutePath?: string | undefined
   /** 阶段间确认点：列出的阶段结束后暂停，等待用户点"继续" */
-  gateStages?: DirectorStage[]
+  gateStages?: DirectorStage[] | undefined
   /** 复用已有项目 ID（项目对话里开拍时传入，避免重复创建空项目） */
-  existingProjectId?: string
+  existingProjectId?: string | undefined
 }
 
 // ===== 导演技能（可配置技能框架）=====
@@ -1283,83 +1360,99 @@ export const GENRE_TEMPLATES: GenreTemplate[] = [
   {
     key: '霸总',
     label: '霸总都市',
-    promptStyle: 'city-night practical lights, cool-teal key with warm fill accents, shallow DOF, restrained contrast, vertical short-drama look development'
+    promptStyle:
+      'city-night practical lights, cool-teal key with warm fill accents, shallow DOF, restrained contrast, vertical short-drama look development',
   },
   {
     key: '重生',
     label: '重生逆袭',
-    promptStyle: 'heightened emotional contrast, desaturated day / saturated night, punchy midtones, cinematic color timing for revenge drama'
+    promptStyle:
+      'heightened emotional contrast, desaturated day / saturated night, punchy midtones, cinematic color timing for revenge drama',
   },
   {
     key: '悬疑',
     label: '悬疑惊悚',
-    promptStyle: 'low-key chiaroscuro, negative fill, cool practical spill, noir grain, tense static frames with micro push-ins'
+    promptStyle:
+      'low-key chiaroscuro, negative fill, cool practical spill, noir grain, tense static frames with micro push-ins',
   },
   {
     key: '甜宠',
     label: '甜宠言情',
-    promptStyle: 'airy high-key lighting, soft pastel palette, gentle bokeh, bright skin tones, warm romantic glow, light dreamy haze'
+    promptStyle:
+      'airy high-key lighting, soft pastel palette, gentle bokeh, bright skin tones, warm romantic glow, light dreamy haze',
   },
   {
     key: '虐恋',
     label: '虐恋催泪',
-    promptStyle: 'moody desaturated grade, rain-washed atmosphere, lonely negative space, soft window light, tearful emotional close-ups'
+    promptStyle:
+      'moody desaturated grade, rain-washed atmosphere, lonely negative space, soft window light, tearful emotional close-ups',
   },
   {
     key: '战神',
     label: '战神归来',
-    promptStyle: 'high-contrast heroic grade, dramatic rim light, gritty urban textures, wide establishing power shots, bold shadow play'
+    promptStyle:
+      'high-contrast heroic grade, dramatic rim light, gritty urban textures, wide establishing power shots, bold shadow play',
   },
   {
     key: '穿越',
     label: '时空穿越',
-    promptStyle: 'anachronism blend, warm historical interiors with modern cool accents, dust-mote light shafts, period-correct costumes'
+    promptStyle:
+      'anachronism blend, warm historical interiors with modern cool accents, dust-mote light shafts, period-correct costumes',
   },
   {
     key: '古装',
     label: '古装仙侠',
-    promptStyle: 'wuxia cinematic look, flowing silk highlights, misty mountains, jade-and-gold palette, ethereal god rays, wire-work motion feel'
+    promptStyle:
+      'wuxia cinematic look, flowing silk highlights, misty mountains, jade-and-gold palette, ethereal god rays, wire-work motion feel',
   },
   {
     key: '玄幻',
     label: '玄幻修仙',
-    promptStyle: 'epic fantasy grade, luminous energy glows, dramatic scale contrast, mythical beast silhouettes, volumetric atmosphere'
+    promptStyle:
+      'epic fantasy grade, luminous energy glows, dramatic scale contrast, mythical beast silhouettes, volumetric atmosphere',
   },
   {
     key: '都市',
     label: '都市职场',
-    promptStyle: 'clean corporate realism, glass-and-steel reflections, neutral daylight grade, sharp modern geometry, professional pace'
+    promptStyle:
+      'clean corporate realism, glass-and-steel reflections, neutral daylight grade, sharp modern geometry, professional pace',
   },
   {
     key: '民国',
     label: '民国传奇',
-    promptStyle: 'vintage sepia-teal grade, art-deco interiors, opium-lamp warmth, period wardrobe, film-grain nostalgia'
+    promptStyle:
+      'vintage sepia-teal grade, art-deco interiors, opium-lamp warmth, period wardrobe, film-grain nostalgia',
   },
   {
     key: '校园',
     label: '青春校园',
-    promptStyle: 'fresh daylight, youthful brightness, soft-focus lens flare, pastel uniforms, energetic handheld moments'
+    promptStyle:
+      'fresh daylight, youthful brightness, soft-focus lens flare, pastel uniforms, energetic handheld moments',
   },
   {
     key: '喜剧',
     label: '爆笑喜剧',
-    promptStyle: 'vibrant saturated grade, lively fast pacing feel, broad dynamic poses, colorful practicals, upbeat bright look'
+    promptStyle:
+      'vibrant saturated grade, lively fast pacing feel, broad dynamic poses, colorful practicals, upbeat bright look',
   },
   {
     key: '科幻',
     label: '科幻未来',
-    promptStyle: 'neon-noir sci-fi grade, holographic UI accents, cool cyan-magenta palette, clean futuristic geometry, lens refraction glints'
+    promptStyle:
+      'neon-noir sci-fi grade, holographic UI accents, cool cyan-magenta palette, clean futuristic geometry, lens refraction glints',
   },
   {
     key: '宫廷',
     label: '古风宫斗',
-    promptStyle: 'imperial gold-crimson palette, ornate palace interiors, silk embroidery detail, candle-lit warmth, regal static compositions'
+    promptStyle:
+      'imperial gold-crimson palette, ornate palace interiors, silk embroidery detail, candle-lit warmth, regal static compositions',
   },
   {
     key: '家庭',
     label: '家庭伦理',
-    promptStyle: 'naturalistic kitchen-sink realism, soft window daylight, intimate domestic close-ups, muted honest color grade'
-  }
+    promptStyle:
+      'naturalistic kitchen-sink realism, soft window daylight, intimate domestic close-ups, muted honest color grade',
+  },
 ]
 
 export const IpcChannels = {
@@ -1413,6 +1506,7 @@ export const IpcChannels = {
   fileDelete: 'file:delete',
   fileResolvePath: 'file:resolvePath',
   fileMediaUrl: 'file:mediaUrl',
+  fileThumbUrl: 'file:thumbUrl',
   shellShowItem: 'shell:showItem',
   shellOpenPath: 'shell:openPath',
   ttsPreview: 'tts:preview',
@@ -1473,5 +1567,5 @@ export const IpcChannels = {
   dialogSelectDirectory: 'dialog:selectDirectory',
   dialogSelectFile: 'dialog:selectFile',
   dialogSaveFile: 'dialog:saveFile',
-  progress: 'project:progress'
+  progress: 'project:progress',
 } as const

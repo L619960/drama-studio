@@ -2,9 +2,7 @@ import { computed, reactive, ref, watch, type Ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { confirmDanger } from '../utils/confirm'
 import { throttleTap } from '../utils/throttle'
-import type {
-  ConversationMessage, ConversationToolEvent, DirectorState
-} from '../../../shared/ipcTypes'
+import type { ConversationMessage, ConversationToolEvent, DirectorState } from '../../../shared/ipcTypes'
 import { SELF_LEARN_PROMPT } from '../../../shared/ipcTypes'
 
 /** RC-02：未发送草稿按作用域存取（localStorage），切换会话域后自动恢复 */
@@ -30,20 +28,34 @@ function writeDraft(scope: string, text: string): void {
  * @param chatScope 对话作用域（projectId 或 'global'）
  * @param state     导演状态（用于动态推荐快捷指令 quickPrompts）
  */
-export function useDirectorChat(
-  chatScope: Ref<string>,
-  state: Ref<DirectorState | null>
-) {
+export function useDirectorChat(chatScope: Ref<string>, state: Ref<DirectorState | null>) {
   const messages = ref<ConversationMessage[]>([])
   // RC-02：未发送内容按对话作用域暂存，切换全局/项目对话后回来仍在输入框
   const inputText = ref(readDraft(chatScope.value))
   watch(inputText, (text) => writeDraft(chatScope.value, text))
-  watch(chatScope, (scope) => { inputText.value = readDraft(scope) })
   const sending = ref(false)
+  /** C-01：本组件被卸载但主进程仍在发送时，切回后靠轮询恢复发送态 */
+  let sendingPoll: ReturnType<typeof setInterval> | null = null
+  watch(chatScope, (scope) => {
+    // UI-01：切换项目/全局对话必须复位发送态并清掉旧作用域轮询，
+    // 否则旧 scope 的 in-flight 发送会让新 scope 永久卡在"发送中"
+    //（syncSending 见 sending=true 直接 return，刷新前无法再发消息）。
+    // 新作用域若确在发送，随后 loadChat() → syncSending() 会重新判定并接管轮询。
+    inputText.value = readDraft(scope)
+    if (sendingPoll) {
+      clearInterval(sendingPoll)
+      sendingPoll = null
+    }
+    sending.value = false
+    // 复位后按新作用域重新判定：若新 scope 确实在发送，恢复发送态并接管轮询
+    void syncSending()
+  })
   const expandedTools = reactive(new Set<string>())
   /** 滚动信号：递增后由子组件 watch 并按需滚底 */
   const scrollTick = ref(0)
-  function requestScroll(): void { scrollTick.value++ }
+  function requestScroll(): void {
+    scrollTick.value++
+  }
 
   /** 根据当前项目状态动态推荐快捷指令 */
   const quickPrompts = computed<string[]>(() => {
@@ -98,19 +110,21 @@ export function useDirectorChat(
   function renderMd(text: string): string {
     const esc = (s: string): string =>
       s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-    const inline = (s: string): string => esc(s)
-      .replace(/`([^`]+)`/g, '<code>$1</code>')
-      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    const inline = (s: string): string =>
+      esc(s)
+        .replace(/`([^`]+)`/g, '<code>$1</code>')
+        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     const lines = text.split('\n')
     const out: string[] = []
     let i = 0
     while (i < lines.length) {
       const line = lines[i]
+      if (line === undefined) break
       // 代码块
       if (line.startsWith('```')) {
         const buf: string[] = []
         i++
-        while (i < lines.length && !lines[i].startsWith('```')) buf.push(lines[i++])
+        while (i < lines.length && !(lines[i] ?? '').startsWith('```')) buf.push(lines[i++] ?? '')
         out.push(`<pre class="md-code">${esc(buf.join('\n'))}</pre>`)
         i++
         continue
@@ -118,8 +132,8 @@ export function useDirectorChat(
       // 无序列表
       if (/^[-*•] /.test(line)) {
         const items: string[] = []
-        while (i < lines.length && /^[-*•] /.test(lines[i])) {
-          items.push(`<li>${inline(lines[i].replace(/^[-*•] /, ''))}</li>`)
+        while (i < lines.length && /^[-*•] /.test(lines[i] ?? '')) {
+          items.push(`<li>${inline((lines[i] ?? '').replace(/^[-*•] /, ''))}</li>`)
           i++
         }
         out.push(`<ul>${items.join('')}</ul>`)
@@ -128,8 +142,8 @@ export function useDirectorChat(
       // 有序列表
       if (/^\d+\. /.test(line)) {
         const items: string[] = []
-        while (i < lines.length && /^\d+\. /.test(lines[i])) {
-          items.push(`<li>${inline(lines[i].replace(/^\d+\. /, ''))}</li>`)
+        while (i < lines.length && /^\d+\. /.test(lines[i] ?? '')) {
+          items.push(`<li>${inline((lines[i] ?? '').replace(/^\d+\. /, ''))}</li>`)
           i++
         }
         out.push(`<ol>${items.join('')}</ol>`)
@@ -160,10 +174,10 @@ export function useDirectorChat(
   /** 工具实时事件：权威列表返回前可能先到达，找不到消息就合成一条，send 返回后以全量列表为准 */
   function applyToolEvent(e: ConversationToolEvent): void {
     if (e.scope !== chatScope.value) return
-    const msg = messages.value.find(m => m.id === e.messageId)
+    const msg = messages.value.find((m) => m.id === e.messageId)
     if (msg) {
       if (!msg.toolCalls) msg.toolCalls = []
-      const idx = msg.toolCalls.findIndex(c => c.id === e.toolCall.id)
+      const idx = msg.toolCalls.findIndex((c) => c.id === e.toolCall.id)
       if (idx >= 0) msg.toolCalls[idx] = e.toolCall
       else msg.toolCalls.push(e.toolCall)
     } else {
@@ -172,7 +186,7 @@ export function useDirectorChat(
         role: 'assistant',
         content: '',
         ts: Date.now(),
-        toolCalls: [e.toolCall]
+        toolCalls: [e.toolCall],
       })
     }
     requestScroll()
@@ -199,13 +213,18 @@ export function useDirectorChat(
     } catch (e) {
       if (chatScope.value !== scope) return
       messages.value.push({
-        id: `err_${Date.now()}`, role: 'assistant',
+        id: `err_${Date.now()}`,
+        role: 'assistant',
         content: `对话服务出错：${e instanceof Error ? e.message : String(e)}`,
-        ts: Date.now(), error: true
+        ts: Date.now(),
+        error: true,
       })
     } finally {
-      sending.value = false
-      requestScroll()
+      // 作用域已切换时不能复位：旧 scope 的 in-flight 发送收尾会把新 scope 的发送态误清
+      if (chatScope.value === scope) {
+        sending.value = false
+        requestScroll()
+      }
     }
   }
 
@@ -214,16 +233,18 @@ export function useDirectorChat(
     if (!sending.value) return
     try {
       await window.api.conversation.stop(chatScope.value)
-    } catch { /* 主进程会在发送收尾时自行落盘 */ }
+    } catch {
+      /* 主进程会在发送收尾时自行落盘 */
+    }
   }
 
   /** 回退到某条用户消息之前：删除该消息及其后记录，用户可重新编辑发送 */
   async function rollbackMsg(m: ConversationMessage): Promise<void> {
     if (m.role !== 'user') return
-    const okRollback = await confirmDanger(
-      '将删除这条消息及其后的全部对话，回到此处重新交互。确定回退吗？',
-      { title: '回退对话', confirmText: '回退' }
-    )
+    const okRollback = await confirmDanger('将删除这条消息及其后的全部对话，回到此处重新交互。确定回退吗？', {
+      title: '回退对话',
+      confirmText: '回退',
+    })
     if (!okRollback) return
     const scope = chatScope.value
     try {
@@ -263,13 +284,18 @@ export function useDirectorChat(
     // 向前找触发本轮回答的最近一条 user 提问
     let userIdx = -1
     for (let i = list.length - 2; i >= 0; i--) {
-      if (list[i].role === 'user') { userIdx = i; break }
+      const item = list[i]
+      if (item?.role === 'user') {
+        userIdx = i
+        break
+      }
     }
     if (userIdx < 0) {
       ElMessage.warning('找不到对应的提问，无法重新生成回答')
       return
     }
     const userMsg = list[userIdx]
+    if (!userMsg) return
     const userContent = userMsg.content
     const scope = chatScope.value
     try {
@@ -315,7 +341,8 @@ export function useDirectorChat(
   async function clearChat(): Promise<void> {
     if (!messages.value.length) return
     const ok = await confirmDanger('确定清空与导演的对话记录吗？此操作不可恢复。', {
-      title: '清空对话', confirmText: '清空'
+      title: '清空对话',
+      confirmText: '清空',
     })
     if (!ok) return
     try {
@@ -329,7 +356,6 @@ export function useDirectorChat(
   }
 
   /** C-01：本组件未持有发送过程（路由切走时被卸载）但主进程仍在发送时，恢复 sending 态并轮询至完成后刷新 */
-  let sendingPoll: ReturnType<typeof setInterval> | null = null
   async function syncSending(): Promise<void> {
     if (sending.value || sendingPoll) return
     const scope = chatScope.value
@@ -342,16 +368,23 @@ export function useDirectorChat(
           try {
             const still = await window.api.conversation.isSending(scope)
             if (chatScope.value !== scope || !still) {
-              if (sendingPoll) { clearInterval(sendingPoll); sendingPoll = null }
+              if (sendingPoll) {
+                clearInterval(sendingPoll)
+                sendingPoll = null
+              }
               if (chatScope.value === scope) {
                 sending.value = false
                 await loadChat()
               }
             }
-          } catch { /* 下一轮再试 */ }
+          } catch {
+            /* 下一轮再试 */
+          }
         })()
       }, 2000)
-    } catch { /* 状态查询失败不影响主流程 */ }
+    } catch {
+      /* 状态查询失败不影响主流程 */
+    }
   }
 
   let unsubTool: (() => void) | null = null
@@ -361,14 +394,34 @@ export function useDirectorChat(
   function unsubscribeAll(): void {
     unsubTool?.()
     unsubTool = null
-    if (sendingPoll) { clearInterval(sendingPoll); sendingPoll = null }
+    if (sendingPoll) {
+      clearInterval(sendingPoll)
+      sendingPoll = null
+    }
   }
 
   return {
-    messages, inputText, sending, expandedTools, scrollTick,
+    messages,
+    inputText,
+    sending,
+    expandedTools,
+    scrollTick,
     quickPrompts,
-    loadChat, toggleTool, useQuick, renderMd, copyMsg, resendMsg,
-    sendMessage, stopSend, rollbackMsg, regenerateMsg, uploadAndSend, selfLearn, clearChat, applyToolEvent,
-    subscribe, unsubscribeAll
+    loadChat,
+    toggleTool,
+    useQuick,
+    renderMd,
+    copyMsg,
+    resendMsg,
+    sendMessage,
+    stopSend,
+    rollbackMsg,
+    regenerateMsg,
+    uploadAndSend,
+    selfLearn,
+    clearChat,
+    applyToolEvent,
+    subscribe,
+    unsubscribeAll,
   }
 }

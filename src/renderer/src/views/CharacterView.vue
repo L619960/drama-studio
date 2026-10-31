@@ -26,13 +26,7 @@
     </div>
 
     <div class="toolbar">
-      <el-input
-        v-model="searchQuery"
-        clearable
-        size="small"
-        placeholder="搜索角色名称 / 描述"
-        style="width: 240px"
-      >
+      <el-input v-model="searchQuery" clearable size="small" placeholder="搜索角色名称 / 描述" style="width: 240px">
         <template #prefix>
           <el-icon><Search /></el-icon>
         </template>
@@ -79,12 +73,26 @@
       >
         <div class="asset-row">
           <div class="asset-slot" @click="previewPathOf(char, 'face')">
-            <img v-if="faceOf(char) && urlCache[faceOf(char)]" :src="urlCache[faceOf(char)]" alt="面部定妆" />
+            <img
+              v-if="faceOf(char) && urlCache[faceOf(char)]"
+              :src="urlCache[faceOf(char)]"
+              alt="面部定妆"
+              loading="lazy"
+              decoding="async"
+              @error="invalidateFileUrl(faceOf(char))"
+            />
             <div v-else class="no-image">{{ faceOf(char) ? '文件已移动' : '未生成' }}</div>
             <span class="asset-label">面部</span>
           </div>
           <div class="asset-slot wide" @click="previewPathOf(char, 'body')">
-            <img v-if="char.bodySheetPath && urlCache[char.bodySheetPath]" :src="urlCache[char.bodySheetPath]" alt="三视图" />
+            <img
+              v-if="char.bodySheetPath && urlCache[char.bodySheetPath]"
+              :src="urlCache[char.bodySheetPath]"
+              alt="三视图"
+              loading="lazy"
+              decoding="async"
+              @error="invalidateFileUrl(char.bodySheetPath)"
+            />
             <div v-else class="no-image">{{ char.bodySheetPath ? '文件已移动' : '未生成' }}</div>
             <span class="asset-label">三视图</span>
           </div>
@@ -166,11 +174,17 @@
     </el-dialog>
 
     <el-dialog v-model="previewVisible" title="角色资产预览" width="640px">
-      <img :src="urlCache[previewPath]" style="width: 100%" />
+      <img
+        v-if="urlCache[previewPath]"
+        :src="urlCache[previewPath]"
+        style="width: 100%"
+        @error="invalidateFileUrl(previewPath)"
+      />
+      <div v-else class="no-image" style="padding: 24px">图片文件已缺失或损坏</div>
     </el-dialog>
 
     <el-dialog v-model="voicePreviewVisible" title="音色试听" width="420px">
-      <p style="color:var(--text-secondary); margin-bottom: 12px">{{ voicePreviewName }}</p>
+      <p style="color: var(--text-secondary); margin-bottom: 12px">{{ voicePreviewName }}</p>
       <audio v-if="voicePreviewUrl" :src="voicePreviewUrl" controls autoplay style="width: 100%" />
     </el-dialog>
   </div>
@@ -183,7 +197,7 @@ import { ElLoading, ElMessage } from 'element-plus'
 import { Plus, Upload, Edit, Delete, VideoPlay, CopyDocument, MagicStick, Search } from '@element-plus/icons-vue'
 import type { Project, Character, WorkflowMeta } from '../../../shared/ipcTypes'
 import { findDuplicateByName } from '../../../shared/assetNames'
-import { useFileUrl, clearFileUrlCache } from '../composables/useFileUrl'
+import { useFileUrl, clearFileUrlCache, invalidateFileUrl } from '../composables/useFileUrl'
 import { useRouteProjectId } from '../composables/useRouteProjectId'
 import { useContextMenu } from '../composables/useContextMenu'
 import { snapshot } from '../utils/snapshot'
@@ -197,7 +211,9 @@ import ErrorStateCard from '../components/common/ErrorStateCard.vue'
 const { urlCache, ensureFileUrl, ensureFileUrls } = useFileUrl()
 
 const router = useRouter()
-const projectId = useRouteProjectId((id) => { void loadProject(id) })
+const projectId = useRouteProjectId((id) => {
+  void loadProject(id)
+})
 
 const project = ref<Project | null>(null)
 /** REQ-17：三态区分——加载中（骨架）/ 加载失败（错误卡片）/ 已加载（空态或列表） */
@@ -226,8 +242,8 @@ const searchQuery = ref('')
 const filteredCharacters = computed(() => {
   const q = searchQuery.value.trim().toLowerCase()
   if (!q) return characters.value
-  return characters.value.filter(c =>
-    c.name.toLowerCase().includes(q) || (c.description || '').toLowerCase().includes(q)
+  return characters.value.filter(
+    (c) => c.name.toLowerCase().includes(q) || (c.description || '').toLowerCase().includes(q),
   )
 })
 
@@ -236,7 +252,7 @@ function faceOf(char: Character): string {
 }
 
 function isCharUsed(charId: string): boolean {
-  return (project.value?.shots || []).some(s => s.characterIds.includes(charId))
+  return (project.value?.shots || []).some((s) => s.characterIds.includes(charId))
 }
 
 onMounted(async () => {
@@ -245,8 +261,9 @@ onMounted(async () => {
   // 后台流程（导演流水线定妆/三视图/逐镜渲染）落盘后自动刷新面板，无需手动切页
   projectUpdatedUnsub.value = window.api.director.onProjectUpdated((e) => {
     if (e?.projectId === projectId.value) {
-      // 先清 URL 缓存（同名文件已更新，旧 mtime 戳 URL 会让浏览器继续显示旧图）
-      clearFileUrlCache()
+      // 先清 URL 缓存（同名文件已更新，旧 mtime 戳 URL 会让浏览器继续显示旧图）；
+      // UI-07：按当前项目前缀定向清理，避免清掉其它项目的缓存
+      clearFileUrlCache(`projects/${projectId.value}/`)
       void loadProject(projectId.value)
     }
   })
@@ -254,7 +271,7 @@ onMounted(async () => {
     const s = await window.api.settings.get()
     if (s?.tts?.defaultVoice) defaultVoice.value = s.tts.defaultVoice
     const wf = await window.api.workflow.list()
-    t2iWorkflows.value = wf.filter(w => w.capability === 't2i' || (!w.capability && !w.hasImageInput))
+    t2iWorkflows.value = wf.filter((w) => w.capability === 't2i' || (!w.capability && !w.hasImageInput))
     if (project.value?.assetWorkflows?.character) {
       charWorkflow.value = project.value.assetWorkflows.character
     }
@@ -285,8 +302,8 @@ async function loadProject(id?: string) {
       return
     }
     project.value = p
-    const paths = project.value.characters.flatMap(c =>
-      [c.faceImagePath, c.bodySheetPath, c.refImagePath].filter(Boolean) as string[]
+    const paths = project.value.characters.flatMap(
+      (c) => [c.faceImagePath, c.bodySheetPath, c.refImagePath].filter(Boolean) as string[],
     )
     await ensureFileUrls(paths)
   } catch (e) {
@@ -334,7 +351,7 @@ async function saveCharacter() {
       name,
       description: charForm.value.description,
       voice: charForm.value.voice,
-      refImagePath: ''
+      refImagePath: '',
     }
     project.value.characters.push(char)
   }
@@ -356,7 +373,7 @@ async function importImage(charId: string, kind: 'face' | 'body') {
   if (!project.value) return
   try {
     const imagePath = await window.api.character.importImage(projectId.value)
-    const char = project.value.characters.find(c => c.id === charId)
+    const char = project.value.characters.find((c) => c.id === charId)
     if (char) {
       if (kind === 'face') {
         char.faceImagePath = imagePath
@@ -382,7 +399,7 @@ async function saveWorkflowChoice(): Promise<void> {
   if (!project.value) return
   project.value.assetWorkflows = {
     ...(project.value.assetWorkflows || {}),
-    character: charWorkflow.value || undefined
+    ...(charWorkflow.value ? { character: charWorkflow.value } : {}),
   }
   try {
     await window.api.project.save(snapshot(project.value))
@@ -416,7 +433,7 @@ async function generateAssets(char: Character) {
 }
 
 async function previewPathOf(char: Character, kind: 'face' | 'body') {
-  const p = kind === 'face' ? faceOf(char) : (char.bodySheetPath || '')
+  const p = kind === 'face' ? faceOf(char) : char.bodySheetPath || ''
   if (!p) return
   await ensureFileUrl(p)
   previewPath.value = p
@@ -446,8 +463,8 @@ async function copyCharacter(char: Character) {
     id: `char_${Date.now()}`,
     name: `${char.name} (副本)`,
     refImagePath: char.refImagePath,
-    faceImagePath: char.faceImagePath,
-    bodySheetPath: char.bodySheetPath
+    ...(char.faceImagePath !== undefined ? { faceImagePath: char.faceImagePath } : {}),
+    ...(char.bodySheetPath !== undefined ? { bodySheetPath: char.bodySheetPath } : {}),
   }
   project.value.characters.push(copy)
   try {
@@ -463,7 +480,7 @@ async function deleteCharacter(char: Character) {
   if (!project.value) return
   if (!throttleTap('char-delete-' + char.id, 1000)) return
 
-  const usedBy = project.value.shots.filter(s => s.characterIds.includes(char.id))
+  const usedBy = project.value.shots.filter((s) => s.characterIds.includes(char.id))
   if (usedBy.length > 0) {
     menu.close()
     ElMessage.warning(`角色被 ${usedBy.length} 个分镜引用，无法删除`)
@@ -472,14 +489,14 @@ async function deleteCharacter(char: Character) {
 
   const ok = await confirmDanger(`确定删除角色「${char.name}」吗？删除后 5 秒内可撤销。`, {
     title: '删除角色',
-    confirmText: '删除'
+    confirmText: '删除',
   })
   menu.close()
   if (!ok) return
-  const at = project.value.characters.findIndex(c => c.id === char.id)
+  const at = project.value.characters.findIndex((c) => c.id === char.id)
   if (at < 0) return
   // REQ-16：内存暂存 + 5 秒撤销窗，撤销即原位恢复
-  project.value.characters = project.value.characters.filter(c => c.id !== char.id)
+  project.value.characters = project.value.characters.filter((c) => c.id !== char.id)
   try {
     await window.api.project.save(snapshot(project.value))
   } catch (e) {
@@ -487,31 +504,47 @@ async function deleteCharacter(char: Character) {
     ElMessage.error(`删除失败：${e instanceof Error ? e.message : String(e)}`)
     return
   }
-  showUndoToast(`角色「${char.name}」已删除`, async () => {
-    if (!project.value || project.value.characters.some(c => c.id === char.id)) return
-    project.value.characters.splice(Math.min(at, project.value.characters.length), 0, char)
-    try {
-      await window.api.project.save(snapshot(project.value))
-      ElMessage.success('已撤销删除')
-    } catch (e) {
-      ElMessage.error(`撤销失败：${e instanceof Error ? e.message : String(e)}`)
-    }
-  }, () => {})
+  showUndoToast(
+    `角色「${char.name}」已删除`,
+    async () => {
+      if (!project.value || project.value.characters.some((c) => c.id === char.id)) return
+      project.value.characters.splice(Math.min(at, project.value.characters.length), 0, char)
+      try {
+        await window.api.project.save(snapshot(project.value))
+        ElMessage.success('已撤销删除')
+      } catch (e) {
+        ElMessage.error(`撤销失败：${e instanceof Error ? e.message : String(e)}`)
+      }
+    },
+    () => {},
+  )
 }
 
 /** REQ-12 RA-12：音色短名统一取 shared 清单，三处下拉与命名不再各自维护 */
 function voiceName(voice: string) {
   return ttsVoiceName(voice)
 }
-
 </script>
 
 <style scoped>
-.empty-panel { padding: 36px 16px; }
-.wf-picker { display: flex; align-items: center; gap: 6px; margin-right: 4px; }
-.wf-label { font-size: 12px; color: var(--text-muted); }
-.toolbar { margin-bottom: 12px; }
-.character-grid {  display: grid;
+.empty-panel {
+  padding: 36px 16px;
+}
+.wf-picker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 4px;
+}
+.wf-label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.toolbar {
+  margin-bottom: 12px;
+}
+.character-grid {
+  display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 16px;
 }
@@ -519,9 +552,14 @@ function voiceName(voice: string) {
   cursor: context-menu;
   animation: fade-up var(--dur-slow) var(--ease-out) both;
 }
-.character-card :deep(.el-card__body) { padding: 14px; }
+.character-card :deep(.el-card__body) {
+  padding: 14px;
+}
 
-.asset-row { display: flex; gap: 8px; }
+.asset-row {
+  display: flex;
+  gap: 8px;
+}
 .asset-slot {
   position: relative;
   flex: 1;
@@ -534,20 +572,26 @@ function voiceName(voice: string) {
   cursor: pointer;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-weak);
-  transition: border-color var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
 }
 .asset-slot:hover {
   border-color: var(--glass-border-strong);
   transform: translateY(-1px);
 }
-.asset-slot.wide { flex: 1.4; }
+.asset-slot.wide {
+  flex: 1.4;
+}
 .asset-slot img {
   max-width: 100%;
   max-height: 100%;
   object-fit: cover;
   transition: transform var(--dur-slow) var(--ease-out);
 }
-.asset-slot:hover img { transform: scale(1.03); }
+.asset-slot:hover img {
+  transform: scale(1.03);
+}
 .asset-label {
   position: absolute;
   left: 8px;
@@ -560,18 +604,35 @@ function voiceName(voice: string) {
   border-radius: 6px;
   border: 1px solid var(--border-weak);
 }
-.no-image { color: var(--text-muted); font-size: 12px; }
-.char-info { padding: 12px 0 4px; }
+.no-image {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.char-info {
+  padding: 12px 0 4px;
+}
 .char-info h3 {
   font-family: var(--font-display);
   color: var(--text-primary);
   margin-bottom: 4px;
   font-size: 16px;
 }
-.char-info p { color: var(--text-secondary); font-size: 12px; margin: 2px 0; }
-.voice { color: var(--accent) !important; }
-.char-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-.menu-tip { margin-left: auto; font-size: 11px; color: var(--text-muted); }
+.char-info p {
+  color: var(--text-secondary);
+  font-size: 12px;
+  margin: 2px 0;
+}
+.voice {
+  color: var(--accent) !important;
+}
+.char-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.menu-tip {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-muted);
+}
 </style>
-
-

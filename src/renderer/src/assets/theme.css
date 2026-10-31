@@ -451,6 +451,35 @@ html.theme-warm body {
   border-bottom: 1px solid var(--border-weak) !important;
 }
 
+/* P2-13：el-table-v2（虚拟滚动表）沿用同一套玻璃变量；
+   其 __main/__left/__right 默认填充 --el-bg-color 实色，这里改透明以贴合玻璃面板 */
+.el-table-v2 {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: transparent;
+  --el-table-row-hover-bg-color: var(--bg-hover);
+  --el-table-border-color: var(--border-weak);
+  --el-table-header-text-color: var(--text-secondary);
+  --el-table-text-color: var(--text-primary);
+  --el-table-current-row-bg-color: var(--brand-dim);
+  color: var(--text-primary);
+}
+.el-table-v2__main,
+.el-table-v2__left,
+.el-table-v2__right {
+  background-color: transparent !important;
+}
+.el-table-v2__header-cell {
+  background-color: var(--bg-hover) !important;
+  font-weight: 550;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary) !important;
+}
+.el-table-v2__row {
+  border-bottom: 1px solid var(--border-weak);
+}
+
 /* 卡片默认轻投影，hover 抬升（统一视觉层次，纯 CSS 过渡） */
 .glass-card,
 .glass-panel {

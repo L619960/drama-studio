@@ -6,7 +6,7 @@ import {
   withTransientRetryImpl,
   selfHealStageImpl,
   concatDoneShotsImpl,
-  runPipelineImpl
+  runPipelineImpl,
 } from '../../src/main/core/directorPipeline'
 import { freshStateImpl } from '../../src/main/core/directorStateMachine'
 import { HEAL_MAX } from '../../src/main/core/directorConstants'
@@ -25,13 +25,16 @@ describe('directorPipeline', () => {
 
   afterEach(async () => {
     // emitStateImpl 的落盘是 fire-and-forget，留出完成窗口避免 Windows 句柄占用
-    await new Promise(r => setTimeout(r, 60))
+    await new Promise((r) => setTimeout(r, 60))
     await fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })
   })
 
   const settings = {
     render: { shotReviewGate: 'warn', finalReviewGate: 'block', perShotAudit: true, consistencyMode: 'warn' },
-    creation: { storyboard: { maxShots: 20 }, edit: { subtitleFontSize: 18, subtitleMarginV: 20, defaultBgmVolume: 30 } }
+    creation: {
+      storyboard: { maxShots: 20 },
+      edit: { subtitleFontSize: 18, subtitleMarginV: 20, defaultBgmVolume: 30 },
+    },
   }
 
   function makeAgent(over: Record<string, unknown> = {}) {
@@ -56,7 +59,7 @@ describe('directorPipeline', () => {
         load: vi.fn(async () => null),
         auditChecklist: vi.fn(async () => []),
         methodRules: vi.fn(async () => []),
-        loadErrorHint: () => ''
+        loadErrorHint: () => '',
       },
       settings: { get: vi.fn(async () => settings) },
       store: {
@@ -64,15 +67,15 @@ describe('directorPipeline', () => {
           title: '测试剧',
           shots: [],
           characters: [],
-          sceneBoards: []
+          sceneBoards: [],
         })),
-        save: vi.fn(async () => undefined)
+        save: vi.fn(async () => undefined),
       },
       llm: { diagnoseFailure: vi.fn(), reviewStory: vi.fn(), analyze: vi.fn(), auditImage: vi.fn() },
       ffmpeg: { getVideoInfo: vi.fn(async () => ({ hasAudio: true, durationSec: 3 })), smartConcatSegments: vi.fn() },
       queue: { start: vi.fn(), waitForFinish: vi.fn(), on: vi.fn(), off: vi.fn() },
       subtitles: { generate: vi.fn() },
-      ...over
+      ...over,
     }
     return agent
   }
@@ -86,22 +89,31 @@ describe('directorPipeline', () => {
 
     it('永久性错误立即抛出，不做退避', async () => {
       const err = new Error('模型不存在')
-      const fn = vi.fn(async () => { throw err })
+      const fn = vi.fn(async () => {
+        throw err
+      })
       await expect(withTransientRetryImpl(makeAgent(), fn)).rejects.toBe(err)
       expect(fn).toHaveBeenCalledTimes(1)
     })
 
     it('取消信号在等待期间生效：抛 CANCELLED', async () => {
       let cancelled = false
-      const fn = vi.fn(async () => { throw new Error('ECONNRESET') })
-      setTimeout(() => { cancelled = true }, 50)
-      await expect(withTransientRetryImpl(makeAgent(), fn, { isCancelled: () => cancelled }))
-        .rejects.toThrow('CANCELLED')
+      const fn = vi.fn(async () => {
+        throw new Error('ECONNRESET')
+      })
+      setTimeout(() => {
+        cancelled = true
+      }, 50)
+      await expect(withTransientRetryImpl(makeAgent(), fn, { isCancelled: () => cancelled })).rejects.toThrow(
+        'CANCELLED',
+      )
       expect(fn).toHaveBeenCalledTimes(1)
     })
 
     it('瞬时错误按 retries=0 直接抛出（不进入退避）', async () => {
-      const fn = vi.fn(async () => { throw new Error('status code 503') })
+      const fn = vi.fn(async () => {
+        throw new Error('status code 503')
+      })
       await expect(withTransientRetryImpl(makeAgent(), fn, { retries: 0 })).rejects.toThrow('503')
       expect(fn).toHaveBeenCalledTimes(1)
     })
@@ -131,7 +143,9 @@ describe('directorPipeline', () => {
       expect(retry).not.toHaveBeenCalled()
 
       agent.llm.diagnoseFailure.mockResolvedValueOnce({
-        canAutoFix: false, diagnosis: '参考图缺失', suggestion: '补传参考图'
+        canAutoFix: false,
+        diagnosis: '参考图缺失',
+        suggestion: '补传参考图',
       })
       await expect(selfHealStageImpl(agent, 'p1', 'render', '逐镜渲染', ['x'], retry)).resolves.toBe(false)
       const state = agent.states.get('p1')
@@ -143,7 +157,9 @@ describe('directorPipeline', () => {
       const agent = makeAgent()
       agent.states.set('p1', freshStateImpl(agent, 'p1', 't'))
       agent.llm.diagnoseFailure.mockResolvedValueOnce({
-        canAutoFix: true, diagnosis: '显存偶发不足', suggestion: ''
+        canAutoFix: true,
+        diagnosis: '显存偶发不足',
+        suggestion: '',
       })
       const retry = vi.fn(async () => undefined)
       await expect(selfHealStageImpl(agent, 'p1', 'render', '逐镜渲染', ['x'], retry)).resolves.toBe(true)
@@ -158,9 +174,13 @@ describe('directorPipeline', () => {
       const agent = makeAgent()
       agent.states.set('p1', freshStateImpl(agent, 'p1', 't'))
       agent.llm.diagnoseFailure.mockResolvedValueOnce({
-        canAutoFix: true, diagnosis: '可修', suggestion: ''
+        canAutoFix: true,
+        diagnosis: '可修',
+        suggestion: '',
       })
-      const retry = vi.fn(async () => { throw new Error('还是失败') })
+      const retry = vi.fn(async () => {
+        throw new Error('还是失败')
+      })
       await expect(selfHealStageImpl(agent, 'p1', 'render', '逐镜渲染', ['x'], retry)).resolves.toBe(false)
       const logs = agent.states.get('p1').logs
       expect(logs.some((l: { message: string }) => l.message.includes('自动重试仍未成功'))).toBe(true)
@@ -170,23 +190,38 @@ describe('directorPipeline', () => {
   describe('concatDoneShotsImpl', () => {
     it('没有已完成镜头时报错', async () => {
       const agent = makeAgent()
-      await expect(concatDoneShotsImpl(agent, 'p1', [], 'projects/p1/final.mp4'))
-        .rejects.toThrow('没有已完成可拼接的镜头')
+      await expect(concatDoneShotsImpl(agent, 'p1', [], 'projects/p1/final.mp4')).rejects.toThrow(
+        '没有已完成可拼接的镜头',
+      )
     })
 
     it('按 baseDir 拼接绝对路径并透传剪辑参数', async () => {
       const agent = makeAgent()
       const shots = [
-        { segmentPath: 'projects/p1/shots/a.mp4', scene: '天台', dialogue: '走吧', transition: 'hard', trimStart: 0.5, trimEnd: 1, skipped: false },
-        { segmentPath: 'projects/p1/shots/b.mp4', scene: '车内', dialogue: '', skipped: true }
+        {
+          segmentPath: 'projects/p1/shots/a.mp4',
+          scene: '天台',
+          dialogue: '走吧',
+          transition: 'hard',
+          trimStart: 0.5,
+          trimEnd: 1,
+          skipped: false,
+        },
+        { segmentPath: 'projects/p1/shots/b.mp4', scene: '车内', dialogue: '', skipped: true },
       ]
       await concatDoneShotsImpl(agent, 'p1', shots as never, 'projects/p1/final.mp4')
       const [segs, out] = agent.ffmpeg.smartConcatSegments.mock.calls[0]
       expect(segs.map((s: { path: string }) => s.path)).toEqual([
         path.join(dir, 'projects/p1/shots/a.mp4'),
-        path.join(dir, 'projects/p1/shots/b.mp4')
+        path.join(dir, 'projects/p1/shots/b.mp4'),
       ])
-      expect(segs[0]).toMatchObject({ scene: '天台', hasDialogue: true, transition: 'hard', trimStart: 0.5, trimEnd: 1 })
+      expect(segs[0]).toMatchObject({
+        scene: '天台',
+        hasDialogue: true,
+        transition: 'hard',
+        trimStart: 0.5,
+        trimEnd: 1,
+      })
       expect(segs[1]).toMatchObject({ hasDialogue: false, skipped: true })
       expect(out).toBe(path.join(dir, 'projects/p1/final.mp4'))
     })
@@ -200,11 +235,20 @@ describe('directorPipeline', () => {
         sceneBoards: [],
         shots: [
           {
-            id: 's1', index: 1, scene: '天台', type: 'i2v', action: '回头', dialogue: '走吧',
-            characterIds: ['c1'], shotSize: 'medium', frames: 81, status: 'done',
-            segmentPath: 'projects/p1/shots/s1.mp4', transition: 'hard'
-          }
-        ]
+            id: 's1',
+            index: 1,
+            scene: '天台',
+            type: 'i2v',
+            action: '回头',
+            dialogue: '走吧',
+            characterIds: ['c1'],
+            shotSize: 'medium',
+            frames: 81,
+            status: 'done',
+            segmentPath: 'projects/p1/shots/s1.mp4',
+            transition: 'hard',
+          },
+        ],
       }
     }
 
@@ -219,9 +263,16 @@ describe('directorPipeline', () => {
       state.stages.subtitle = { status: 'done', message: '字幕已烧录', percent: 100 }
       agent.states.set('p1', state)
 
-      await runPipelineImpl(agent, 'p1', {
-        title: '测试剧', genre: '都市', script: '剧本'
-      } as never, 'review')
+      await runPipelineImpl(
+        agent,
+        'p1',
+        {
+          title: '测试剧',
+          genre: '都市',
+          script: '剧本',
+        } as never,
+        'review',
+      )
 
       expect(agent.skills.load).toHaveBeenCalledWith(true)
       // 前置阶段未被重跑
@@ -249,9 +300,16 @@ describe('directorPipeline', () => {
       state.stages.subtitle = { status: 'done', message: '', percent: 100 }
       agent.states.set('p1', state)
 
-      await runPipelineImpl(agent, 'p1', {
-        title: '测试剧', genre: '都市', script: '剧本'
-      } as never, 'review')
+      await runPipelineImpl(
+        agent,
+        'p1',
+        {
+          title: '测试剧',
+          genre: '都市',
+          script: '剧本',
+        } as never,
+        'review',
+      )
 
       expect(state.stages.review.status).toBe('error')
       expect(state.stages.review.message).toContain('缺少音轨')
@@ -260,6 +318,34 @@ describe('directorPipeline', () => {
       // 硬门禁在 review 内直接收尾，不再进入 bgm，finalPath 不赋值
       expect(state.stages.done.message).toContain('复审未通过')
       expect(state.stages.bgm.status).toBe('pending')
+    })
+
+    it('分析阶段失败 → 阶段置 error、终态事件 success=false，后续阶段不执行', async () => {
+      const agent = makeAgent()
+      agent.llm.analyze.mockRejectedValue(new Error('LLM 请求失败：HTTP 400 InvalidSubscription'))
+      const state = freshStateImpl(agent, 'p1', '测试剧')
+      agent.states.set('p1', state)
+
+      await runPipelineImpl(
+        agent,
+        'p1',
+        {
+          title: '测试剧',
+          genre: '都市',
+          script: '剧本',
+        } as never,
+        'analyze',
+      )
+
+      expect(state.stages.analyze.status).toBe('error')
+      expect(state.stages.analyze.message).toContain('分析失败')
+      expect(state.running).toBe(false)
+      // 回归：分析失败曾被当成 success=true（前端显示「全部完成，成片已产出」）
+      expect(state.stages.done.status).toBe('error')
+      expect(state.stages.done.message).toContain('剧本分析失败')
+      const finished = agent.emit.mock.calls.find((c: any[]) => c[0] === 'finished')?.[1]
+      expect(finished).toMatchObject({ success: false, cancelled: false, projectId: 'p1' })
+      expect(state.stages.casting.status).toBe('pending')
     })
 
     it('复审叙事类提醒在 block 门禁下放行：阶段标记 done', async () => {
@@ -272,9 +358,16 @@ describe('directorPipeline', () => {
       state.stages.subtitle = { status: 'done', message: '', percent: 100 }
       agent.states.set('p1', state)
 
-      await runPipelineImpl(agent, 'p1', {
-        title: '测试剧', genre: '都市', script: '剧本'
-      } as never, 'review')
+      await runPipelineImpl(
+        agent,
+        'p1',
+        {
+          title: '测试剧',
+          genre: '都市',
+          script: '剧本',
+        } as never,
+        'review',
+      )
 
       // 叙事类提醒在 block 门禁下放行
       expect(state.stages.review.status).toBe('done')

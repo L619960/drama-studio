@@ -1,7 +1,7 @@
 /**
  * YuNet 人脸检测（OpenCV 官方 face_detection_yunet 2023mar）——子进程实现。
  *
- * 为什么必须开子进程：项目里 @xenova/transformers 内嵌 onnxruntime-node 1.14（CLIP 用），
+ * 为什么必须开子进程：历史版本项目里 @xenova/transformers 内嵌 onnxruntime-node 1.14（CLIP 用），
  * 人脸检测需要 1.20+（1.14 跑 YuNet 会原生崩溃）。同一进程先后加载两个大版本的
  * onnxruntime.dll 会触发 ERR_DLOPEN_FAILED（"The operating system cannot run %1"）。
  * 独立 Node 子进程只加载 1.20，天然隔离；单次推理约 1 秒，相对 18 分钟级渲染可忽略。
@@ -168,7 +168,7 @@ export class FaceDetector {
 
   /** ArcFace 识别模型是否可用（惰性下载；失败只影响人脸比对，自动回退全图 CLIP） */
   async recognitionAvailable(): Promise<boolean> {
-    if (!await this.available()) return false
+    if (!(await this.available())) return false
     if (!this.recAttempted) {
       this.recAttempted = true
       try {
@@ -221,7 +221,8 @@ export class FaceDetector {
   async detectPair(rgbPathA: string, rgbPathB: string): Promise<{ a: FaceBox[]; b: FaceBox[] } | null> {
     await this.ensure()
     return this.runWorker<{ a: FaceBox[]; b: FaceBox[] }>(
-      [path.join(this.modelDir, MODEL_FILE), rgbPathA, rgbPathB], true
+      [path.join(this.modelDir, MODEL_FILE), rgbPathA, rgbPathB],
+      true,
     )
   }
 
@@ -237,27 +238,21 @@ export class FaceDetector {
     try {
       await Promise.all([fs.writeFile(pA, rgbA), fs.writeFile(pB, rgbB)])
       return await this.runWorker<{ a: number[]; b: number[] }>(
-        ['embed', path.join(this.modelDir, REC_FILE), pA, pB], false
+        ['embed', path.join(this.modelDir, REC_FILE), pA, pB],
+        false,
       )
     } finally {
-      await Promise.all([
-        fs.unlink(pA).catch(() => undefined),
-        fs.unlink(pB).catch(() => undefined)
-      ])
+      await Promise.all([fs.unlink(pA).catch(() => undefined), fs.unlink(pB).catch(() => undefined)])
     }
   }
 
   private runWorker<T>(extraArgs: string[], permanentFail: boolean): Promise<T | null> {
-    return new Promise(resolve => {
-      const child = spawn(
-        process.execPath,
-        [this.workerPath, this.ortEntry!, ...extraArgs],
-        {
-          env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
-          stdio: ['ignore', 'pipe', 'pipe'],
-          windowsHide: true
-        }
-      )
+    return new Promise((resolve) => {
+      const child = spawn(process.execPath, [this.workerPath, this.ortEntry!, ...extraArgs], {
+        env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
+      })
       let stdout = ''
       let stderr = ''
       let settled = false
@@ -268,16 +263,20 @@ export class FaceDetector {
         log.warn('子进程超时')
         resolve(null)
       }, CHILD_TIMEOUT_MS)
-      child.stdout.on('data', d => { stdout += d.toString() })
-      child.stderr.on('data', d => { stderr += d.toString() })
-      child.on('error', e => {
+      child.stdout.on('data', (d) => {
+        stdout += d.toString()
+      })
+      child.stderr.on('data', (d) => {
+        stderr += d.toString()
+      })
+      child.on('error', (e) => {
         if (settled) return
         settled = true
         clearTimeout(timer)
         this.fail(permanentFail, e.message)
         resolve(null)
       })
-      child.on('close', code => {
+      child.on('close', (code) => {
         if (settled) return
         settled = true
         clearTimeout(timer)
@@ -286,7 +285,11 @@ export class FaceDetector {
           resolve(null)
           return
         }
-        const line = stdout.split(/\r?\n/).map(l => l.trim()).filter(l => l.startsWith('RESULT=')).pop()
+        const line = stdout
+          .split(/\r?\n/)
+          .map((l) => l.trim())
+          .filter((l) => l.startsWith('RESULT='))
+          .pop()
         if (!line) {
           this.fail(permanentFail, 'no result')
           resolve(null)

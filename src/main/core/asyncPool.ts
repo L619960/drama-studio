@@ -6,7 +6,7 @@ export async function mapPool<T, R>(
   items: readonly T[],
   concurrency: number,
   fn: (item: T, index: number) => Promise<R>,
-  opts?: { shouldAbort?: () => boolean; abortError?: Error }
+  opts?: { shouldAbort?: () => boolean; abortError?: Error },
 ): Promise<R[]> {
   if (items.length === 0) return []
   const results = new Array<R>(items.length)
@@ -19,7 +19,9 @@ export async function mapPool<T, R>(
       if (opts?.shouldAbort?.()) throw abortErr
       const i = next++
       if (i >= items.length) return
-      results[i] = await fn(items[i], i)
+      const item = items[i]
+      if (item === undefined) return
+      results[i] = await fn(item, i)
     }
   }
 

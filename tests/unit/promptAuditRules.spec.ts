@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { CROSS_SOURCE, SLANG_RE, wordCount, readStr, tidy, makeIssue, hasPeriodCue, statusOf, sortIssues } from '../../src/shared/promptAuditRules'
+import {
+  CROSS_SOURCE,
+  SLANG_RE,
+  wordCount,
+  readStr,
+  tidy,
+  makeIssue,
+  hasPeriodCue,
+  statusOf,
+  sortIssues,
+} from '../../src/shared/promptAuditRules'
 import type { PromptAuditIssue } from '../../src/shared/ipcTypes'
 import { reviewedIsValid } from '../../src/shared/pipelineGuards'
 
@@ -10,7 +20,7 @@ describe('串台拦截词表（2026-10-25 单源化后的验证）', () => {
     const poisoned = [
       'the same Lin Chuan from the reference image, holding a scissor',
       'Su Wan walks into the barber shop with a razor and comb',
-      'a dog-eared photograph on the mirror reflection, denim jacket over satchel'
+      'a dog-eared photograph on the mirror reflection, denim jacket over satchel',
     ]
     for (const p of poisoned) {
       expect(cross.test(p), `应命中: ${p}`).toBe(true)
@@ -22,7 +32,7 @@ describe('串台拦截词表（2026-10-25 单源化后的验证）', () => {
     const modern = [
       'chinese man in his late 20s wearing a grey t-shirt and jeans, standing in a modern office',
       'the same Li Wei from the reference image, navy shirt, dark trousers, outside a city apartment block',
-      'a white car parked on the street, morning sunlight'
+      'a white car parked on the street, morning sunlight',
     ]
     for (const m of modern) {
       expect(cross.test(m), `不应命中: ${m}`).toBe(false)
@@ -56,11 +66,21 @@ describe('reviewedIsValid（index.ts renderStart 门禁统一口径）', () => {
 // ===== 2026-10-30 补 promptAuditRules 函数覆盖 =====
 describe('promptAuditRules · wordCount / readStr / tidy / makeIssue / hasPeriodCue / statusOf / sortIssues', () => {
   describe('wordCount：英文词数', () => {
-    it('空串 → 0', () => { expect(wordCount('')).toBe(0) })
-    it('undefined/falsy → 0（text ? ... : 0）', () => { expect(wordCount('')).toBe(0) })
-    it('纯英文 → 正确计数', () => { expect(wordCount('a young woman walks')).toBe(4) })
-    it('含撇号缩写 → 算一个词', () => { expect(wordCount("don't stop")).toBe(2) })
-    it('含数字 → 不算词', () => { expect(wordCount('scene 12 shot 3')).toBe(2) })
+    it('空串 → 0', () => {
+      expect(wordCount('')).toBe(0)
+    })
+    it('undefined/falsy → 0（text ? ... : 0）', () => {
+      expect(wordCount('')).toBe(0)
+    })
+    it('纯英文 → 正确计数', () => {
+      expect(wordCount('a young woman walks')).toBe(4)
+    })
+    it('含撇号缩写 → 算一个词', () => {
+      expect(wordCount("don't stop")).toBe(2)
+    })
+    it('含数字 → 不算词', () => {
+      expect(wordCount('scene 12 shot 3')).toBe(2)
+    })
   })
 
   describe('readStr：严格取字符串字段', () => {
@@ -118,17 +138,27 @@ describe('promptAuditRules · wordCount / readStr / tidy / makeIssue / hasPeriod
         field: 'enPrompt',
         fieldLabel: '英文提示词',
         message: '缺主角',
-        fixable: true
+        fixable: true,
       })
     })
   })
 
   describe('hasPeriodCue：古装/年代线索命中', () => {
-    it('古装剧 → true', () => { expect(hasPeriodCue('古装武侠剧')).toBe(true) })
-    it('民国 → true', () => { expect(hasPeriodCue('民国上海滩')).toBe(true) })
-    it('现代剧 → false', () => { expect(hasPeriodCue('都市言情')).toBe(false) })
-    it('空串 → false', () => { expect(hasPeriodCue('')).toBe(false) })
-    it('undefined → false', () => { expect(hasPeriodCue(undefined)).toBe(false) })
+    it('古装剧 → true', () => {
+      expect(hasPeriodCue('古装武侠剧')).toBe(true)
+    })
+    it('民国 → true', () => {
+      expect(hasPeriodCue('民国上海滩')).toBe(true)
+    })
+    it('现代剧 → false', () => {
+      expect(hasPeriodCue('都市言情')).toBe(false)
+    })
+    it('空串 → false', () => {
+      expect(hasPeriodCue('')).toBe(false)
+    })
+    it('undefined → false', () => {
+      expect(hasPeriodCue(undefined as unknown as string)).toBe(false)
+    })
   })
 
   describe('statusOf：issues → 审计状态', () => {
@@ -140,11 +170,13 @@ describe('promptAuditRules · wordCount / readStr / tidy / makeIssue / hasPeriod
       const issues: PromptAuditIssue[] = [makeIssue('x', 'warn', 'f', 'F', 'm', true)]
       expect(statusOf(issues)).toBe('warn')
     })
-    it('空数组 → ok', () => { expect(statusOf([])).toBe('ok') })
+    it('空数组 → ok', () => {
+      expect(statusOf([])).toBe('ok')
+    })
     it('error + warn → error 优先', () => {
       const issues: PromptAuditIssue[] = [
         makeIssue('x', 'warn', 'f', 'F', 'm', true),
-        makeIssue('y', 'error', 'f', 'F', 'm', true)
+        makeIssue('y', 'error', 'f', 'F', 'm', true),
       ]
       expect(statusOf(issues)).toBe('error')
     })
@@ -154,31 +186,31 @@ describe('promptAuditRules · wordCount / readStr / tidy / makeIssue / hasPeriod
     it('warn 然后 error → error 在前', () => {
       const issues: PromptAuditIssue[] = [
         makeIssue('a', 'warn', 'f', 'F', 'm', true),
-        makeIssue('b', 'error', 'f', 'F', 'm', true)
+        makeIssue('b', 'error', 'f', 'F', 'm', true),
       ]
       const sorted = sortIssues(issues)
-      expect(sorted[0].code).toBe('b')
-      expect(sorted[1].code).toBe('a')
+      expect(sorted[0]?.code).toBe('b')
+      expect(sorted[1]?.code).toBe('a')
     })
 
     it('同级保持稳定', () => {
       const issues: PromptAuditIssue[] = [
         makeIssue('a', 'error', 'f', 'F', 'm', true),
-        makeIssue('b', 'error', 'f', 'F', 'm', true)
+        makeIssue('b', 'error', 'f', 'F', 'm', true),
       ]
       const sorted = sortIssues(issues)
-      expect(sorted[0].code).toBe('a')
-      expect(sorted[1].code).toBe('b')
+      expect(sorted[0]?.code).toBe('a')
+      expect(sorted[1]?.code).toBe('b')
     })
 
     it('不修改原数组', () => {
       const issues: PromptAuditIssue[] = [
         makeIssue('a', 'warn', 'f', 'F', 'm', true),
-        makeIssue('b', 'error', 'f', 'F', 'm', true)
+        makeIssue('b', 'error', 'f', 'F', 'm', true),
       ]
       const sorted = sortIssues(issues)
       expect(sorted).not.toBe(issues) // 新数组
-      expect(issues[0].code).toBe('a') // 原数组不变
+      expect(issues[0]?.code).toBe('a') // 原数组不变
     })
   })
 })

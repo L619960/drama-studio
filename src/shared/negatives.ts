@@ -1,10 +1,19 @@
 /**
  * 负向提示与写实锁域：视频负向拼装、写实负向/正向加强、场景/定妆负向、
  * OOC 服装负向、老年漂移负向、负向插槽判断。
- * 依赖：promptConstants、promptUtils、motion（动作判定正则）、promptDrift（lookAllowsElderly）。
+ * 依赖：promptConstants、promptLexicon（共享词表）、promptUtils、motion（动作判定正则）、
+ *       promptDrift（lookAllowsElderly）、castAppearance（isPeriodGenre）。
  */
 
 import { REALISM_NEGATIVE, VIDEO_NEGATIVE_BASE, VIDEO_NEGATIVE_MOTION_SUPPRESS } from './promptConstants'
+import {
+  ELDERLY_NEGATIVE_TERMS,
+  INDOOR_SPACE_RE,
+  OOC_WARDROBE_CORE,
+  OOC_WARDROBE_NEGATIVE_EXTRA,
+  OUTDOOR_SPACE_RE,
+  SKIN_FLAW_TERMS,
+} from './promptLexicon'
 import { mergeNegative } from './promptUtils'
 import { DISPLACEMENT_ACTION_RE, STRONG_ACTION_RE } from './motion'
 import { lookAllowsElderly } from './promptDrift'
@@ -14,14 +23,11 @@ import { isPeriodGenre } from './castAppearance'
  *  定妆已有的服装词跳过（否则与身份锁自相矛盾——定妆穿西装却负向 no blazer）。 */
 export function oocWardrobeNegativeFor(lookEn: string): string {
   const lock = (lookEn || '').toLowerCase()
-  const terms = [
-    'apron', 'vest', 'hat', 'cap', 'beanie', 'hood', 'necktie', 'tie', 'bow tie',
-    'scarf', 'shawl', 'stole', 'necklace', 'pendant', 'earrings', 'bracelet', 'watch',
-    'glasses', 'sunglasses', 'purse', 'handbag', 'shoulder bag', 'backpack',
-    'gown', 'blazer', 'suit jacket', 'uniform', 'overalls', 'lab coat',
-    'name tag', 'waiter costume', 'apron dress', 'cardigan', 'blouse', 'turtleneck sweater'
-  ]
-  return terms.filter(t => !lock.includes(t)).map(t => `no ${t}`).join(', ')
+  const terms = [...OOC_WARDROBE_CORE, ...OOC_WARDROBE_NEGATIVE_EXTRA]
+  return terms
+    .filter((t) => !lock.includes(t))
+    .map((t) => `no ${t}`)
+    .join(', ')
 }
 
 /** 按镜型条件拼装系统负向：位移镜与强动作镜跳过动作压制组（否则会压制剧本要求的
@@ -40,17 +46,20 @@ export function realismPositiveExtra(lock: 'standard' | 'strong' = 'standard'): 
 
 export function realismNegativeFor(lock: 'standard' | 'strong' = 'standard'): string {
   // 只保留病变/严重瑕疵；细纹、胡茬、浅痣、肤色不匀属于真实皮肤纹理，压制会得到塑料脸
-  const cleanSkin =
-    'acne, acne scars, pockmarks, rashes, sunburn, peeling skin, ' +
-    'dermatitis, eczema, skin disease, lumps, bumps, skin tags, warts, cysts, tumors, growths, protrusions, raised skin, pimples, greasy skin'
+  const cleanSkin = SKIN_FLAW_TERMS.join(', ')
   if (lock !== 'strong') return mergeNegative(REALISM_NEGATIVE, cleanSkin)
   return mergeNegative(
     REALISM_NEGATIVE,
     [
-      'beautified face', 'soft focus glamour', 'k-pop idol retouch', 'plastic specular skin',
-      'wardrobe redesign', 'hairstyle change', 'age shift'
+      'beautified face',
+      'soft focus glamour',
+      'k-pop idol retouch',
+      'plastic specular skin',
+      'wardrobe redesign',
+      'hairstyle change',
+      'age shift',
     ].join(', '),
-    cleanSkin
+    cleanSkin,
   )
 }
 
@@ -89,11 +98,7 @@ const EMPTY_SCENE_NEGATIVE =
 
 /** 室内外空间负向：室内场景被画成临街/外景是本项目高频事故
  *  （实测「男厕所」全景 = 雨夜临街公厕 + 汽车 + 马路）。正向已声明 interior，
- *  这里再用负向压住室外元素，双保险。 */
-const INDOOR_SPACE_RE =
-  /室内|厕所|洗手间|卫生间|浴室|卧室|厨房|办公室|会议|电梯|走廊|楼道|大厅|前台|包间|包厢|房|店|酒吧|餐厅|会所|\b(indoor|interior|inside|restroom|bathroom|toilet|room|suite|office|lobby|corridor|hallway|elevator|kitchen|restaurant|bar)\b/i
-const OUTDOOR_SPACE_RE =
-  /街|路|巷|广场|公园|海|山|桥|天台|露台|工地|码头|停车场|院|小区|野外|郊外|田|河|湖|车站|站台|\b(outdoor|street|road|alley|plaza|park|beach|rooftop|dock|pier|field|forest)\b/i
+ *  这里再用负向压住室外元素，双保险。空间判定词表由 promptLexicon 单一维护。 */
 const OUTDOOR_NOISE_NEGATIVE =
   'street, road, sidewalk, asphalt, traffic, car, vehicle, night street, city skyline, sky, ' +
   'exterior building facade, window view of street, outdoor scenery, parking lot, rain-soaked street, ' +
@@ -119,7 +124,7 @@ export function emptySceneNegativeFor(lock: 'standard' | 'strong' = 'standard', 
 const CASTING_BG_NEGATIVE =
   'street, city, cityscape, road, vehicles, outdoor scenery, rain, snow, crowd, background people, window view, detailed background, textured backdrop, ' +
   'street lamp, floor lamp, standing lamp, light stand, studio light, tripod, lantern, candle, wall lamp, vintage wall lantern, gas lamp, ' +
-  'wet ground, puddle, water reflection on ground, stone pavement, wet pavement, outdoor floor, wooden floor, carpet';
+  'wet ground, puddle, water reflection on ground, stone pavement, wet pavement, outdoor floor, wooden floor, carpet'
 
 export function castingNegativeFor(lock: 'standard' | 'strong' = 'standard', genre?: string): string {
   const era = eraNegativeFor(genre)
@@ -131,7 +136,7 @@ export function castingNegativeFor(lock: 'standard' | 'strong' = 'standard', gen
 /** 定妆不是老年时，负向压住老年脸，避免正向漏网后仍被画成老头。 */
 export function ageDriftNegativeFor(lookEn: string): string {
   if (!lookEn?.trim() || lookAllowsElderly(lookEn)) return ''
-  return 'old man, old woman, elderly face, white stubble, grey stubble, white beard, age shift, different person'
+  return ELDERLY_NEGATIVE_TERMS
 }
 
 /** 首帧/尾帧人数负向：单人镜必须压住「第二个人」，否则会被画成两人同框
@@ -143,10 +148,10 @@ export function frameCrowdNegativeFor(count: number): string {
   if (count <= 1) {
     return mergeNegative(
       'two people, multiple people, extra person, second person, crowd, background figures, ' +
-      'multiple faces, couple, group of people, passerby, ' +
-      'two people facing each other, second person as main subject, group of people as main subject, ' +
-      'people standing side by side in foreground, another character in the same frame',
-      hands
+        'multiple faces, couple, group of people, passerby, ' +
+        'two people facing each other, second person as main subject, group of people as main subject, ' +
+        'people standing side by side in foreground, another character in the same frame',
+      hands,
     )
   }
   return mergeNegative('crowd, extra people beyond the specified count, duplicate same person', hands)
@@ -176,7 +181,7 @@ export interface NegativeOverrides {
 export function withNegativeOverride(
   base: string,
   overrides: NegativeOverrides | undefined | null,
-  stage: NegativeStage
+  stage: NegativeStage,
 ): string {
   const extra = (overrides?.[stage] || '').trim()
   return extra ? mergeNegative(base, extra) : base

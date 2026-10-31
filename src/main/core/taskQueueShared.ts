@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs'
 import * as fs from 'node:fs/promises'
 
 /** 队列任务项（项目/镜头复合键由 TaskQueue.shotKey 生成） */
@@ -14,28 +13,45 @@ export const CANCEL_ERROR = '__CANCELLED__'
 export const LORA_T2V_TURBO = 'minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors'
 export const LORA_R2V_TURBO = 'minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors'
 
-/** 读 PNG/JPEG 尺寸（不引入 sharp，纯 Node Buffer 解析） */
-export function readImageSize(abs: string): { width: number; height: number } | null {
+/**
+ * 读 PNG/JPEG 尺寸（不引入 sharp，纯 Node Buffer 解析）。
+ * CORE-12：只异步读文件头部（128KB 上限），避免渲染热路径每镜同步读整张图
+ * （4K 首帧可达数 MB）；JPEG 的 SOF 段通常在头部，超出窗口时返回 null 由调用方回退默认画幅。
+ */
+export async function readImageSize(abs: string): Promise<{ width: number; height: number } | null> {
+  const HEAD_SIZE = 128 * 1024
+  let fh: fs.FileHandle | undefined
   try {
-    const buf = readFileSync(abs)
+    fh = await fs.open(abs, 'r')
+    const stat = await fh.stat()
+    const len = Math.min(HEAD_SIZE, stat.size)
+    if (len <= 0) return null
+    const raw = Buffer.alloc(len)
+    const { bytesRead } = await fh.read(raw, 0, len, 0)
+    const buf = raw.subarray(0, bytesRead)
     if (buf.length > 24 && buf[0] === 0x89 && buf[1] === 0x50) {
       return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) }
     }
     if (buf.length > 4 && buf[0] === 0xff && buf[1] === 0xd8) {
       let i = 2
       while (i < buf.length - 8) {
-        if (buf[i] !== 0xff) { i++; continue }
+        if (buf[i] !== 0xff) {
+          i++
+          continue
+        }
         const marker = buf[i + 1]
         if (marker === 0xc0 || marker === 0xc1 || marker === 0xc2) {
           return { height: buf.readUInt16BE(i + 5), width: buf.readUInt16BE(i + 7) }
         }
-        const len = buf.readUInt16BE(i + 2)
-        if (len < 2) break
-        i += 2 + len
+        const lenSeg = buf.readUInt16BE(i + 2)
+        if (lenSeg < 2) break
+        i += 2 + lenSeg
       }
     }
   } catch {
     return null
+  } finally {
+    await fh?.close().catch(() => undefined)
   }
   return null
 }

@@ -38,17 +38,20 @@ export class CandidatePickService {
     llmPick: boolean
   }): Promise<PickResult> {
     const list = opts.candidates.filter(Boolean)
-    if (list.length === 0) throw new Error('抽卡失败：无可用候选')
+    const first = list[0]
+    if (!first) throw new Error('抽卡失败：无可用候选')
     if (list.length === 1) {
-      return { winner: list[0], reason: '唯一候选', rejected: [] }
+      return { winner: first, reason: '唯一候选', rejected: [] }
     }
 
     const byScore = [...list].sort((a, b) => (b.score ?? -1) - (a.score ?? -1))
+    const top = byScore[0]
+    if (!top) throw new Error('抽卡失败：无可用候选')
     if (!opts.llmPick) {
       return {
-        winner: byScore[0],
-        reason: `按分数取最高（${byScore[0].score ?? 'n/a'}）`,
-        rejected: byScore.slice(1)
+        winner: top,
+        reason: `按分数取最高（${top.score ?? 'n/a'}）`,
+        rejected: byScore.slice(1),
       }
     }
 
@@ -59,21 +62,21 @@ export class CandidatePickService {
         candidates: list.map((c, i) => ({
           index: i + 1,
           seed: c.seed,
-          score: c.score,
-          note: c.note || ''
-        }))
+          ...(c.score !== undefined ? { score: c.score } : {}),
+          note: c.note || '',
+        })),
       })
-      const winner = list[chosen.index - 1] || byScore[0]
+      const winner = list[chosen.index - 1] ?? top
       return {
         winner,
         reason: chosen.reason || `LLM 选中候选 #${chosen.index}`,
-        rejected: list.filter(c => c.id !== winner.id)
+        rejected: list.filter((c) => c.id !== winner.id),
       }
     } catch {
       return {
-        winner: byScore[0],
-        reason: `LLM 抽卡失败，回退分数最高（${byScore[0].score ?? 'n/a'}）`,
-        rejected: byScore.slice(1)
+        winner: top,
+        reason: `LLM 抽卡失败，回退分数最高（${top.score ?? 'n/a'}）`,
+        rejected: byScore.slice(1),
       }
     }
   }
@@ -94,24 +97,26 @@ export class CandidatePickService {
     }
     if (opts.keepRejected === false) {
       for (const rel of opts.rejectedRels) {
-        try { await fs.unlink(path.join(opts.baseDir, rel)) } catch { /* ignore */ }
+        try {
+          await fs.unlink(path.join(opts.baseDir, rel))
+        } catch {
+          /* ignore */
+        }
       }
       return
     }
     for (const rel of opts.rejectedRels) {
       try {
         const abs = path.join(opts.baseDir, rel)
-        const dest = path.join(
-          path.dirname(finalAbs),
-          'candidates',
-          path.basename(rel)
-        )
+        const dest = path.join(path.dirname(finalAbs), 'candidates', path.basename(rel))
         await fs.mkdir(path.dirname(dest), { recursive: true })
         await fs.rename(abs, dest).catch(async () => {
           await fs.copyFile(abs, dest)
           await fs.unlink(abs).catch(() => undefined)
         })
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
   }
 }

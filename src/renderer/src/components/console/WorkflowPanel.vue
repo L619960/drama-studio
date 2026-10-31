@@ -14,13 +14,7 @@
           content="当前为「一口气跑到底」，所有阶段确认点已关闭；点击可重新启用。"
           placement="bottom"
         >
-          <el-tag
-            type="warning"
-            effect="dark"
-            size="small"
-            class="state-tag gates-off-chip"
-            @click="enableGates"
-          >
+          <el-tag type="warning" effect="dark" size="small" class="state-tag gates-off-chip" @click="enableGates">
             确认点已关闭 · 点击恢复
           </el-tag>
         </el-tooltip>
@@ -34,7 +28,9 @@
           <el-button v-else type="success" :icon="VideoPlay" @click="emit('resume')">继续</el-button>
         </template>
         <!-- 停止/清空按钮常驻显示，状态不满足时置灰，避免用户找不到入口 -->
-        <el-button type="danger" :icon="CircleCloseFilled" :disabled="!running" @click="emit('cancel')">停止任务</el-button>
+        <el-button type="danger" :icon="CircleCloseFilled" :disabled="!running" @click="emit('cancel')"
+          >停止任务</el-button
+        >
         <el-button :icon="Delete" :disabled="running || !state" @click="emit('clear')">清空任务</el-button>
         <el-button
           v-if="!running && failedCount > 0"
@@ -43,8 +39,8 @@
           :icon="RefreshRight"
           @click="emit('retryFailed')"
         >
-重试失败镜头 ({{ failedCount }})
-</el-button>
+          重试失败镜头 ({{ failedCount }})
+        </el-button>
       </div>
     </header>
 
@@ -53,9 +49,16 @@
       <div class="progress-label">
         <span class="progress-stage">{{ currentStageLabel }}</span>
         <span class="progress-percent">{{ currentPercent }}%</span>
-        <span class="progress-shots" v-if="state.totalShots">镜头 {{ state.doneShots || 0 }}/{{ state.totalShots }}</span>
+        <span class="progress-shots" v-if="state.totalShots"
+          >镜头 {{ state.doneShots || 0 }}/{{ state.totalShots }}</span
+        >
       </div>
-      <el-progress :percentage="currentPercent" :status="paused ? 'warning' : (currentPercent >= 100 ? 'success' : '')" :stroke-width="6" :show-text="false" />
+      <el-progress
+        :percentage="currentPercent"
+        :status="paused ? 'warning' : currentPercent >= 100 ? 'success' : ''"
+        :stroke-width="6"
+        :show-text="false"
+      />
     </div>
 
     <el-alert
@@ -124,16 +127,11 @@
           :icon="RefreshRight"
           @click="emit('retryFailed')"
         >
-重试失败镜头 ({{ failedCount }})
-</el-button>
-        <el-button
-          v-if="pendingCount > 0"
-          type="primary"
-          :icon="VideoPlay"
-          @click="emit('retryPending')"
-        >
-继续待渲染 ({{ pendingCount }})
-</el-button>
+          重试失败镜头 ({{ failedCount }})
+        </el-button>
+        <el-button v-if="pendingCount > 0" type="primary" :icon="VideoPlay" @click="emit('retryPending')">
+          继续待渲染 ({{ pendingCount }})
+        </el-button>
       </div>
     </el-alert>
 
@@ -188,9 +186,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { confirmAction } from '../../utils/confirm'
-import {
-  VideoPlay, VideoPause, Delete, CircleCloseFilled, RefreshRight, EditPen
-} from '@element-plus/icons-vue'
+import { VideoPlay, VideoPause, Delete, CircleCloseFilled, RefreshRight, EditPen } from '@element-plus/icons-vue'
 import DirectorStartForm from '../project/DirectorStartForm.vue'
 import StageTimeline from './StageTimeline.vue'
 import LogPanel from './LogPanel.vue'
@@ -198,9 +194,14 @@ import LogPanel from './LogPanel.vue'
 // 避免中断提示标题与执行日志对同一阶段出现两种叫法）
 import { STAGE_LABELS } from '../../composables/useDirectorState'
 import {
-  type DirectorState, type DirectorStage, type DirectorLogEntry,
-  type Project, type WorkflowMeta, type WorkflowCapability,
-  type AssetRegenerateInput, type DirectorStartInput
+  type DirectorState,
+  type DirectorStage,
+  type DirectorLogEntry,
+  type Project,
+  type WorkflowMeta,
+  type WorkflowCapability,
+  type AssetRegenerateInput,
+  type DirectorStartInput,
 } from '../../../../shared/ipcTypes'
 
 const props = defineProps<{
@@ -235,21 +236,23 @@ const emit = defineEmits<{
   /** 渲染阶段：改提示词/工作流后重渲单镜 */
   rerenderShot: [payload: { shotId: string; prompt: string; dialogue: string; negative: string; workflow: string }]
   /** 渲染阶段：批量重渲选中镜头 */
-  rerenderShots: [payloads: Array<{ shotId: string; prompt: string; dialogue: string; negative: string; workflow: string }>]
+  rerenderShots: [
+    payloads: Array<{ shotId: string; prompt: string; dialogue: string; negative: string; workflow: string }>,
+  ]
   /** 工作台产物：编辑提示词/工作流后重新生成（角色/场景/首尾帧） */
   regenerateAsset: [payload: AssetRegenerateInput]
   /** 产物已变更，通知父级刷新 project/assetUrls */
   'asset-refreshed': []
   'update:expandedStages': [stages: DirectorStage[]]
   'update:startDialogVisible': [visible: boolean]
-  start: [input: { title: string; genre: string; script: string; gateStages?: DirectorStage[]; bgmAbsolutePath?: string }]
+  start: [input: DirectorStartInput]
 }>()
 
 const failedCount = computed(() => props.state?.failedShotIds.length ?? 0)
 /** 待渲染镜头数（残留任务提示用）：优先取项目快照，取不到时回退 state */
 const pendingCount = computed(() => {
   const shots = props.project?.shots
-  if (shots) return shots.filter(s => s.status === 'pending').length
+  if (shots) return shots.filter((s) => s.status === 'pending').length
   const total = props.state?.totalShots ?? 0
   const done = props.state?.doneShots ?? 0
   const failed = failedCount.value
@@ -259,17 +262,15 @@ const leftoverCount = computed(() => failedCount.value + pendingCount.value)
 
 // ===== REQ-02 门禁待处理：结构化 pendingGates 渲染为可点 CTA =====
 const router = useRouter()
-const pendingGate = computed(() => props.state?.pendingGates?.find(g => g.reason === 'shotReview'))
+const pendingGate = computed(() => props.state?.pendingGates?.find((g) => g.reason === 'shotReview'))
 const pendingShotCount = computed(() => pendingGate.value?.unreviewedShotIds.length ?? 0)
 const pausedTitle = computed(() =>
-  pendingShotCount.value > 0
-    ? `等待分镜审核：${pendingShotCount.value} 个镜头未核对首帧`
-    : '任务已停在阶段确认点'
+  pendingShotCount.value > 0 ? `等待分镜审核：${pendingShotCount.value} 个镜头未核对首帧` : '任务已停在阶段确认点',
 )
 const pausedDescription = computed(() =>
   pendingShotCount.value > 0
     ? '进行中的渲染已安全完成。请先逐镜核对分镜图（勾选确认），全部审完后点「继续」进入渲染。'
-    : '进行中的渲染已安全完成，流水线已挂起。检查产物无误后点「继续」进入下一阶段，或点「停止任务」终止。'
+    : '进行中的渲染已安全完成，流水线已挂起。检查产物无误后点「继续」进入下一阶段，或点「停止任务」终止。',
 )
 /** 跳到分镜页并定位第一个待审镜（StoryboardView 消费 ?review=shotId 自动打开审核弹窗） */
 function goReviewPendingShots(): void {
@@ -278,15 +279,13 @@ function goReviewPendingShots(): void {
   if (!pid) return
   void router.push({
     path: `/project/${pid}/storyboard`,
-    query: first ? { review: first } : undefined
+    ...(first ? { query: { review: first } } : {}),
   })
 }
 
 // ===== REQ-04 「一口气跑到底」门禁状态 chip =====
-const gatesOff = computed(() =>
-  !!props.state
-  && (props.running || props.paused)
-  && (props.state.gateStages?.length ?? 0) === 0
+const gatesOff = computed(
+  () => !!props.state && (props.running || props.paused) && (props.state.gateStages?.length ?? 0) === 0,
 )
 
 async function enableGates(): Promise<void> {
@@ -294,7 +293,7 @@ async function enableGates(): Promise<void> {
   if (!pid) return
   const ok = await confirmAction(
     '重新启用后，流水线会在「剧本分析 / 场景板与首尾帧 / 成片复审」等阶段边界暂停等待确认；进行中的阶段不受影响，已完成的阶段不会回退。',
-    { title: '重新启用阶段确认点', confirmText: '重新启用' }
+    { title: '重新启用阶段确认点', confirmText: '重新启用' },
   )
   if (!ok) return
   try {
@@ -314,15 +313,23 @@ const interruptedStage = computed<DirectorStage | undefined>(() => {
 })
 const interruptedTitle = computed(() => {
   const st = interruptedStage.value
-  return st
-    ? `上次任务已中断：停在「${STAGE_LABELS[st]}」阶段`
-    : '上次任务已中断（应用重启或异常退出）'
+  return st ? `上次任务已中断：停在「${STAGE_LABELS[st]}」阶段` : '上次任务已中断（应用重启或异常退出）'
 })
 
 const currentStageLabel = computed(() => {
   const s = props.state
   if (!s) return ''
-  for (const st of ['analyze','casting','scenes','render','combine','subtitle','review','bgm','done'] as const) {
+  for (const st of [
+    'analyze',
+    'casting',
+    'scenes',
+    'render',
+    'combine',
+    'subtitle',
+    'review',
+    'bgm',
+    'done',
+  ] as const) {
     const info = s.stages?.[st]
     if (info && (info.status === 'running' || info.status === 'paused')) return STAGE_LABELS[st] || st
   }
@@ -331,7 +338,17 @@ const currentStageLabel = computed(() => {
 const currentPercent = computed(() => {
   const s = props.state
   if (!s) return 0
-  for (const st of ['analyze','casting','scenes','render','combine','subtitle','review','bgm','done'] as const) {
+  for (const st of [
+    'analyze',
+    'casting',
+    'scenes',
+    'render',
+    'combine',
+    'subtitle',
+    'review',
+    'bgm',
+    'done',
+  ] as const) {
     const info = s.stages?.[st]
     if (info && (info.status === 'running' || info.status === 'paused')) return Math.round(info.percent ?? 0)
   }
@@ -349,8 +366,8 @@ onMounted(async () => {
 })
 const VIDEO_CAPS: WorkflowCapability[] = ['t2v', 'i2v', 'flf2v']
 const IMAGE_CAPS: WorkflowCapability[] = ['t2i', 'i2i']
-const videoWorkflows = computed(() => workflows.value.filter(w => !w.capability || VIDEO_CAPS.includes(w.capability)))
-const imageWorkflows = computed(() => workflows.value.filter(w => !w.capability || IMAGE_CAPS.includes(w.capability)))
+const videoWorkflows = computed(() => workflows.value.filter((w) => !w.capability || VIDEO_CAPS.includes(w.capability)))
+const imageWorkflows = computed(() => workflows.value.filter((w) => !w.capability || IMAGE_CAPS.includes(w.capability)))
 
 function openStartDialog(): void {
   emit('update:startDialogVisible', true)
@@ -413,19 +430,59 @@ function confirmStart(input: DirectorStartInput): void {
   border-color: var(--border-weak);
   color: var(--text-muted);
 }
-.pause-alert { border-radius: 8px; }
-.gates-off-chip { cursor: pointer; }
-.interrupted-alert { border-radius: 8px; }
-.interrupted-alert :deep(.el-alert__content) { width: 100%; }
-.interrupted-actions { display: flex; gap: 8px; margin-top: 8px; }
-.progress-bar-wrap { padding: 8px 16px; background: var(--el-fill-color-light, #f5f7fa); border-radius: 8px; margin-bottom: 8px; }
-.progress-label { display: flex; gap: 12px; align-items: center; margin-bottom: 4px; font-size: 12px; }
-.progress-stage { font-weight: 600; color: var(--el-color-primary, #409eff); }
-.progress-percent { color: var(--el-text-color-primary, #303133); font-variant-numeric: tabular-nums; }
-.progress-shots { color: var(--el-text-color-secondary, #909399); margin-left: auto; }
-.leftover-alert { border-radius: 8px; }
-.leftover-alert :deep(.el-alert__content) { width: 100%; }
-.leftover-actions { display: flex; gap: 8px; margin-top: 8px; }
+.pause-alert {
+  border-radius: 8px;
+}
+.gates-off-chip {
+  cursor: pointer;
+}
+.interrupted-alert {
+  border-radius: 8px;
+}
+.interrupted-alert :deep(.el-alert__content) {
+  width: 100%;
+}
+.interrupted-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.progress-bar-wrap {
+  padding: 8px 16px;
+  background: var(--el-fill-color-light, #f5f7fa);
+  border-radius: 8px;
+  margin-bottom: 8px;
+}
+.progress-label {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 4px;
+  font-size: 12px;
+}
+.progress-stage {
+  font-weight: 600;
+  color: var(--el-color-primary, #409eff);
+}
+.progress-percent {
+  color: var(--el-text-color-primary, #303133);
+  font-variant-numeric: tabular-nums;
+}
+.progress-shots {
+  color: var(--el-text-color-secondary, #909399);
+  margin-left: auto;
+}
+.leftover-alert {
+  border-radius: 8px;
+}
+.leftover-alert :deep(.el-alert__content) {
+  width: 100%;
+}
+.leftover-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
 
 /* 弹窗：内容过高时 body 内部滚动，保证底部按钮始终可见 */
 .start-dialog :deep(.el-dialog__body) {

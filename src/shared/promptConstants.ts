@@ -1,48 +1,98 @@
 /**
  * 电影工业级资产提示词——纯常量（画质/负向/景别/质量块）。
- * 本模块为叶子节点：不依赖本目录其它提示词模块。
+ * 仅依赖词表叶子模块 promptLexicon；不依赖其它业务提示词模块。
  */
 
+import { SKIN_FLAW_TERMS } from './promptLexicon'
+
 /** 正向：摄影质感 + 光学 + 肤质颗粒（竖屏短剧，非宽银幕变形镜头） */
-export const REALISM_POSITIVE =
-  [
-    'photorealistic live-action chinese vertical short-drama frame',
-    'shot on ARRI Alexa Mini LF with Zeiss Supreme Prime 50mm T1.5',
-    'natural real skin texture with soft subtle pores, healthy even tone, unretouched complexion',
-    'subtle Kodak Vision3 film grain, practical motivated lighting',
-    'soft volumetric atmosphere, accurate fabric weave and material response',
-    'true-to-life asian facial proportions, documentary color science, matte finish'
-  ].join(', ')
+export const REALISM_POSITIVE = [
+  'photorealistic live-action chinese vertical short-drama frame',
+  'shot on ARRI Alexa Mini LF with Zeiss Supreme Prime 50mm T1.5',
+  'natural real skin texture with soft subtle pores, healthy even tone, unretouched complexion',
+  'subtle Kodak Vision3 film grain, practical motivated lighting',
+  'soft volumetric atmosphere, accurate fabric weave and material response',
+  'true-to-life asian facial proportions, documentary color science, matte finish',
+].join(', ')
 
 /**
  * 负向：油光 / 塑料 / 美颜 / 换装漂移 / CGI / 皮肤瑕疵 / 面部水珠。
  * 注入工作流 $NEGATIVE$（klein_t2i_clean / qwen_t2i_hq / builtin_t2i）。
  */
-export const REALISM_NEGATIVE =
-  [
-    'plastic skin', 'oily skin', 'shiny skin', 'waxy skin', 'airbrushed', 'beauty filter',
-    'smooth skin', 'porcelain skin', 'doll face', 'mannequin', 'wax figure',
-    'CGI', '3d render', 'octane render', 'unreal engine', 'overprocessed',
-    'anime', 'cartoon', 'illustration', 'painting', 'digital art', 'idol makeup',
-    'heavy makeup', 'bright eyeshadow', 'glossy lips', 'overexposed highlights', 'bloom', 'hdr glow',
-    'perfect symmetry', 'uncanny valley', 'fake skin', 'blurry', 'low detail',
-    'deformed face', 'extra fingers', 'watermark', 'text', 'logo',
-    // 通用防换装漂移词保留；具体服装/场景黑名单（gown/校服/办公室/宴会厅等）属于
-    // 单项目防漂移补丁，全局生效会误杀正式场合/学生/职场题材——已移至 lock-aware 负向
-    'different outfit', 'outfit change', 'costume change', 'wardrobe change',
-    'changed clothes mid-shot',
-    // 拼贴/多格/分屏：模型偶把分镜格子图当成图/首帧输出（实测事故：三格拼贴当首帧，视频全程继承畸形）
-    'collage', 'multi-panel', 'multiple panels', 'split screen', 'storyboard grid', 'comic strip', 'panel layout', 'triptych',
-    'anamorphic flare spam', 'over-sharpened', 'plastic specular',
-    'reverse motion', 'playing backwards', 'car reversing', 'wheels spinning backward',
-    'morphing face', 'identity flicker', 'limb melt',
-    // 只压病变/严重瑕疵与面部水珠；毛孔、细纹、胡茬、浅痣等真实纹理必须保留，
-    // 否则人脸会被磨成塑料娃娃（用户反馈「AI 感太重」的主要根因之一）
-    'acne', 'acne scars', 'pockmarks', 'rash', 'sunburn', 'peeling skin',
-    'lumps', 'bumps', 'skin tags', 'warts', 'cysts', 'tumors', 'growths', 'protrusions', 'raised skin',
-    'pimples', 'dermatitis', 'eczema', 'skin disease', 'greasy skin',
-    'water droplets on face', 'raindrops on face', 'wet skin', 'sweat on face', 'perspiration'
-  ].join(', ')
+export const REALISM_NEGATIVE = [
+  'plastic skin',
+  'oily skin',
+  'shiny skin',
+  'waxy skin',
+  'airbrushed',
+  'beauty filter',
+  'smooth skin',
+  'porcelain skin',
+  'doll face',
+  'mannequin',
+  'wax figure',
+  'CGI',
+  '3d render',
+  'octane render',
+  'unreal engine',
+  'overprocessed',
+  'anime',
+  'cartoon',
+  'illustration',
+  'painting',
+  'digital art',
+  'idol makeup',
+  'heavy makeup',
+  'bright eyeshadow',
+  'glossy lips',
+  'overexposed highlights',
+  'bloom',
+  'hdr glow',
+  'perfect symmetry',
+  'uncanny valley',
+  'fake skin',
+  'blurry',
+  'low detail',
+  'deformed face',
+  'extra fingers',
+  'watermark',
+  'text',
+  'logo',
+  // 通用防换装漂移词保留；具体服装/场景黑名单（gown/校服/办公室/宴会厅等）属于
+  // 单项目防漂移补丁，全局生效会误杀正式场合/学生/职场题材——已移至 lock-aware 负向
+  'different outfit',
+  'outfit change',
+  'costume change',
+  'wardrobe change',
+  'changed clothes mid-shot',
+  // 拼贴/多格/分屏：模型偶把分镜格子图当成图/首帧输出（实测事故：三格拼贴当首帧，视频全程继承畸形）
+  'collage',
+  'multi-panel',
+  'multiple panels',
+  'split screen',
+  'storyboard grid',
+  'comic strip',
+  'panel layout',
+  'triptych',
+  'anamorphic flare spam',
+  'over-sharpened',
+  'plastic specular',
+  'reverse motion',
+  'playing backwards',
+  'car reversing',
+  'wheels spinning backward',
+  'morphing face',
+  'identity flicker',
+  'limb melt',
+  // 只压病变/严重瑕疵与面部水珠；毛孔、细纹、胡茬、浅痣等真实纹理必须保留，
+  // 否则人脸会被磨成塑料娃娃（用户反馈「AI 感太重」的主要根因之一）
+  ...SKIN_FLAW_TERMS,
+  'water droplets on face',
+  'raindrops on face',
+  'wet skin',
+  'sweat on face',
+  'perspiration',
+].join(', ')
 
 /**
  * 电影级质量强制块（看守条款，代码层兜底）：每次图/视频生成自动追加。
@@ -54,7 +104,7 @@ export const CINEMATIC_QUALITY_BLOCK = [
   'motivated camera language: smooth continuous move, stable framing',
   'motivated practical lighting: single consistent key direction, volumetric atmosphere, scene-matched color temperature',
   'locked set continuity: same physical location, key props persist',
-  'era-locked world: objects, architecture and clothing match the story era'
+  'era-locked world: objects, architecture and clothing match the story era',
 ].join(', ')
 
 /** 视频渲染通用负向指令·基础组（无条件全镜注入）：
@@ -75,22 +125,19 @@ export const VIDEO_NEGATIVE_MOTION_SUPPRESS =
   'no sudden movement, no large displacement, no position shift, no body rotation, no compound action'
 
 /** 景别工业术语 */
-export const SHOT_SIZE_CUE: Record<string, string> = {
+/** medium 为固定兜底键：显式声明其必存在，供调用方在未知景别时安全回退 */
+export const SHOT_SIZE_CUE: Record<string, string> & { medium: string } = {
   closeup: 'ECU/CU: extreme close-up or tight close-up, face or hands fill frame, shallow DOF T1.5, catchlight in eyes',
   // 中景构图强化（2026-10-17 漂移根因）：主角脸占比 <6% + 背景多张清晰人脸是 H3 i2v
   // 换脸漂移两大驱动（实测：中景群像镜主角被换成"平均脸"）——强制主角胸像主导画面、
   // 背景人脸浅景深糊掉，把可锁定人脸面积拉大
-  medium: 'MS: medium shot waist-up, dialogue performance framing, eye-level, clean headroom, the lead subject dominates the frame with clearly readable face (at least 15% of frame height), any background faces heavily blurred and out of focus (shallow depth of field)',
-  wide: 'WS: wide establishing or full-body in environment, readable blocking, environmental storytelling'
+  medium:
+    'MS: medium shot waist-up, dialogue performance framing, eye-level, clean headroom, the lead subject dominates the frame with clearly readable face (at least 15% of frame height), any background faces heavily blurred and out of focus (shallow depth of field)',
+  wide: 'WS: wide establishing or full-body in environment, readable blocking, environmental storytelling',
 }
 
 /** 提示词模块自检用：确保工业级锚点仍在 */
-export const PROMPT_QA_MARKERS = [
-  'LOCKED IDENTITY',
-  'ARRI Alexa',
-  'STRICT',
-  'LOCKED LOCATION'
-] as const
+export const PROMPT_QA_MARKERS = ['LOCKED IDENTITY', 'ARRI Alexa', 'STRICT', 'LOCKED LOCATION'] as const
 
 /** Wan 负向节点原文。只填进 $NEGATIVE$，不进正向。 */
 export const WAN_QUALITY_NEGATIVE =
