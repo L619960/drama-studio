@@ -466,6 +466,8 @@ export interface IpcApi {
     start(): Promise<ComfyStartResult>
     /** 停止本机 ComfyUI：按「main.py + baseUrl 端口」定位进程并结束 */
     stop(): Promise<{ ok: boolean; killed: number; error?: string }>
+    /** 订阅 ComfyUI 连接状态翻转事件（主进程健康轮询），返回取消订阅函数 */
+    onStatusChanged(cb: (connected: boolean) => void): () => void
   }
   memory: {
     list(kind?: MemoryKind): Promise<MemoryItem[]>
@@ -627,6 +629,10 @@ export interface IpcApi {
   system: {
     /** 运行环境与功能自检，返回逐项结果 */
     selfcheck(): Promise<SelfCheckItem[]>
+    /** 数据盘可用空间（字节），用于低磁盘警告 */
+    diskSpace(): Promise<{ freeBytes: number; totalBytes: number }>
+    /** 清理崩溃残留的临时产物（.part.* / RGB 裸帧 / 拼接临时目录） */
+    cleanupTmp(): Promise<void>
   }
   settings: {
     /** 主进程始终合并默认值后返回，不会是 null（I-11 修正：原契约误标 | null） */
@@ -1081,6 +1087,10 @@ export interface DirectorFinishedEvent {
   success: boolean
   cancelled: boolean
   failedShotIds: string[]
+  /** 本次任务镜头总数（系统通知文案用，历史事件可能缺失） */
+  totalShots?: number
+  /** 本次任务已完成镜头数 */
+  doneShots?: number
   /** 收尾说明（失败时含中文原因） */
   message: string
   finalPath?: string
@@ -1320,6 +1330,7 @@ export const IpcChannels = {
   comfyModelsDir: 'comfyui:modelsDir',
   comfyStart: 'comfyui:start',
   comfyStop: 'comfyui:stop',
+  comfyStatusChanged: 'comfyui:status-changed',
   memoryList: 'memory:list',
   memoryCreate: 'memory:create',
   memoryUpdate: 'memory:update',
@@ -1397,6 +1408,8 @@ export const IpcChannels = {
   conversationRollback: 'conversation:rollback',
   conversationUpload: 'conversation:upload',
   systemSelfcheck: 'system:selfcheck',
+  systemDiskSpace: 'system:disk-space',
+  systemCleanupTmp: 'system:cleanup-tmp',
   dialogSelectAudio: 'dialog:selectAudio',
   dialogSelectVideo: 'dialog:selectVideo',
   settingsGet: 'settings:get',

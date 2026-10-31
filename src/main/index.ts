@@ -1,4 +1,4 @@
-import { app, BrowserWindow, protocol } from 'electron'
+import { app, BrowserWindow, Notification, protocol } from 'electron'
 import { join } from 'node:path'
 import { existsSync } from 'node:fs'
 import {
@@ -48,6 +48,8 @@ import { GENRE_TEMPLATES } from '../shared/ipcTypes'
 import { installGlobalErrorHandlers } from './core/errorHandler'
 import { childProcessManager } from './core/childProcessManager'
 import { createLogger } from './core/logger'
+import { createComfyStatusWatcher } from './core/comfyStatusWatcher'
+import { buildFinishedNotification } from '../shared/notify'
 
 const log = createLogger('Main')
 
@@ -105,12 +107,31 @@ protocol.registerSchemesAsPrivileged([
 // DATA_ROOT / resolveInsideRoot / normPath 统一来自 ./ipc/shared（单一事实源）
 
 let mainWindow: BrowserWindow | null = null
+let comfyStatusWatcher: ReturnType<typeof createComfyStatusWatcher> | null = null
 
 /** 进度/日志等事件统一经此转发：窗口已销毁时静默丢弃，避免对已销毁窗口调用 send 抛错中断渲染任务 */
 function sendToWindow(channel: string, payload: unknown): void {
   if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
     mainWindow.webContents.send(channel, payload)
   }
+}
+
+/**
+ * REQ-15：后台任务完成/失败系统通知。
+ * 窗口聚焦时不打扰（仅运行条终态变化）；最小化/切走时发系统通知，点击通知聚焦窗口。
+ */
+function notifyFinished(event: DirectorFinishedEvent): void {
+  const copy = buildFinishedNotification(event)
+  if (!copy || !Notification.isSupported()) return
+  if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused()) return
+  const notification = new Notification({ title: copy.title, body: copy.body })
+  notification.on('click', () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    mainWindow.show()
+    mainWindow.focus()
+  })
+  notification.show()
 }
 
 function createWindow(): void {
@@ -235,7 +256,11 @@ function registerIpc(): void {
   registerPromptIpc({ projectStore, llmService })
   registerSkillIpc({ skillService, memoryStore })
   registerConversationIpc({ conversationService })
-  registerSystemIpc({ selfCheckService })
+  registerSystemIpc({
+    selfCheckService,
+    dataRoot: DATA_ROOT,
+    cleanupTmp: () => taskQueue.cleanupTmpFiles()
+  })
   registerWorkflowIpc({ workflowLoader })
   registerSettingsIpc({ settingsStore, comfyuiClient, imageService })
   registerLlmIpc({ llmService, ffmpegService })
@@ -264,6 +289,7 @@ function registerIpc(): void {
   // REQ-05：任务终态（完成/失败/取消）
   directorAgent.on('finished', (event: DirectorFinishedEvent) => {
     sendToWindow(IpcChannels.directorFinished, event)
+    notifyFinished(event)
   })
   conversationService.on('tool', (event: ConversationToolEvent) => {
     sendToWindow(IpcChannels.conversationTool, event)
@@ -290,6 +316,14 @@ app.whenReady().then(() => {
 
   registerIpc()
   createWindow()
+
+  // REQ-15 MP-07：ComfyUI 连接状态轮询，状态翻转时推送渲染层（运行条红色「已断开」态）
+  comfyStatusWatcher = createComfyStatusWatcher({
+    check: () => comfyuiClient.healthCheck(),
+    onChange: (connected) => sendToWindow(IpcChannels.comfyStatusChanged, connected),
+    intervalMs: 15_000
+  })
+  comfyStatusWatcher.start()
 
   // 仅初始化时序：以下两项均与「首屏 hydration」抢主进程事件循环 / fs，故推迟到窗口首绘后再跑。
   //  - 断点续渲：store.list() 全量读 project.json，并对 rendering 项目 store.save() 写回；
@@ -377,6 +411,7 @@ app.on('before-quit', async (event) => {
     // 不能让渲染中断不干净把用户锁死在退出流程里。
     await directorAgent.cancelAll().catch(() => undefined)
     await taskQueue.cancelAll().catch(() => undefined)
+    comfyStatusWatcher?.stop()
     comfyuiClient.disconnect()
     // 统一 kill 所有登记的子进程（ffmpeg/TTS SAPI/转换），防退出后孤儿进程残留
     childProcessManager.killAll('before-quit')

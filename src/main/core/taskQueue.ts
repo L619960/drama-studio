@@ -358,6 +358,11 @@ export class TaskQueue extends EventEmitter {
     return recovered
   }
 
+  /** REQ-15 DC-OPEN-22：低磁盘「清理临时产物」入口，复用崩溃残留清理逻辑 */
+  async cleanupTmpFiles(): Promise<void> {
+    await this.cleanupOrphanTmp()
+  }
+
   /**
    * 清理上次崩溃残留的临时文件：
    * - baseDir/.tmp 下 rgb_*.rgb（一致性检测的 RGB24 裸帧，正常 dispose 会删；崩溃时留下）

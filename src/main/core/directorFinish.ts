@@ -45,6 +45,8 @@ export function finishImpl(agent: DirectorAgent, projectId: string, doneMessage?
     success: !wasCancelled && !doneMessage,
     cancelled: wasCancelled,
     failedShotIds: [...state.failedShotIds],
+    totalShots: state.totalShots,
+    doneShots: state.doneShots,
     message: state.stages.done.message,
     finalPath: state.finalPath
   }

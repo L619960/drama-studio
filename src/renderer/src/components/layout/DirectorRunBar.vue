@@ -1,6 +1,13 @@
 <template>
   <transition name="run-bar">
     <div v-if="visible" class="director-run-bar glass-strong">
+      <!-- REQ-15 DC-OPEN-22：低磁盘警告 + 清理临时产物入口 -->
+      <div v-if="diskLow" class="disk-warn">
+        <el-icon><WarningFilled /></el-icon>
+        <span class="disk-text">数据盘剩余 {{ diskFreeText }}，低于 5 GB 可能影响渲染</span>
+        <el-button size="small" type="warning" plain :loading="cleaningTmp" @click="onCleanTmp">清理临时产物</el-button>
+        <el-button v-if="!primary && !terminal" size="small" text @click="dismissDisk">关闭</el-button>
+      </div>
       <!-- 终态反馈：完成变绿「查看成片」，失败变红「查看日志」 -->
       <template v-if="terminal && tasks.length === 0">
         <span class="run-dot" :class="terminal.success ? 'is-success' : (terminal.cancelled ? 'is-idle' : 'is-error')" />
@@ -21,11 +28,15 @@
 
       <!-- 活跃任务：任意页面常驻，显示当前阶段/进度并可暂停/继续/停止 -->
       <template v-else-if="primary">
-        <span class="run-dot" :class="primary.paused ? 'is-warn' : 'is-running'" />
+        <span class="run-dot" :class="primary.paused ? 'is-warn' : (comfyConnected ? 'is-running' : 'is-error')" />
         <div class="run-main">
           <div class="run-line">
             <span class="run-title" :title="primary.title">{{ primary.title }}</span>
-            <span class="run-stage">{{ primary.paused ? '已暂停 · 等待确认' : stageLabel }}</span>
+            <span class="run-stage" :class="{ 'is-offline': !comfyConnected }">{{
+              !comfyConnected
+                ? 'ComfyUI 已断开，等待恢复…'
+                : (primary.paused ? '已暂停 · 等待确认' : stageLabel)
+            }}</span>
             <span class="run-percent">{{ percent }}%</span>
             <span v-if="primary.totalShots" class="run-shots">镜头 {{ primary.doneShots || 0 }}/{{ primary.totalShots }}</span>
           </div>
@@ -75,9 +86,10 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { VideoPause, VideoPlay, CircleCloseFilled } from '@element-plus/icons-vue'
+import { VideoPause, VideoPlay, CircleCloseFilled, WarningFilled } from '@element-plus/icons-vue'
 import { confirmDanger } from '../../utils/confirm'
 import { STAGE_ORDER, STAGE_LABELS } from '../../composables/useDirectorState'
+import { isLowDiskSpace, formatFreeSpace } from '../../../../shared/diskSpace'
 import type {
   DirectorState, DirectorStage, DirectorFinishedEvent
 } from '../../../../shared/ipcTypes'
@@ -90,12 +102,20 @@ import type {
 const router = useRouter()
 const tasks = ref<DirectorState[]>([])
 const terminal = ref<DirectorFinishedEvent | null>(null)
+const comfyConnected = ref(true)
+const diskLow = ref(false)
+const diskFreeText = ref('')
+const diskDismissed = ref(false)
+const cleaningTmp = ref(false)
 let offProgress: (() => void) | null = null
 let offFinished: (() => void) | null = null
+let offComfyStatus: (() => void) | null = null
 let terminalTimer: number | null = null
 
 const primary = computed(() => tasks.value[0] ?? null)
-const visible = computed(() => tasks.value.length > 0 || terminal.value !== null)
+const visible = computed(() =>
+  tasks.value.length > 0 || terminal.value !== null || (diskLow.value && !diskDismissed.value)
+)
 
 function stageOf(state: DirectorState): DirectorStage {
   for (const st of STAGE_ORDER) {
@@ -158,6 +178,42 @@ function showTerminal(e: DirectorFinishedEvent): void {
   if (terminalTimer !== null) clearTimeout(terminalTimer)
   // 终态反馈停留 10 秒，用户也可手动关闭
   terminalTimer = window.setTimeout(() => { terminal.value = null }, 10_000)
+  // REQ-15：任务完成后复查磁盘空间（与启动检查对齐）
+  void refreshDisk()
+}
+
+/** REQ-15 DC-OPEN-22：启动/任务完成时检查数据盘空间，<5GB 出现警告与清理入口 */
+async function refreshDisk(): Promise<void> {
+  try {
+    const { freeBytes } = await window.api.system.diskSpace()
+    diskFreeText.value = formatFreeSpace(freeBytes)
+    diskLow.value = isLowDiskSpace(freeBytes)
+  } catch {
+    // 读取失败不打扰用户：保留上次检查结果
+  }
+}
+
+async function onCleanTmp(): Promise<void> {
+  if (cleaningTmp.value) return
+  cleaningTmp.value = true
+  try {
+    await window.api.system.cleanupTmp()
+    await refreshDisk()
+    if (diskLow.value) {
+      ElMessage.warning('已清理临时产物，但磁盘空间仍然紧张，请手动清理其他大文件')
+    } else {
+      diskDismissed.value = true
+      ElMessage.success('已清理临时产物')
+    }
+  } catch (e) {
+    ElMessage.error(`清理失败：${e instanceof Error ? e.message : String(e)}`)
+  } finally {
+    cleaningTmp.value = false
+  }
+}
+
+function dismissDisk(): void {
+  diskDismissed.value = true
 }
 
 function dismissTerminal(): void {
@@ -201,15 +257,22 @@ function goLogs(projectId: string): void {
 
 onMounted(() => {
   void refreshActive()
+  void refreshDisk()
   offProgress = window.api.director.onProgress((e) => upsert(e.state))
   offFinished = window.api.director.onFinished((e) => showTerminal(e))
+  // REQ-15 MP-07：ComfyUI 连接状态翻转 → 运行条红色「已断开」态
+  offComfyStatus = window.api.comfyui.onStatusChanged((connected) => {
+    comfyConnected.value = connected
+  })
 })
 
 onUnmounted(() => {
   offProgress?.()
   offFinished?.()
+  offComfyStatus?.()
   offProgress = null
   offFinished = null
+  offComfyStatus = null
   if (terminalTimer !== null) clearTimeout(terminalTimer)
   terminalTimer = null
 })
@@ -220,12 +283,22 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-wrap: wrap;
   margin: 0 18px 12px;
   padding: 10px 14px;
   border-radius: var(--radius-md);
   border: 1px solid var(--glass-border);
   flex-shrink: 0;
 }
+.disk-warn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-basis: 100%;
+  font-size: 12px;
+  color: var(--warning, #e6a23c);
+}
+.disk-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .run-dot {
   width: 9px;
   height: 9px;
@@ -248,6 +321,7 @@ onUnmounted(() => {
   max-width: 260px;
 }
 .run-stage { font-size: 12px; color: var(--text-secondary); }
+.run-stage.is-offline { color: var(--danger); }
 .run-percent { font-size: 12px; color: var(--brand-strong); font-variant-numeric: tabular-nums; }
 .run-shots { font-size: 12px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .run-progress { margin-top: 4px; }

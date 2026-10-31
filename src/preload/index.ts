@@ -54,7 +54,12 @@ const api: IpcApi = {
     validateWorkflows: () => invoke(IpcChannels.comfyValidate),
     getModelsDir: () => invoke(IpcChannels.comfyModelsDir),
     start: () => invoke(IpcChannels.comfyStart),
-    stop: () => invoke(IpcChannels.comfyStop)
+    stop: () => invoke(IpcChannels.comfyStop),
+    onStatusChanged: (cb) => {
+      const listener = (_: unknown, connected: unknown) => cb(Boolean(connected))
+      ipcRenderer.on(IpcChannels.comfyStatusChanged, listener)
+      return () => ipcRenderer.removeListener(IpcChannels.comfyStatusChanged, listener)
+    }
   },
   memory: {
     list: (kind?) => invoke(IpcChannels.memoryList, kind),
@@ -194,7 +199,9 @@ const api: IpcApi = {
     }
   },
   system: {
-    selfcheck: () => invoke(IpcChannels.systemSelfcheck)
+    selfcheck: () => invoke(IpcChannels.systemSelfcheck),
+    diskSpace: () => invoke(IpcChannels.systemDiskSpace),
+    cleanupTmp: () => invoke(IpcChannels.systemCleanupTmp)
   },
   settings: {
     get: () => invoke(IpcChannels.settingsGet),

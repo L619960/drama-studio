@@ -149,6 +149,7 @@ const comfyChecking = ref(false)
 const sidebarCollapsed = ref(false)
 const onboardingVisible = ref(false)
 let comfyTimer: ReturnType<typeof setInterval> | null = null
+let offComfyStatus: (() => void) | null = null
 let dialogGuardTimer: number | null = null
 
 const activeMenu = computed(() =>
@@ -195,6 +196,11 @@ onMounted(async () => {
     .then(list => forgetLastProjectIfMissing(list.map(p => p.id)))
     .catch(() => undefined)
   comfyTimer = setInterval(() => void refreshComfyStatus(), 15_000)
+  // REQ-15：主进程健康轮询的状态翻转事件（与上方定时检查互补，掉线立即反馈）
+  offComfyStatus = window.api.comfyui.onStatusChanged((connected) => {
+    comfyuiConnected.value = connected
+    comfyChecking.value = false
+  })
   window.addEventListener('comfyui:recheck', onComfyRecheck)
   window.addEventListener(ONBOARDING_OPEN_EVENT, onOpenOnboarding)
   // 首次启动（无 onboarded 标记）弹三步引导；跳过后不再打扰
@@ -222,6 +228,8 @@ onMounted(async () => {
 
 onUnmounted(() => {
   if (comfyTimer) clearInterval(comfyTimer)
+  offComfyStatus?.()
+  offComfyStatus = null
   if (dialogGuardTimer !== null) clearInterval(dialogGuardTimer)
   window.removeEventListener('comfyui:recheck', onComfyRecheck)
   window.removeEventListener(ONBOARDING_OPEN_EVENT, onOpenOnboarding)
