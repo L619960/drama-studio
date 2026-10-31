@@ -66,23 +66,17 @@
     <!-- ===== 中栏：按 activeModule 切换的面板 ===== -->
     <section class="console-main glass-panel">
       <!-- RC-12：hydrate 失败单独出错误态卡片，不与「没有进行中的任务」空态混淆 -->
-      <el-alert
+      <ErrorStateCard
         v-if="activeModule === 'workflow' && hydrateError"
-        type="error"
-        show-icon
-        :closable="false"
         title="导演状态加载失败"
+        description="这不是「没有进行中的任务」，只是本次状态读取失败，可重试加载。"
+        :detail="hydrateError"
+        :retrying="hydrateLoading"
         class="hydrate-error"
+        @retry="runHydrate"
       >
-        <div class="hydrate-error-body">
-          <p>这不是「没有进行中的任务」，只是本次状态读取失败，可重试加载。</p>
-          <p class="hydrate-error-detail">{{ hydrateError }}</p>
-          <div class="hydrate-error-actions">
-            <el-button size="small" type="primary" :loading="hydrateLoading" @click="runHydrate">重试加载</el-button>
-            <el-button size="small" @click="router.push('/')">回项目列表</el-button>
-          </div>
-        </div>
-      </el-alert>
+        <el-button size="small" @click="router.push('/')">回项目列表</el-button>
+      </ErrorStateCard>
       <WorkflowPanel
         v-if="activeModule === 'workflow' && !hydrateError"
         :state="state"
@@ -221,6 +215,7 @@ import MemoryPanel from '../components/console/MemoryPanel.vue'
 import ComfyPanel from '../components/console/ComfyPanel.vue'
 import DirectorChat from '../components/console/DirectorChat.vue'
 import SelfCheckPanel from '../components/console/SelfCheckPanel.vue'
+import ErrorStateCard from '../components/common/ErrorStateCard.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -664,10 +659,6 @@ async function clearChatGuarded(): Promise<void> {
 }
 
 .hydrate-error { margin: 0; }
-.hydrate-error-body { display: flex; flex-direction: column; gap: 6px; }
-.hydrate-error-body p { margin: 0; font-size: 13px; }
-.hydrate-error-detail { color: var(--text-muted); word-break: break-all; }
-.hydrate-error-actions { display: flex; gap: 8px; }
 
 .console-right {
   width: min(380px, 34vw);

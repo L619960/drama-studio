@@ -39,14 +39,28 @@
       </el-input>
     </div>
 
+    <!-- REQ-17 RA-16：项目数据未取回时先给骨架，不白屏 -->
+    <PageSkeleton v-if="loading" variant="cards" :count="6" />
+
+    <ErrorStateCard
+      v-else-if="loadError"
+      title="角色库加载失败"
+      description="这不是空角色库，只是本次项目数据没读到；资产仍在磁盘上，可重试加载。"
+      :detail="loadError"
+      @retry="loadProject()"
+    >
+      <el-button size="small" @click="router.push('/')">回项目列表</el-button>
+    </ErrorStateCard>
+
     <el-empty
-      v-if="project && characters.length === 0"
+      v-else-if="project && characters.length === 0"
       class="glass-panel empty-panel"
       description="还没有角色，添加后可绑定到分镜并生成面部定妆与三视图"
     >
       <el-button type="primary" @click="addCharacter">
         <el-icon><Plus /></el-icon>添加角色
       </el-button>
+      <el-button @click="router.push(`/project/${projectId}/storyboard`)">去分镜页看看</el-button>
     </el-empty>
 
     <el-empty
@@ -176,6 +190,8 @@ import { snapshot } from '../utils/snapshot'
 import { throttleTap } from '../utils/throttle'
 import { confirmDanger } from '../utils/confirm'
 import { TTS_VOICES, ttsVoiceName, DEFAULT_TTS_VOICE } from '../../../shared/ttsVoices'
+import PageSkeleton from '../components/common/PageSkeleton.vue'
+import ErrorStateCard from '../components/common/ErrorStateCard.vue'
 
 const { urlCache, ensureFileUrl, ensureFileUrls } = useFileUrl()
 
@@ -183,6 +199,9 @@ const router = useRouter()
 const projectId = useRouteProjectId((id) => { void loadProject(id) })
 
 const project = ref<Project | null>(null)
+/** REQ-17：三态区分——加载中（骨架）/ 加载失败（错误卡片）/ 已加载（空态或列表） */
+const loading = ref(true)
+const loadError = ref('')
 const showAddDialog = ref(false)
 const editingChar = ref<Character | null>(null)
 const charForm = ref({ name: '', description: '', voice: DEFAULT_TTS_VOICE })
@@ -255,17 +274,25 @@ function onMenuKeydown(e: KeyboardEvent) {
 
 async function loadProject(id?: string) {
   const pid = id ?? projectId.value
-  const p = await window.api.project.get(pid).catch(() => null)
-  if (!p) {
-    ElMessage.error('项目不存在或已被删除')
-    void router.replace('/')
-    return
+  loading.value = true
+  loadError.value = ''
+  try {
+    const p = await window.api.project.get(pid)
+    if (!p) {
+      ElMessage.error('项目不存在或已被删除')
+      void router.replace('/')
+      return
+    }
+    project.value = p
+    const paths = project.value.characters.flatMap(c =>
+      [c.faceImagePath, c.bodySheetPath, c.refImagePath].filter(Boolean) as string[]
+    )
+    await ensureFileUrls(paths)
+  } catch (e) {
+    loadError.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    loading.value = false
   }
-  project.value = p
-  const paths = project.value.characters.flatMap(c =>
-    [c.faceImagePath, c.bodySheetPath, c.refImagePath].filter(Boolean) as string[]
-  )
-  await ensureFileUrls(paths)
 }
 
 function addCharacter() {

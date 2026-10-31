@@ -39,14 +39,28 @@
       </el-input>
     </div>
 
+    <!-- REQ-17 RA-16：项目数据未取回时先给骨架，不白屏 -->
+    <PageSkeleton v-if="loading" variant="cards" :count="6" />
+
+    <ErrorStateCard
+      v-else-if="loadError"
+      title="道具库加载失败"
+      description="这不是空道具库，只是本次项目数据没读到；资产仍在磁盘上，可重试加载。"
+      :detail="loadError"
+      @retry="loadProject()"
+    >
+      <el-button size="small" @click="router.push('/')">回项目列表</el-button>
+    </ErrorStateCard>
+
     <el-empty
-      v-if="project && propsList.length === 0"
+      v-else-if="project && propsList.length === 0"
       class="glass-panel empty-panel"
       description="还没有道具资产。导演流水线会自动从剧本提取并生成，也可手动添加"
     >
       <el-button type="primary" @click="addProp">
         <el-icon><Plus /></el-icon>添加道具
       </el-button>
+      <el-button @click="router.push(`/project/${projectId}/storyboard`)">去分镜页看看</el-button>
     </el-empty>
 
     <el-empty
@@ -164,6 +178,8 @@ import { useContextMenu } from '../composables/useContextMenu'
 import { snapshot } from '../utils/snapshot'
 import { throttleTap } from '../utils/throttle'
 import { confirmDanger } from '../utils/confirm'
+import PageSkeleton from '../components/common/PageSkeleton.vue'
+import ErrorStateCard from '../components/common/ErrorStateCard.vue'
 
 const { urlCache, ensureFileUrl, ensureFileUrls } = useFileUrl()
 
@@ -171,6 +187,9 @@ const router = useRouter()
 const projectId = useRouteProjectId((id) => { void loadProject(id) })
 
 const project = ref<Project | null>(null)
+/** REQ-17：三态区分——加载中 / 加载失败 / 已加载 */
+const loading = ref(true)
+const loadError = ref('')
 const showEditDialog = ref(false)
 const editingProp = ref<PropAsset | null>(null)
 const propForm = ref({ zh: '', en: '', description: '' })
@@ -231,15 +250,23 @@ onUnmounted(() => {
 
 async function loadProject(id?: string) {
   const pid = id ?? projectId.value
-  const p = await window.api.project.get(pid).catch(() => null)
-  if (!p) {
-    ElMessage.error('项目不存在或已被删除')
-    void router.replace('/')
-    return
+  loading.value = true
+  loadError.value = ''
+  try {
+    const p = await window.api.project.get(pid)
+    if (!p) {
+      ElMessage.error('项目不存在或已被删除')
+      void router.replace('/')
+      return
+    }
+    project.value = p
+    const paths = (p.props || []).map(pr => pr.imagePath).filter(Boolean) as string[]
+    await ensureFileUrls(paths)
+  } catch (e) {
+    loadError.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    loading.value = false
   }
-  project.value = p
-  const paths = (p.props || []).map(pr => pr.imagePath).filter(Boolean) as string[]
-  await ensureFileUrls(paths)
 }
 
 /** 保存项目（props 数组变化后统一走这里持久化） */

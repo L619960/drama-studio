@@ -21,8 +21,21 @@
       </div>
     </div>
 
+    <!-- REQ-17 RA-16：项目数据未取回时先给骨架，不白屏 -->
+    <PageSkeleton v-if="loading" variant="editor" />
+
+    <ErrorStateCard
+      v-else-if="loadError"
+      title="剧本加载失败"
+      description="这不是「还没有剧本」，只是本次项目数据没读到；剧本仍在磁盘上，可重试加载。"
+      :detail="loadError"
+      @retry="loadProject()"
+    >
+      <el-button size="small" @click="router.push('/')">回项目列表</el-button>
+    </ErrorStateCard>
+
     <el-empty
-      v-if="project && !hasScript"
+      v-else-if="project && !hasScript"
       class="glass-panel empty-panel"
       description="还没有剧本。可直接在下方输入框撰写，或点「AI 生成剧本」用一句想法扩写成完整剧本；也可到首页用「AI 导演」发起制作（剧本会自动保存到这里）"
     >
@@ -32,7 +45,7 @@
       <el-button @click="router.push({ path: '/', query: { openDirector: '1' } })">去 AI 导演</el-button>
     </el-empty>
 
-    <div v-if="project" class="script-editor glass-panel">
+    <div v-if="project && !loading && !loadError" class="script-editor glass-panel">
       <div class="editor-head">
         <span class="editor-title">{{ project.title }} · {{ sceneCount }} 场 · {{ shotCount }} 镜</span>
         <span class="editor-tip">支持格式：第N场标题行 + 括号动作行 + 「角色：台词」对白行</span>
@@ -184,11 +197,16 @@ import { throttleTap } from '../utils/throttle'
 import { useRouteProjectId } from '../composables/useRouteProjectId'
 import { useHotkeys } from '../composables/useHotkeys'
 import { confirmAction } from '../utils/confirm'
+import PageSkeleton from '../components/common/PageSkeleton.vue'
+import ErrorStateCard from '../components/common/ErrorStateCard.vue'
 
 const router = useRouter()
 const projectId = useRouteProjectId((id) => { void loadProject(id) })
 
 const project = ref<Project | null>(null)
+/** REQ-17：三态区分——加载中 / 加载失败 / 已加载 */
+const loading = ref(true)
+const loadError = ref('')
 const scriptText = ref('')
 const saving = ref(false)
 const reanalyzing = ref(false)
@@ -274,14 +292,22 @@ const shotCount = computed(() => project.value?.shots.length || 0)
 
 async function loadProject(id?: string) {
   const pid = id ?? projectId.value
-  const p = await window.api.project.get(pid).catch(() => null)
-  if (!p) {
-    ElMessage.error('项目不存在或已被删除')
-    void router.replace('/')
-    return
+  loading.value = true
+  loadError.value = ''
+  try {
+    const p = await window.api.project.get(pid)
+    if (!p) {
+      ElMessage.error('项目不存在或已被删除')
+      void router.replace('/')
+      return
+    }
+    project.value = p
+    scriptText.value = p.script || ''
+  } catch (e) {
+    loadError.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    loading.value = false
   }
-  project.value = p
-  scriptText.value = p.script || ''
 }
 
 /** AI 剧本医生：审查当前剧本逻辑 bug */
