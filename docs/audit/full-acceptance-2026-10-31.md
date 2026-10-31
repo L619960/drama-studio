@@ -13,12 +13,12 @@
 | 维度 | 结论 |
 |---|---|
 | P0 阻断缺陷 | **1 项**：`useRouteProjectId` 初始化顺序触发的 TDZ，导致剧本 / 角色库 / 场景板首屏永久骨架屏、剧本页全部按钮无效。**已修复、已提交并复验**。 |
-| P1 高优先级 | 3 项：ComfyUI 启动命令文案矛盾（已修复）；真实生成/渲染链路（**文生图已实测通过**，剧本→成片仍受 LLM 配置限制）；CI tag 链路（**两层问题均已修复**：tag 不触发 workflow、tag 触发后隐式发布因缺 `GH_TOKEN` 失败；rc.2 三平台 package 全部 success）。 |
+| P1 高优先级 | 3 项：ComfyUI 启动命令文案矛盾（已修复）；真实生成/渲染链路（**默认 `qwen_t2i_hq` 曾因缺自定义节点整体 400，已修复并实测出图**；剧本→成片仍受 LLM 配置限制）；CI tag 链路（**两层问题均已修复**：tag 不触发 workflow、tag 触发后隐式发布因缺 `GH_TOKEN` 失败；rc.2 三平台 package 全部 success）。 |
 | P2 中优先级 | 4 项**全部闭环**：磁盘检查 ENOENT 回退（含 4 条单测）、跨平台启动命令示例、右键菜单自动化、快捷指令占位文案。 |
 | 页面可用性 | 10 个一级页面全部可加载；首屏 351 ms，路由切换渲染 6–49 ms；0 pageerror / 0 console error。 |
 | 按钮与隐藏入口 | 10 页共 80 个可见按钮完成清点；5 个新建类弹窗开/关通过；向导、Alt+1~6、Ctrl+,、侧栏折叠、**项目/角色右键菜单**全部实测通过。 |
 | 门禁 | typecheck 0 错误 · lint 0 error/0 warning · vitest 128 文件 / **1921** 用例全过 · build 成功 · acceptance E2E 1 passed（31.6 s）。 |
-| 真实链路 | `builtin_t2i` 经应用 IPC 提交 ComfyUI 实际出图成功：**73.6 s / 310 KB**，证据 [18-real-t2i.png](computer://e:\drama-studio\docs\audit\evidence\acceptance-2026-10-31\18-real-t2i.png)。 |
+| 真实链路 | 默认 `qwen_t2i_hq`（4 步蒸馏 + 1.5× latent 放大）经应用 IPC 出图：**15.2 s / 1152×1728 / 2.1 MB**，写实电影感；修复前该工作流因缺 `ReservedVRAMSetter` 节点导致所有默认生成 400。证据 [18-real-t2i.png](computer://e:\drama-studio\docs\audit\evidence\acceptance-2026-10-31\18-real-t2i.png)。 |
 | CI 交叉验证 | verify run `41195055356`（`a7ecf66`）、`41195810778`（`f933147`）、`41196992891`（`f61b9c4`）ubuntu / windows / macos 全绿；tag run `41196992891`（`v1.0.0-rc.2`）package 三平台全部 success，产物已上传 artifact。 |
 
 ---
@@ -152,22 +152,26 @@ onMounted(() => {
 
 ---
 
-### P1-02 · 真实生成链路：文生图已实测通过，剧本→成片仍受 LLM 配置限制
+### P1-02 · 真实生成链路：默认工作流曾整体 400，修复后文生图实测通过
 
-**严重度**：P1（交付能力验证）
-**已实测通过（本轮新增）**：
-- 本机 ComfyUI 0.39.0 以白名单节点模式（`--disable-all-custom-nodes --whitelist-custom-nodes ...`）在 8188 就绪，`/system_stats` 正常；
-- 通过应用 IPC `window.api.image.generate()` 提交 `builtin_t2i`（全内置节点：Checkpoint/KSampler/VAE）真实出图成功：
-  - 耗时 **73.6 s**，产物 512×512 PNG **310 KB**；
-  - 无报错、无 pageerror，`healthCheck=true`；
-  - 证据：[18-real-t2i.png](computer://e:\drama-studio\docs\audit\evidence\acceptance-2026-10-31\18-real-t2i.png)。
+**严重度**：P1（所有未显式指定工作流的图片生成都会失败）
+
+**新发现（复核出图质量时暴露）**：默认工作流 `qwen_t2i_hq` 引用了自定义节点 `ReservedVRAMSetter`，但白名单模式下的本机 ComfyUI 没有该节点。`/prompt` 校验失败返回 400，`image.generate()` 直接抛 `AxiosError: Request failed with status code 400`；由于工作流文件存在、不会降级到 `builtin_t2i`，**角色 / 道具 / 场景板 / 首帧等所有走默认路径的生成都会失败**。这也解释了此前「出图假」的测试图：那张是显式指定 `builtin_t2i`（20 步 / cfg 7 / 512×512）的兜底路径产物，并非默认链路。
+
+**修复**：`workflows/qwen_t2i_hq.json` 去掉 `ReservedVRAMSetter` 中转，`ModelSamplingAuraFlow` 直接接 `CheckpointLoaderSimple` 的 MODEL 输出，工作流回到全内置节点。
+
+**修复后实测（默认路径）**：
+- `window.api.image.generate(prompt, rel, { workflowName: 'qwen_t2i_hq', width: 768, height: 1152 })`
+- 耗时 **15.2 s**（4 步蒸馏采样 + 1.5× latent 放大），产物 **1152×1728 PNG / 2.1 MB**
+- 画面写实：雨丝、湿皮革高光、霓虹湿地倒影、自然皮肤质感与布料纹理；证据 [18-real-t2i.png](computer://e:\drama-studio\docs\audit\evidence\acceptance-2026-10-31\18-real-t2i.png)
+- 对照：同提示词走 `builtin_t2i`（20 步 / cfg 7 / 768×1152）耗时 92.6 s，画面明显偏插画感——**低分辨率 + 与蒸馏模型不匹配的采样参数是「假」的主因**，默认链路已用推荐参数规避。
 - ComfyUI 完整自定义节点（112 个）冷启动 25 分钟未监听 8188 的问题已通过白名单收敛规避；`ComfyuiSection.vue` 的启动命令示例现在按平台渲染（P2-02）。
 
 **仍属未验证**：
 - 剧本 → 拆镜 → 首帧 → 渲染 → 成片 happy path：本机真实 profile 的 `settings.llm.apiKey` 为空，AI 写剧本/拆镜无法执行；图生视频与成片合成也未跑（单次耗时数分钟）。
 - 需配置可用 LLM Key 后执行 `E2E_REAL_CHAIN=1 npm run test:e2e -- real-chain` 签收。
 
-**结论**：生成链路的「应用 ↔ ComfyUI ↔ 落盘」已闭环验证；「LLM → 剧本 → 分镜 → 视频」仍需可用模型与 Key。
+**结论**：「应用 ↔ ComfyUI ↔ 落盘」已闭环，默认工作流修复后真实感达到短剧首帧可用水平；「LLM → 剧本 → 分镜 → 视频」仍需可用模型与 Key。
 
 ---
 
@@ -268,7 +272,7 @@ artifact 归档体积：windows 810.6 MB / macos 1306.1 MB / ubuntu 1578.9 MB（
 | 单元/集成测试 | `npm test` | ✅ 128 个 spec / **1921** 用例全过（6.01 s） |
 | 构建 | `npm run build` | ✅ main / preload / renderer 三产物成功 |
 | 验收 E2E | `npx playwright test --config=e2e/playwright.config.ts e2e/acceptance.spec.ts` | ✅ 1 passed（31.6 s），含右键菜单新步骤 |
-| 真实出图 | 应用 IPC → `builtin_t2i` → ComfyUI 8188 | ✅ 73.6 s / 310 KB PNG / 0 报错 |
+| 真实出图 | 应用 IPC → 默认 `qwen_t2i_hq`（修复后） | ✅ 15.2 s / 1152×1728 PNG / 2.1 MB；`builtin_t2i` 对照 92.6 s |
 | 三平台打包 | tag `v1.0.0-rc.2` → run `41196992891` | ✅ package windows / macos / ubuntu 全部 success |
 
 ---
@@ -278,7 +282,7 @@ artifact 归档体积：windows 810.6 MB / macos 1306.1 MB / ubuntu 1578.9 MB（
 | 项 | 原因 | 状态 |
 |---|---|---|
 | AI 写剧本 / 拆镜 / 审稿 | 真实 profile 的 `settings.llm.apiKey` 为空 | 未执行（需配置 Key） |
-| 文生图 | — | ✅ 已实测（`builtin_t2i`，73.6 s） |
+| 文生图 | — | ✅ 已实测（默认 `qwen_t2i_hq` 15.2 s / 1152×1728；`builtin_t2i` 对照 92.6 s） |
 | 图生图 / 文生视频 / TTS | 需对应工作流与模型；单次耗时数分钟 | 未执行 |
 | 成片合成 / 字幕 / BGM / 导出 | 依赖上游渲染产物 | 未执行 |
 | 原生文件选择/保存对话框 | Playwright 无法操作系统级对话框 | 未执行（见 manual-ux 清单） |
@@ -303,6 +307,7 @@ artifact 归档体积：windows 810.6 MB / macos 1306.1 MB / ubuntu 1578.9 MB（
 | `a7ecf66` | acceptance 脚本 + 证据 | 右键菜单步骤与重跑证据 | P2-03 |
 | `f933147` | [ci.yml](file:///e:/drama-studio/.github/workflows/ci.yml) | `on.push.tags: ['v*']` | 修复 package job 死配置（P1-03 第一层） |
 | `f61b9c4` | [package.json](file:///e:/drama-studio/package.json) | 三个打包脚本加 `--publish never` | 修复 tag 触发隐式发布失败（P1-03 第二层） |
+| `a6b01bb` | [qwen_t2i_hq.json](file:///e:/drama-studio/workflows/qwen_t2i_hq.json) | 移除未安装的 `ReservedVRAMSetter`，MODEL 直连 Checkpoint | 修复默认工作流 400（P1-02） |
 | `a7ecf66` / 本报告提交 | [docs/audit/evidence/acceptance-2026-10-31](file:///e:/drama-studio/docs/audit/evidence/acceptance-2026-10-31) | 17 张截图 + `walkthrough.json` + `18-real-t2i.png` | 验收留证 |
 
 ---
@@ -333,5 +338,5 @@ artifact 归档体积：windows 810.6 MB / macos 1306.1 MB / ubuntu 1578.9 MB（
 | `15-settings-render.png` | 渲染设置分区 |
 | `16-console-selfcheck.png` | 系统自检面板 |
 | `17-sidebar-collapsed.png` | 侧栏折叠态 |
-| `18-real-t2i.png` | 真实出图产物（512×512，ComfyUI builtin_t2i） |
+| `18-real-t2i.png` | 真实出图产物（默认 `qwen_t2i_hq`，1152×1728，2.1 MB） |
 | `walkthrough.json` | 步骤、耗时、按钮、右键菜单、错误、主进程日志尾部 |
