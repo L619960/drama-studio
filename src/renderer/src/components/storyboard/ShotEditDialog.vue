@@ -91,11 +91,7 @@
             placeholder="跟随角色音色"
             style="flex:1"
           >
-            <el-option label="小晓 (女声)" value="zh-CN-XiaoxiaoNeural" />
-            <el-option label="小艺 (女声)" value="zh-CN-XiaoyiNeural" />
-            <el-option label="云健 (男声)" value="zh-CN-YunjianNeural" />
-            <el-option label="云野 (男声)" value="zh-CN-YunyeNeural" />
-            <el-option label="云杰 (男声)" value="zh-CN-YunjieNeural" />
+            <el-option v-for="v in TTS_VOICES" :key="v.value" :label="v.label" :value="v.value" />
           </el-select>
           <el-button
             size="small"
@@ -244,6 +240,8 @@ import { characterPrimaryRef, normalizeSceneKey } from '../../../../shared/ipcTy
 import { scenePlatePrompt, shotFramePrompt, sceneNegativeFor } from '../../../../shared/imagePrompts'
 import { useFileUrl } from '../../composables/useFileUrl'
 import { SHOT_SIZE_OPTIONS, CAMERA_OPTIONS, EMOTION_OPTIONS } from '../../utils/shotMeta'
+import { TTS_VOICES } from '../../../../shared/ttsVoices'
+import { confirmAction } from '../../utils/confirm'
 
 const props = defineProps<{
   projectId: string
@@ -252,6 +250,9 @@ const props = defineProps<{
   sceneBoards?: SceneBoard[]
   workflows: WorkflowMeta[]
   defaultFrames: number
+  /** RA-13：新建分镜默认尺寸取设置值（与右键插入/页头添加走同一口径） */
+  defaultWidth: number
+  defaultHeight: number
 }>()
 
 const emit = defineEmits<{ save: [draft: ShotDraft]; cancel: [] }>()
@@ -523,11 +524,22 @@ function randomizeSeed() {
   form.value.seed = Math.floor(Math.random() * 1000000)
 }
 
-function save() {
+/** RA-17：空镜没有任何场景视觉来源时，保存前确认（避免存下一个注定渲不出的镜头） */
+async function confirmEmptySceneSave(): Promise<boolean> {
+  if (form.value.type !== 't2v') return true
+  if (form.value.sceneBoardId || form.value.sceneImagePath) return true
+  return confirmAction(
+    '当前是空镜，但没有场景板也没有场景图，渲染时可能无法成片。仍要保存吗？',
+    { title: '空镜缺少场景素材', confirmText: '仍要保存', cancelText: '返回补充' }
+  )
+}
+
+async function save() {
   if (!form.value.action.trim()) {
     ElMessage.warning('请输入动作提示词')
     return
   }
+  if (!(await confirmEmptySceneSave())) return
   savedThisOpen = true
   emit('save', {
     scene: form.value.scene,
@@ -539,8 +551,8 @@ function save() {
     type: form.value.type,
     characterIds: form.value.type === 't2v' ? [] : form.value.characterIds,
     props: form.value.props.length ? [...form.value.props] : undefined,
-    width: 720,
-    height: 480,
+    width: props.defaultWidth,
+    height: props.defaultHeight,
     frames: form.value.frames,
     seed: form.value.seed,
     workflow: form.value.workflow || undefined,

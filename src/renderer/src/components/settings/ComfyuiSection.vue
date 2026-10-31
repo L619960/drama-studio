@@ -49,6 +49,7 @@
           {{ comfyuiConnected ? '已连接' : comfyuiStarting ? '启动中…' : '未连接' }}
         </el-tag>
         <el-button size="small" style="margin-left: 12px" :loading="testingComfy" @click="testComfyUI">测试连接</el-button>
+        <span class="form-tip" style="margin-left: 8px">测试前会先把当前配置保存</span>
         <el-button
           size="small"
           type="primary"
@@ -160,19 +161,31 @@ const testingComfy = ref(false)
 const stoppingComfy = ref(false)
 
 onMounted(async () => {
-  await testComfyUI()
+  await checkHealth()
 })
 
-async function testComfyUI() {
-  if (testingComfy.value) return
-  testingComfy.value = true
+/** 仅探测连接（进入设置页时用，不写盘） */
+async function checkHealth(): Promise<void> {
   try {
     comfyuiConnected.value = await window.api.comfyui.healthCheck()
   } catch {
     comfyuiConnected.value = false
   } finally {
-    testingComfy.value = false
     window.dispatchEvent(new Event('comfyui:recheck'))
+  }
+}
+
+/** RA-18：健康检查读的是主进程内存里的地址，先保存表单再探测，避免「测的是旧配置」 */
+async function testComfyUI() {
+  if (testingComfy.value) return
+  testingComfy.value = true
+  try {
+    await window.api.settings.save(JSON.parse(JSON.stringify(props.settings)))
+    await checkHealth()
+  } catch (e) {
+    ElMessage.error(`保存配置失败：${e instanceof Error ? e.message : String(e)}`)
+  } finally {
+    testingComfy.value = false
   }
 }
 

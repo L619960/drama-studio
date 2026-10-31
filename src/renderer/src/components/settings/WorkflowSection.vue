@@ -173,6 +173,27 @@ async function openParamsDialog(workflowName: string) {
   }
 }
 
+/**
+ * RA-15：连续调参时 toast 防抖——3 秒内多条保存合并为一条「已保存」，
+ * 避免拖动 spinner 连续弹十几个成功提示。
+ */
+let savedToastAt = 0
+let savedToastTimer: ReturnType<typeof setTimeout> | null = null
+function notifySaved(): void {
+  const now = Date.now()
+  if (now - savedToastAt >= 3000 && !savedToastTimer) {
+    savedToastAt = now
+    ElMessage.success('已保存')
+    return
+  }
+  if (savedToastTimer) return
+  savedToastTimer = setTimeout(() => {
+    savedToastTimer = null
+    savedToastAt = Date.now()
+    ElMessage.success('已保存')
+  }, Math.max(0, 3000 - (now - savedToastAt)))
+}
+
 // 保存单个参数修改
 async function saveParam(param: WorkflowParam) {
   try {
@@ -180,7 +201,7 @@ async function saveParam(param: WorkflowParam) {
     // 同步更新本地列表中的值
     const idx = paramsDialog.params.findIndex(p => p.nodeId === param.nodeId && p.key === param.key)
     if (idx !== -1) paramsDialog.params[idx].value = param.value
-    ElMessage.success('已保存')
+    notifySaved()
   } catch (e) {
     ElMessage.error((e as Error).message || '保存失败')
     // 重新加载恢复正确值

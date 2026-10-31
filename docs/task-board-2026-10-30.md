@@ -1,7 +1,7 @@
 # 任务看板 · 2026-10-30
 
-> 基线：分支 `feat/agent-autonomy`，最新提交 `3520f7d`
-> 门禁现状：`typecheck` ✅ · `npm test` 1843/1843（116 文件）✅ · `npm run build` ✅ · `eslint` 0 warning（0 error）
+> 基线：分支 `feat/agent-autonomy`，最新提交 `ec345bc`
+> 门禁现状：`typecheck` ✅ · `npm test` 1849/1849（117 文件）✅ · `npm run build` ✅ · `eslint` 0 warning（0 error）
 > 本文以代码实测为准，已修正 `docs/remediation-plan-2026-10-27.md` / `docs/technical-audit-2026-10-30.md` 中过时结论。
 
 ## 优先级定义
@@ -82,6 +82,7 @@
 | REQ-09 | 审核字段录入闭环与审核效率（三字段 / 全部通过确认 / 快捷键） | ✅ 已交付：核实主进程 LLM 拆镜已写 `shotSize/camera/emotion`，仅补渲染层入口——`ShotEditDialog` 新增景别/机位/情绪三下拉（英文值注入提示词、中文标签展示，未设定走默认）；审核弹窗空值改「未设定」中性展示、`→/Enter` 快捷键（Esc 沿用弹窗）、「⚠ 待整改」点击直达编辑；「全部通过」改红色确认且门控 off 时隐藏；补 3 例单测 | REQ-02 | M |
 | REQ-10 | 预览-修改-重渲闭环（重渲此镜 / 试听 / 批量结果如实） | ✅ 已交付：成片页剪辑台每镜新增「重渲此镜」（按当前分镜参数单独入队、完成后自动刷新）；分镜编辑弹窗音色试听改为「显式音色 > 角色音色」回退并就地内联播放（不弹全屏 loading、不打断编辑）；控制台批量重渲改为逐镜统计成功/失败、全失败报错且如实列出原因；RC-08「成片文件不存在」已有 try/catch 引导文案，核对通过无需改动 | REQ-09 | S |
 | REQ-11 | 错误分层与可恢复性（errorKind / queue:skipCurrent / hydrate 错误态） | ✅ 已交付：`Shot.errorKind/retryCount/retryBudget` + `progress(failed)` 携带分层（`classifyError` 复用 OOM/瞬时判定，任务队列记录自动重试次数）；新增 `queue:skipCurrent`（取消在跑/排队任务并落盘 `skipped`，队列继续下镜），队列页右键「跳过此镜」与失败行引导/重试角标；控制台 hydrate 失败改独立错误卡片（重试加载 + 回项目列表，不再复用「没有任务」空态）；渲染层全局兜底白名单取消类 reject（`isCancelReject`）不再误弹「操作失败」；补 11 例单测 | REQ-01 | M |
+| REQ-12 | 设置双写收敛与保存体验（RA-01/10/11/12/13/15/17/18 + MP-11） | ✅ 已交付：`creation.edit ↔ render/tts` 改为共享镜像函数双向同步（同值不写，防 watcher 回环），分镜默认尺寸/帧数只读 `render`；设置页新增脏态提示与 `onBeforeRouteLeave` 保存并离开拦截、「恢复默认」（保留 ComfyUI/LLM 连接配置）、读取失败明确提示「当前为默认值」；TTS 音色抽 `shared/ttsVoices` 三处下拉共用（补齐云杰）；分镜编辑弹窗新建尺寸改用设置默认值，t2v 无场景板/场景图保存前确认；ComfyUI「测试连接」先存后测；工作流参数保存 toast 3 秒合并；MP-11 记录级 revision 暂不引入（设置页每次进入重读已满足本期口径）；补 6 例单测 | — | L |
 
 ## 依赖关系
 
@@ -132,3 +133,4 @@ P1-C1（flake 修复）─→ P1-D1 大批量补测（避免新增用例继承�
 | 2026-10-31 03:05 | REQ-09：核实 LLM 拆镜已写三字段，补编辑弹窗景别/机位/情绪录入（`shotMeta` 中英映射 + 3 例单测）、审核空值中性化、`→/Enter` 快捷键、「⚠ 待整改」点击直达编辑、「全部通过」红色确认与 gate=off 隐藏。四门全绿（1832 用例 / 115 文件） |
 | 2026-10-31 07:25 | REQ-10：成片页剪辑台逐镜「重渲此镜」、分镜编辑音色试听回退角色音色并内联播放、控制台批量重渲成功/失败如实反馈；RC-08 核对为已满足。四门全绿（1832 用例 / 115 文件） |
 | 2026-10-31 07:50 | REQ-11：失败分层 `errorKind/retryCount/retryBudget` + `queue:skipCurrent` 跳过卡死镜 + 控制台 hydrate 错误卡片 + 取消类 reject 白名单（`errorGuide` + 11 例单测）。四门全绿（1843 用例 / 116 文件） |
+| 2026-10-31 08:30 | REQ-12：设置双写收敛（`mirrorEditToRender`/`mirrorRenderToEdit` 双向同值不写）+ 脏态离开拦截/恢复默认/读取失败提示 + 音色清单 `shared/ttsVoices` 三处共用 + 新建分镜尺寸读设置 + t2v 空镜保存确认 + ComfyUI 先存后测 + 参数保存 toast 合并（`ttsVoices`/`creationSettings` + 6 例单测）。四门全绿（1849 用例 / 117 文件） |

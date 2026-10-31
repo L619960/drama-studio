@@ -6,9 +6,11 @@
         <p class="subtitle">渲染、模型与外观偏好</p>
       </div>
       <div class="page-actions">
+        <el-button @click="restoreDefaults">恢复默认</el-button>
         <el-button type="primary" @click="saveSettings" :loading="saving">
           <el-icon><Check /></el-icon>保存
         </el-button>
+        <span v-if="dirty" class="dirty-tip">有未保存的修改</span>
       </div>
     </div>
 
@@ -165,10 +167,7 @@
           <el-form label-width="140px">
             <el-form-item label="默认音色">
               <el-select v-model="settings.tts.defaultVoice" style="width: 200px">
-                <el-option label="小晓 (女声)" value="zh-CN-XiaoxiaoNeural" />
-                <el-option label="云健 (男声)" value="zh-CN-YunjianNeural" />
-                <el-option label="小艺 (女声)" value="zh-CN-XiaoyiNeural" />
-                <el-option label="云野 (男声)" value="zh-CN-YunyeNeural" />
+                <el-option v-for="v in TTS_VOICES" :key="v.value" :label="v.label" :value="v.value" />
               </el-select>
             </el-form-item>
             <el-form-item label="语速">
@@ -233,15 +232,18 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
+import { onBeforeRouteLeave } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
   Setting, VideoCamera, Service, Microphone, Brush, Check, Folder, Key, MagicStick,
   Film, User, PictureFilled, Scissor, Odometer
 } from '@element-plus/icons-vue'
 import type { AppSettings } from '../../../shared/ipcTypes'
-import { DEFAULT_CREATION } from '../../../shared/creationSettings'
+import { DEFAULT_CREATION, mirrorEditToRender, mirrorRenderToEdit } from '../../../shared/creationSettings'
+import { TTS_VOICES, DEFAULT_TTS_VOICE } from '../../../shared/ttsVoices'
 import { throttleTap } from '../utils/throttle'
+import { confirmAction, confirmDanger } from '../utils/confirm'
 import { ONBOARDING_OPEN_EVENT } from '../utils/onboarding'
 import CreationGroup from '../components/settings/CreationGroup.vue'
 import WorkflowSection from '../components/settings/WorkflowSection.vue'
@@ -305,70 +307,71 @@ const hotkeyGroups = [
 /** Wan 合法默认帧：17,33,…,113（16n+1） */
 const frameOptions = [33, 49, 65, 81, 97, 113]
 
-const settings = reactive<AppSettings>({
-  general: {
-    autoSave: true,
-    autoLearn: true
-  },
-  render: {
-    defaultWidth: 720,
-    defaultHeight: 480,
-    defaultFrames: 81,
-    timeout: 600,
-    lipSync: true,
-    lipSyncMode: 'auto',
-    oomRetry: true,
-    consistencyMode: 'warn',
-    resolutionTier: 'auto',
-    shotReviewGate: 'block',
-    reviewGate: 'block',
-    finalReviewGate: 'block',
-    assetConcurrency: 2,
-    perShotAudit: true,
-    turboH3: false
-  },
-  creation: structuredClone(DEFAULT_CREATION),
-  comfyui: {
-    baseUrl: 'http://127.0.0.1:8188',
-    modelsDir: '',
-    startCommand: '',
-    workflowLibraryDir: ''
-  },
-  tts: {
-    defaultVoice: 'zh-CN-XiaoxiaoNeural',
-    rate: 88,
-    volume: 100
-  },
-  workflow: {
-    default: 'wan22_i2v'
-  },
-  llm: {
-    apiKey: '',
-    baseUrl: 'https://api.deepseek.com',
-    model: 'deepseek-chat',
-    baseUrlHistory: [] as string[]
-  },
-  appearance: {
-    theme: 'dark'
+/** 默认设置（首屏初始值 + 「恢复默认」共用一份，避免两处默认值漂移） */
+function createDefaultSettings(): AppSettings {
+  return {
+    general: {
+      autoSave: true,
+      autoLearn: true
+    },
+    render: {
+      defaultWidth: 720,
+      defaultHeight: 480,
+      defaultFrames: 81,
+      timeout: 600,
+      lipSync: true,
+      lipSyncMode: 'auto',
+      oomRetry: true,
+      consistencyMode: 'warn',
+      resolutionTier: 'auto',
+      shotReviewGate: 'block',
+      reviewGate: 'block',
+      finalReviewGate: 'block',
+      assetConcurrency: 2,
+      perShotAudit: true,
+      turboH3: false
+    },
+    creation: structuredClone(DEFAULT_CREATION),
+    comfyui: {
+      baseUrl: 'http://127.0.0.1:8188',
+      modelsDir: '',
+      startCommand: '',
+      workflowLibraryDir: ''
+    },
+    tts: {
+      defaultVoice: DEFAULT_TTS_VOICE,
+      rate: 88,
+      volume: 100
+    },
+    workflow: {
+      default: 'wan22_i2v'
+    },
+    llm: {
+      apiKey: '',
+      baseUrl: 'https://api.deepseek.com',
+      model: 'deepseek-chat',
+      baseUrlHistory: [] as string[]
+    },
+    appearance: {
+      theme: 'dark'
+    }
   }
-})
+}
 
-// 剪辑模块与旧 render/tts 双向同步（保存时主进程也会 normalize）
-watch(
-  () => settings.creation.edit,
-  (ed) => {
-    settings.render.defaultWidth = ed.defaultWidth
-    settings.render.defaultHeight = ed.defaultHeight
-    settings.render.defaultFrames = ed.defaultFrames
-    settings.render.timeout = ed.comfyTimeoutSec
-    settings.render.lipSync = ed.lipSync
-    settings.render.lipSyncMode = ed.lipSyncMode
-    settings.render.reviewGate = ed.reviewGate
-    settings.tts.rate = ed.ttsRate
-    settings.tts.volume = ed.ttsVolume
-  },
-  { deep: true }
-)
+const settings = reactive<AppSettings>(createDefaultSettings())
+
+/** 已落盘快照：用于「有未保存修改」判定与离开拦截 */
+const savedSnapshot = ref('')
+const dirty = computed(() => savedSnapshot.value !== '' && savedSnapshot.value !== snapshotSettings())
+
+function snapshotSettings(): string {
+  return JSON.stringify(settings)
+}
+
+/** 双写收敛（RA-01）：creation.edit 与 render/tts 变更互相同步，任一处改都处处生效 */
+watch(() => settings.creation.edit, () => mirrorEditToRender(settings), { deep: true })
+watch(() => settings.render, () => mirrorRenderToEdit(settings), { deep: true })
+watch(() => settings.tts, () => mirrorRenderToEdit(settings), { deep: true })
 
 onMounted(async () => {
   await loadSettings()
@@ -378,7 +381,10 @@ onMounted(async () => {
 async function loadSettings() {
   try {
     const saved = await window.api.settings.get()
-    if (!saved) return
+    if (!saved) {
+      savedSnapshot.value = snapshotSettings()
+      return
+    }
     Object.assign(settings, saved)
     if (saved.creation) {
       settings.creation = {
@@ -389,8 +395,12 @@ async function loadSettings() {
         presets: Array.isArray(saved.creation.presets) ? saved.creation.presets : []
       }
     }
-  } catch {
-    // 使用默认
+    // 设置页每次进入都重读一次配置（对话内改 baseUrl 等设置也能在这里看到最新值，MP-11 本期口径）
+    savedSnapshot.value = snapshotSettings()
+  } catch (e) {
+    // RA-10：读取失败不再静默——明确告知当前显示的是默认值，避免用户以为配置丢了
+    savedSnapshot.value = snapshotSettings()
+    ElMessage.warning(`配置读取失败，当前显示默认值：${e instanceof Error ? e.message : String(e)}`)
   }
 }
 
@@ -399,8 +409,35 @@ function openOnboarding(): void {
   window.dispatchEvent(new Event(ONBOARDING_OPEN_EVENT))
 }
 
-async function saveSettings() {
-  if (!throttleTap('settings-save', 800)) return
+/** 恢复默认：重置通用/渲染/创作/语音/外观等默认值，保留 ComfyUI 与 LLM 连接配置 */
+async function restoreDefaults(): Promise<void> {
+  const ok = await confirmDanger(
+    '将通用、渲染、创作四模块、TTS、外观恢复为默认值（保留 ComfyUI 地址与 LLM 配置，预设会被清空）。恢复后仍需点「保存」才生效。',
+    { title: '恢复默认设置', confirmText: '恢复默认' }
+  )
+  if (!ok) return
+  const defaults = createDefaultSettings()
+  Object.assign(settings, {
+    general: defaults.general,
+    render: defaults.render,
+    creation: defaults.creation,
+    tts: defaults.tts,
+    workflow: defaults.workflow,
+    appearance: defaults.appearance
+  })
+  applyTheme()
+  ElMessage.success('已恢复默认值，点「保存」后生效')
+}
+
+/** 即时应用主题（4 套：dark=无 class，其余挂 html.theme-xxx） */
+function applyTheme(): void {
+  const html = document.documentElement
+  html.classList.remove('theme-light', 'theme-studio', 'theme-warm')
+  if (settings.appearance.theme !== 'dark') html.classList.add(`theme-${settings.appearance.theme}`)
+}
+
+/** 落盘设置；返回是否成功（离开守卫复用，不弹成功 toast） */
+async function persistSettings(showToast = true): Promise<boolean> {
   saving.value = true
   try {
     // 保存前把当前值记入各输入框记忆（去重置顶）
@@ -408,21 +445,41 @@ async function saveSettings() {
     comfyuiSectionRef.value?.rememberInputs()
     llmSectionRef.value?.rememberInputs()
     await window.api.settings.save(JSON.parse(JSON.stringify(settings)))
-    // 即时应用主题（4 套：dark=无 class，其余挂 html.theme-xxx）
-    {
-      const html = document.documentElement
-      html.classList.remove('theme-light', 'theme-studio', 'theme-warm')
-      if (settings.appearance.theme !== 'dark') html.classList.add(`theme-${settings.appearance.theme}`)
-    }
+    applyTheme()
     // 通知侧栏立刻复查 ComfyUI（地址可能已变）
     window.dispatchEvent(new Event('comfyui:recheck'))
-    ElMessage.success('保存成功')
-  } catch {
-    ElMessage.error('保存失败')
+    savedSnapshot.value = snapshotSettings()
+    if (showToast) ElMessage.success('保存成功')
+    return true
+  } catch (e) {
+    if (showToast) ElMessage.error(`保存失败：${e instanceof Error ? e.message : String(e)}`)
+    return false
   } finally {
     saving.value = false
   }
 }
+
+async function saveSettings() {
+  if (!throttleTap('settings-save', 800)) return
+  await persistSettings()
+}
+
+// RA-11：有未保存改动时拦截路由离开；选「保存并离开」先落盘再放行
+onBeforeRouteLeave(async () => {
+  if (!dirty.value) return true
+  const leave = await confirmAction('设置有未保存的修改，离开将丢失。是否保存后再离开？', {
+    title: '未保存的修改',
+    confirmText: '保存并离开',
+    cancelText: '留在本页'
+  })
+  if (!leave) return false
+  const ok = await persistSettings(false)
+  if (!ok) {
+    ElMessage.error('保存失败，已留在设置页，请检查后重试')
+    return false
+  }
+  return true
+})
 </script>
 
 <style scoped>
@@ -467,6 +524,13 @@ async function saveSettings() {
 .path-input .el-input { flex: 1; }
 
 .form-tip { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+
+/* RA-11：脏态提示，提醒「改了但没保存」 */
+.dirty-tip {
+  font-size: 12px;
+  color: var(--warning-text, #e6a23c);
+  margin-left: 4px;
+}
 
 /* 快捷键说明 */
 .hotkey-table {

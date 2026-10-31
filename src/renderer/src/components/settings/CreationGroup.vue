@@ -319,7 +319,7 @@ function applyPreset(id: string) {
   props.settings.creation.character = { ...p.modules.character }
   props.settings.creation.scene = { ...p.modules.scene }
   props.settings.creation.edit = { ...p.modules.edit }
-  ElMessage.success(`已应用预设「${p.name}」`)
+  ElMessage.success(`已应用预设「${p.name}」到表单，需点「保存」才生效`)
 }
 
 function savePresetAs(name: string) {

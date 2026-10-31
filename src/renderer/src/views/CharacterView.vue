@@ -121,11 +121,7 @@
         </el-form-item>
         <el-form-item label="音色">
           <el-select v-model="charForm.voice" style="width: 100%">
-            <el-option label="小晓 (女声)" value="zh-CN-XiaoxiaoNeural" />
-            <el-option label="云健 (男声)" value="zh-CN-YunjianNeural" />
-            <el-option label="小艺 (女声)" value="zh-CN-XiaoyiNeural" />
-            <el-option label="云野 (男声)" value="zh-CN-YunyeNeural" />
-            <el-option label="云杰 (男声)" value="zh-CN-YunjieNeural" />
+            <el-option v-for="v in TTS_VOICES" :key="v.value" :label="v.label" :value="v.value" />
           </el-select>
         </el-form-item>
       </el-form>
@@ -158,6 +154,7 @@ import { useContextMenu } from '../composables/useContextMenu'
 import { snapshot } from '../utils/snapshot'
 import { throttleTap } from '../utils/throttle'
 import { confirmDanger } from '../utils/confirm'
+import { TTS_VOICES, ttsVoiceName, DEFAULT_TTS_VOICE } from '../../../shared/ttsVoices'
 
 const { urlCache, ensureFileUrl, ensureFileUrls } = useFileUrl()
 
@@ -167,10 +164,10 @@ const projectId = useRouteProjectId((id) => { void loadProject(id) })
 const project = ref<Project | null>(null)
 const showAddDialog = ref(false)
 const editingChar = ref<Character | null>(null)
-const charForm = ref({ name: '', description: '', voice: 'zh-CN-XiaoxiaoNeural' })
+const charForm = ref({ name: '', description: '', voice: DEFAULT_TTS_VOICE })
 const previewVisible = ref(false)
 const previewPath = ref('')
-const defaultVoice = ref('zh-CN-XiaoxiaoNeural')
+const defaultVoice = ref(DEFAULT_TTS_VOICE)
 
 const voicePreviewVisible = ref(false)
 const voicePreviewUrl = ref('')
@@ -423,15 +420,9 @@ async function deleteCharacter(char: Character) {
   }
 }
 
+/** REQ-12 RA-12：音色短名统一取 shared 清单，三处下拉与命名不再各自维护 */
 function voiceName(voice: string) {
-  const map: Record<string, string> = {
-    'zh-CN-XiaoxiaoNeural': '小晓',
-    'zh-CN-YunjianNeural': '云健',
-    'zh-CN-XiaoyiNeural': '小艺',
-    'zh-CN-YunyeNeural': '云野',
-    'zh-CN-YunjieNeural': '云杰'
-  }
-  return map[voice] || voice
+  return ttsVoiceName(voice)
 }
 
 </script>

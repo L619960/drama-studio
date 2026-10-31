@@ -67,6 +67,8 @@
       :scene-boards="sceneBoards"
       :workflows="workflows"
       :default-frames="defaultFrames"
+      :default-width="defaultShotSize.width"
+      :default-height="defaultShotSize.height"
       @save="onSaveShot"
       @cancel="onEditDialogCancel"
     />
@@ -318,21 +320,17 @@ onMounted(async () => {
       window.api.settings.get(),
       window.api.workflow.list()
     ])
-    if (s?.render?.defaultFrames) defaultFrames.value = s.render.defaultFrames
-    autoSaveEnabled.value = s?.general?.autoSave ?? true
-    shotReviewGate.value = s?.render?.shotReviewGate ?? 'block'
-    if (s?.creation?.edit) {
-      defaultFrames.value = s.creation.edit.defaultFrames
-      defaultShotSize.value = {
-        width: s.creation.edit.defaultWidth,
-        height: s.creation.edit.defaultHeight
-      }
-    } else if (s?.render) {
+    // REQ-12 RA-01：默认尺寸/帧数只读 render（单一事实源）；creation.edit 由设置页双写镜像同步，
+    // 不再在此处加「creation.edit 优先」分支，避免「改了 render 不生效」的双源歧义
+    if (s?.render) {
+      defaultFrames.value = s.render.defaultFrames
       defaultShotSize.value = {
         width: s.render.defaultWidth,
         height: s.render.defaultHeight
       }
     }
+    autoSaveEnabled.value = s?.general?.autoSave ?? true
+    shotReviewGate.value = s?.render?.shotReviewGate ?? 'block'
     workflows.value = wf
   } catch {
     // 保持默认

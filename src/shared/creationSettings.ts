@@ -134,6 +134,45 @@ function pickEdit<T>(v: T | undefined, fallback: T | undefined, def: T): T {
   return def
 }
 
+/**
+ * 双写收敛（REQ-12 RA-01）：creation.edit 与 render/tts 的重复字段互相同步。
+ * 只在值确实不同时写入——避免「A 改 B、B 改 A」互相触发形成死循环。
+ */
+export function mirrorEditToRender(settings: AppSettings): void {
+  const ed = settings.creation?.edit
+  if (!ed || !settings.render || !settings.tts) return
+  assignIfChanged(settings.render, 'defaultWidth', ed.defaultWidth)
+  assignIfChanged(settings.render, 'defaultHeight', ed.defaultHeight)
+  assignIfChanged(settings.render, 'defaultFrames', ed.defaultFrames)
+  assignIfChanged(settings.render, 'timeout', ed.comfyTimeoutSec)
+  assignIfChanged(settings.render, 'lipSync', ed.lipSync)
+  assignIfChanged(settings.render, 'lipSyncMode', ed.lipSyncMode)
+  assignIfChanged(settings.render, 'reviewGate', ed.reviewGate)
+  assignIfChanged(settings.tts, 'rate', ed.ttsRate)
+  assignIfChanged(settings.tts, 'volume', ed.ttsVolume)
+}
+
+/** 双写收敛反方向：设置「渲染/TTS」区改动写回 creation.edit */
+export function mirrorRenderToEdit(settings: AppSettings): void {
+  const ed = settings.creation?.edit
+  if (!ed || !settings.render || !settings.tts) return
+  assignIfChanged(ed, 'defaultWidth', settings.render.defaultWidth)
+  assignIfChanged(ed, 'defaultHeight', settings.render.defaultHeight)
+  assignIfChanged(ed, 'defaultFrames', settings.render.defaultFrames)
+  assignIfChanged(ed, 'comfyTimeoutSec', settings.render.timeout)
+  assignIfChanged(ed, 'lipSync', settings.render.lipSync)
+  assignIfChanged(ed, 'lipSyncMode', settings.render.lipSyncMode)
+  assignIfChanged(ed, 'reviewGate', settings.render.reviewGate)
+  assignIfChanged(ed, 'ttsRate', settings.tts.rate)
+  assignIfChanged(ed, 'ttsVolume', settings.tts.volume)
+}
+
+/** 仅在目标值与来源值不同时写入（同值写入无意义，且会触发响应式 watcher 回环） */
+function assignIfChanged<T extends object, K extends keyof T>(target: T, key: K, value: T[K] | undefined): void {
+  if (value === undefined) return
+  if (target[key] !== value) target[key] = value as T[K]
+}
+
 export function resolveCreation(settings: AppSettings): CreationSettings {
   const c = settings.creation || DEFAULT_CREATION
   const edit: EditModuleSettings = {
