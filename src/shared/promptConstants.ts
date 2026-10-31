@@ -16,7 +16,7 @@ export const REALISM_POSITIVE =
 
 /**
  * 负向：油光 / 塑料 / 美颜 / 换装漂移 / CGI / 皮肤瑕疵 / 面部水珠。
- * 注入工作流 $NEGATIVE$（qwen_t2i_hq / builtin_t2i）。
+ * 注入工作流 $NEGATIVE$（klein_t2i_clean / qwen_t2i_hq / builtin_t2i）。
  */
 export const REALISM_NEGATIVE =
   [

@@ -91,7 +91,7 @@ export const CREATION_PARAM_TIPS = {
     realismLock: 'strong 加强塑料美颜/换装负向与身份复读',
     seedMode: 'fixed 可复现同款定妆；random 每次新样貌微调',
     seed: '仅 seedMode=fixed 时生效',
-    t2iWorkflow: '留空使用默认文生图工作流（qwen_t2i_hq）',
+    t2iWorkflow: '留空使用默认文生图工作流（klein_t2i_clean，缺失自动回退 qwen_t2i_hq / builtin_t2i）',
     candidates: '定妆一次生成几张不同 seed，再抽卡留最优（1=关闭）',
     llmPick: '多候选时由 LLM 结合文件质量分挑选'
   },

@@ -42,11 +42,16 @@ export interface ImageGenerateOptions {
 
 /**
  * T2I 图片生成服务：把提示词提交给 ComfyUI 文生图工作流，产物落到指定绝对路径。
- * - 默认 qwen_t2i_hq（缺文件回退 builtin_t2i）
+ * - 默认 klein_t2i_clean（FLUX.2 Klein 写实优先）；缺失时依次回退 qwen_t2i_hq / builtin_t2i
  * - 始终注入写实负向，压制油光塑料美颜
  * - 瞬时故障自动退避重试；OOM 时降一档分辨率再试一次
  */
 export class ImageService {
+  /** 默认文生图工作流：FLUX.2 Klein 的皮肤/光影真实感明显优于 Qwen 蒸馏模型 */
+  static readonly DEFAULT_T2I_WORKFLOW = 'klein_t2i_clean'
+  /** 默认与「显式指定但模板缺失」的回退顺序 */
+  private static readonly T2I_FALLBACKS = ['klein_t2i_clean', 'qwen_t2i_hq', 'builtin_t2i'] as const
+
   /** 技能库电影级质量条款（index.ts 启动时注入）；为空时回退代码层精简条款 */
   qualityBlock = CINEMATIC_QUALITY_BLOCK
 
@@ -130,13 +135,19 @@ export class ImageService {
     options?: ImageGenerateOptions
   ): Promise<void> {
     const listed = await this.workflow.list()
-    const preferred = options?.workflowName || 'qwen_t2i_hq'
+    const preferred = options?.workflowName || ImageService.DEFAULT_T2I_WORKFLOW
+    // 显式指定工作流时沿用旧语义（缺失回退 builtin_t2i）；未指定则按写实优先链回退
+    const implicit = !options?.workflowName
     let name = preferred
     if (!listed.some((w) => w.name === preferred)) {
       if (options?.strictWorkflow) {
         throw new Error(`工作流 ${preferred} 不存在（strictWorkflow）`)
       }
-      name = listed.some((w) => w.name === 'builtin_t2i') ? 'builtin_t2i' : preferred
+      if (implicit) {
+        name = ImageService.T2I_FALLBACKS.find((f) => listed.some((w) => w.name === f)) ?? preferred
+      } else {
+        name = listed.some((w) => w.name === 'builtin_t2i') ? 'builtin_t2i' : preferred
+      }
     }
     const seed =
       typeof options?.seed === 'number' && Number.isFinite(options.seed)
