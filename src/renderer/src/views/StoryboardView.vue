@@ -114,6 +114,7 @@ import { snapshot } from '../utils/snapshot'
 import { throttleTap } from '../utils/throttle'
 import { confirmDanger } from '../utils/confirm'
 import { confirmUnreviewedRender } from '../utils/renderGate'
+import { showUndoToast } from '../utils/undoToast'
 import ShotEditDialog, { type ShotDraft } from '../components/storyboard/ShotEditDialog.vue'
 import SplitScriptDialog from '../components/storyboard/SplitScriptDialog.vue'
 import PromptAuditDrawer from '../components/storyboard/PromptAuditDrawer.vue'
@@ -498,31 +499,69 @@ async function deleteShot(index: number) {
   if (!project.value) return
   const shot = shots.value[index]
   if (!shot) return
+  // REQ-16：软删除 + 5 秒撤销窗，产物在撤销窗结束后才真正作废
   const ok = await confirmDanger(
-    '确定删除这个分镜吗？该镜已生成的音频/视频产物和整集成片将一并删除，此操作不可恢复。',
+    '确定删除这个分镜吗？该镜已生成的音频/视频产物和整集成片将在 5 秒后删除，期间可撤销。',
     { title: '删除分镜', confirmText: '删除', cancelText: '取消' }
   )
   if (!ok) return
   if (!throttleTap('shot-del-' + shot.id, 1000)) return
-  await invalidateArtifacts(shots.value[index])
+  const before = [...project.value.shots]
+  const beforeIndexes = before.map(s => s.index)
   project.value.shots.splice(index, 1)
   project.value.shots.forEach((s, i) => s.index = i + 1)
-  if (await persistProject()) ElMessage.success('删除成功')
+  if (!(await persistProject())) {
+    // 保存失败：回滚内存态，避免界面与磁盘不一致
+    project.value.shots = before
+    before.forEach((s, i) => s.index = beforeIndexes[i])
+    return
+  }
+  showUndoToast('分镜已删除', async () => {
+    const p = project.value
+    if (!p || p.shots.some(s => s.id === shot.id)) return
+    p.shots.splice(Math.min(index, p.shots.length), 0, shot)
+    p.shots.forEach((s, i) => s.index = i + 1)
+    if (await persistProject()) ElMessage.success('已撤销删除')
+  }, async () => {
+    await invalidateArtifacts(shot)
+  })
 }
 
-/** REQ-14 RA-20：批量删除（一次确认，逐镜作废旧产物） */
+/** REQ-14 RA-20：批量删除（一次确认，撤销窗结束后逐镜作废旧产物） */
 async function deleteShots(rows: Shot[]) {
   if (!project.value || rows.length === 0) return
   const ok = await confirmDanger(
-    `确定删除选中的 ${rows.length} 个分镜吗？这些镜已生成的产物和整集成片将一并删除，此操作不可恢复。`,
+    `确定删除选中的 ${rows.length} 个分镜吗？这些镜已生成的产物和整集成片将在 5 秒后删除，期间可撤销。`,
     { title: '批量删除分镜', confirmText: '删除', cancelText: '取消' }
   )
   if (!ok) return
-  const ids = new Set(rows.map(r => r.id))
-  for (const shot of rows) await invalidateArtifacts(shot)
+  const removed = rows
+    .map(r => ({ shot: r, at: project.value!.shots.findIndex(s => s.id === r.id) }))
+    .filter(x => x.at >= 0)
+  if (removed.length === 0) return
+  const ids = new Set(removed.map(x => x.shot.id))
+  const before = [...project.value.shots]
+  const beforeIndexes = before.map(s => s.index)
   project.value.shots = project.value.shots.filter(s => !ids.has(s.id))
   project.value.shots.forEach((s, i) => s.index = i + 1)
-  if (await persistProject()) ElMessage.success(`已删除 ${rows.length} 个分镜`)
+  if (!(await persistProject())) {
+    project.value.shots = before
+    before.forEach((s, i) => s.index = beforeIndexes[i])
+    return
+  }
+  showUndoToast(`已删除 ${removed.length} 个分镜`, async () => {
+    const p = project.value
+    if (!p) return
+    for (const x of [...removed].sort((a, b) => a.at - b.at)) {
+      if (!p.shots.some(s => s.id === x.shot.id)) {
+        p.shots.splice(Math.min(x.at, p.shots.length), 0, x.shot)
+      }
+    }
+    p.shots.forEach((s, i) => s.index = i + 1)
+    if (await persistProject()) ElMessage.success('已撤销删除')
+  }, async () => {
+    for (const x of removed) await invalidateArtifacts(x.shot)
+  })
 }
 
 /** REQ-14 RA-20：批量加入渲染队列（沿用未审镜告警放行确认） */

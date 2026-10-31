@@ -1,6 +1,7 @@
 import { computed, ref, watch, type Ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { confirmDanger, confirmAction } from '../utils/confirm'
+import { showUndoToast } from '../utils/undoToast'
 import type {
   DirectorState, DirectorStage, DirectorLogEntry
 } from '../../../shared/ipcTypes'
@@ -301,11 +302,19 @@ export function useDirectorState(projectId: Ref<string | undefined>) {
       { title: '清空任务', confirmText: '清空' }
     )
     if (!okClear) return
+    // REQ-16：暂存清空前的状态与日志，撤销时恢复本地展示（主进程侧任务态不回头）
+    const prevState = state.value
+    const prevLogs = localLogs.value
     state.value = null
     localLogs.value = []
     // 同步清空主进程侧任务态（directorClearState 通道）；失败不阻断本地 UI 清空
     await window.api.director.clearState(currentProjectId.value).catch(() => {})
-    ElMessage.success('任务状态已清空')
+    showUndoToast('任务状态已清空', () => {
+      if (state.value) return
+      state.value = prevState
+      localLogs.value = prevLogs
+      ElMessage.success('已撤销清空')
+    }, () => {})
   }
 
   async function openFinalFolder(): Promise<void> {

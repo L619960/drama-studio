@@ -178,6 +178,7 @@ import { useContextMenu } from '../composables/useContextMenu'
 import { snapshot } from '../utils/snapshot'
 import { throttleTap } from '../utils/throttle'
 import { confirmDanger } from '../utils/confirm'
+import { showUndoToast } from '../utils/undoToast'
 import PageSkeleton from '../components/common/PageSkeleton.vue'
 import ErrorStateCard from '../components/common/ErrorStateCard.vue'
 
@@ -418,18 +419,33 @@ async function deleteProp(prop: PropAsset): Promise<void> {
     )
     return
   }
-  const ok = await confirmDanger(`确定删除道具「${prop.zh}」吗？此操作不可恢复。`, {
+  const ok = await confirmDanger(`确定删除道具「${prop.zh}」吗？删除后 5 秒内可撤销。`, {
     title: '删除道具',
     confirmText: '删除'
   })
   if (!ok) return
+  const at = (project.value.props || []).findIndex(p => p.id === prop.id)
+  if (at < 0) return
+  // REQ-16：内存暂存 + 5 秒撤销窗，撤销即原位恢复
   project.value.props = (project.value.props || []).filter(p => p.id !== prop.id)
   try {
     await persistProps()
-    ElMessage.success('已删除')
   } catch (e) {
+    project.value.props.splice(at, 0, prop)
     ElMessage.error(`删除失败：${e instanceof Error ? e.message : String(e)}`)
+    return
   }
+  showUndoToast(`道具「${prop.zh}」已删除`, async () => {
+    if (!project.value || !project.value.props) return
+    if (project.value.props.some(p => p.id === prop.id)) return
+    project.value.props.splice(Math.min(at, project.value.props.length), 0, prop)
+    try {
+      await persistProps()
+      ElMessage.success('已撤销删除')
+    } catch (e) {
+      ElMessage.error(`撤销失败：${e instanceof Error ? e.message : String(e)}`)
+    }
+  }, () => {})
 }
 
 function previewProp(prop: PropAsset): void {

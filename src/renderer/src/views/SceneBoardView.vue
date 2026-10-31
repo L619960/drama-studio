@@ -198,6 +198,7 @@ import { useContextMenu } from '../composables/useContextMenu'
 import { snapshot } from '../utils/snapshot'
 import { throttleTap } from '../utils/throttle'
 import { confirmDanger } from '../utils/confirm'
+import { showUndoToast } from '../utils/undoToast'
 import PageSkeleton from '../components/common/PageSkeleton.vue'
 import ErrorStateCard from '../components/common/ErrorStateCard.vue'
 
@@ -458,18 +459,33 @@ async function deleteBoard(board: SceneBoard) {
     ElMessage.warning('仍有分镜引用该场景板，无法删除')
     return
   }
-  const ok = await confirmDanger(`确定删除场景板「${board.name}」吗？此操作不可恢复。`, {
+  const ok = await confirmDanger(`确定删除场景板「${board.name}」吗？删除后 5 秒内可撤销。`, {
     title: '删除场景板',
     confirmText: '删除'
   })
   if (!ok) return
+  const at = (project.value.sceneBoards || []).findIndex(b => b.id === board.id)
+  if (at < 0) return
+  // REQ-16：内存暂存 + 5 秒撤销窗，撤销即原位恢复
+  project.value.sceneBoards = (project.value.sceneBoards || []).filter(b => b.id !== board.id)
   try {
-    project.value.sceneBoards = (project.value.sceneBoards || []).filter(b => b.id !== board.id)
     await window.api.project.save(snapshot(project.value))
-    ElMessage.success('已删除')
   } catch (e) {
+    project.value.sceneBoards.splice(at, 0, board)
     ElMessage.error(`删除失败：${e instanceof Error ? e.message : String(e)}`)
+    return
   }
+  showUndoToast(`场景板「${board.name}」已删除`, async () => {
+    if (!project.value || !project.value.sceneBoards) return
+    if (project.value.sceneBoards.some(b => b.id === board.id)) return
+    project.value.sceneBoards.splice(Math.min(at, project.value.sceneBoards.length), 0, board)
+    try {
+      await window.api.project.save(snapshot(project.value))
+      ElMessage.success('已撤销删除')
+    } catch (e) {
+      ElMessage.error(`撤销失败：${e instanceof Error ? e.message : String(e)}`)
+    }
+  }, () => {})
 }
 </script>
 

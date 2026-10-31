@@ -189,6 +189,7 @@ import { useContextMenu } from '../composables/useContextMenu'
 import { snapshot } from '../utils/snapshot'
 import { throttleTap } from '../utils/throttle'
 import { confirmDanger } from '../utils/confirm'
+import { showUndoToast } from '../utils/undoToast'
 import { TTS_VOICES, ttsVoiceName, DEFAULT_TTS_VOICE } from '../../../shared/ttsVoices'
 import PageSkeleton from '../components/common/PageSkeleton.vue'
 import ErrorStateCard from '../components/common/ErrorStateCard.vue'
@@ -469,19 +470,33 @@ async function deleteCharacter(char: Character) {
     return
   }
 
-  const ok = await confirmDanger(`确定删除角色「${char.name}」吗？此操作不可恢复。`, {
+  const ok = await confirmDanger(`确定删除角色「${char.name}」吗？删除后 5 秒内可撤销。`, {
     title: '删除角色',
     confirmText: '删除'
   })
   menu.close()
   if (!ok) return
+  const at = project.value.characters.findIndex(c => c.id === char.id)
+  if (at < 0) return
+  // REQ-16：内存暂存 + 5 秒撤销窗，撤销即原位恢复
+  project.value.characters = project.value.characters.filter(c => c.id !== char.id)
   try {
-    project.value.characters = project.value.characters.filter(c => c.id !== char.id)
     await window.api.project.save(snapshot(project.value))
-    ElMessage.success('删除成功')
   } catch (e) {
+    project.value.characters.splice(at, 0, char)
     ElMessage.error(`删除失败：${e instanceof Error ? e.message : String(e)}`)
+    return
   }
+  showUndoToast(`角色「${char.name}」已删除`, async () => {
+    if (!project.value || project.value.characters.some(c => c.id === char.id)) return
+    project.value.characters.splice(Math.min(at, project.value.characters.length), 0, char)
+    try {
+      await window.api.project.save(snapshot(project.value))
+      ElMessage.success('已撤销删除')
+    } catch (e) {
+      ElMessage.error(`撤销失败：${e instanceof Error ? e.message : String(e)}`)
+    }
+  }, () => {})
 }
 
 /** REQ-12 RA-12：音色短名统一取 shared 清单，三处下拉与命名不再各自维护 */

@@ -221,6 +221,7 @@ import { throttleTap } from '../utils/throttle'
 import { statusTagType as statusType, shotStatusText } from '../utils/status'
 import { confirmDanger, confirmAction } from '../utils/confirm'
 import { confirmUnreviewedRender } from '../utils/renderGate'
+import { showUndoToast } from '../utils/undoToast'
 import ContextMenu, { type CtxItem } from '../components/ContextMenu.vue'
 
 const { urlCache, ensureFileUrl, ensureFileUrls } = useFileUrl()
@@ -451,13 +452,26 @@ async function cancelRender() {
     cancelText: '继续渲染'
   })
   if (!ok) return
+  // REQ-16：暂存取消前在队列中的镜头，供撤销时重新入队
+  const cancelledIds = shots.value
+    .filter(s => s.status === 'pending' || s.status === 'rendering')
+    .map(s => s.id)
   cancellingAll.value = true
   try {
     await window.api.render.cancel(projectId.value)
     // R-17：不再前端自行改写状态并整体保存项目（与主进程落盘竞态、后写者胜），
     // 取消后重新拉取，以主进程状态为准
     await loadProject()
-    ElMessage.success('已取消全部')
+    showUndoToast('已取消全部渲染任务', async () => {
+      if (cancelledIds.length === 0) return
+      try {
+        await window.api.render.start(projectId.value, cancelledIds, false)
+        await loadProject()
+        ElMessage.success(`已撤销取消，${cancelledIds.length} 个镜头重新入队`)
+      } catch (e) {
+        ElMessage.error(`撤销失败：${e instanceof Error ? e.message : String(e)}`)
+      }
+    }, () => {})
   } finally {
     cancellingAll.value = false
   }

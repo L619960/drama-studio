@@ -1,7 +1,7 @@
 # 任务看板 · 2026-10-30
 
 > 基线：分支 `feat/agent-autonomy`，最新提交 `897a17f`
-> 门禁现状：`typecheck` ✅ · `npm test` 1867/1867（122 文件）✅ · `npm run build` ✅ · `eslint` 0 warning（0 error）
+> 门禁现状：`typecheck` ✅ · `npm test` 1871/1871（123 文件）✅ · `npm run build` ✅ · `eslint` 0 warning（0 error）
 > 本文以代码实测为准，已修正 `docs/remediation-plan-2026-10-27.md` / `docs/technical-audit-2026-10-30.md` 中过时结论。
 
 ## 优先级定义
@@ -92,6 +92,7 @@
 | --- | --- | --- | --- | --- |
 | REQ-14 | 右键菜单统一与快捷键体系（RC-07/RA-08/RA-19/RA-20/DC-OPEN-26） | ✅ 已交付：`QueueView` 与 `ShotTablePanel` 自绘菜单替换为全局 `ContextMenu`（Esc/失焦/边缘钳位继承，菜单项与原层级一致，ShotTablePanel 按 id 锚定行防后台重排错位）；设置页快捷键表补 `Delete`（分镜）、`Ctrl+S`（剧本）、`Ctrl+E`（成片）；分镜表新增 selection 列与批量条（加入渲染队列 / 标记已跳过 / 删除所选，渲染中锁定），批量删除一次确认并逐镜作废产物；导演对话固定 chip 改为「继续/暂停/重渲第X镜/看进度」，「重渲第X镜」弹窗输入镜号后按 `shared/quickCommands` 生成指令发送；补 2 例单测 | — | M |
 | REQ-15 | 后台任务完成/失败通知（空白维度 3 + MP-12 + MP-07 + DC-OPEN-22） | ✅ 已交付：`director:finished` 追加 `totalShots/doneShots`，主进程 `Notification` 在窗口失焦时发系统通知（`shared/notify` 文案，取消不发，点击聚焦窗口）；新增 `comfyui:status-changed` 与 `comfyStatusWatcher` 健康轮询，运行条渲染中掉线显示红色「ComfyUI 已断开」；新增 `system:disk-space` / `system:cleanup-tmp`，启动与任务完成检查数据盘，<5GB 运行条出现警告与「清理临时产物」（复用 `taskQueue.cleanupTmpFiles`）；补 11 例单测 | REQ-05 | M |
+| REQ-16 | 撤销/重做基础（空白维度 7） | ✅ 已交付：新增 `shared/undoWindow`（5 秒后悔窗，只结算一次）与 `utils/undoToast`（`ElMessage` + 撤销按钮）；分镜单个/批量删除改为软删除（撤销原位恢复且不丢引用，产物与整集成片延迟到窗口结束才作废）；角色/道具/场景板删除支持 5 秒撤销并回写项目；「取消全部渲染」撤销按快照重新入队；「清空任务」撤销恢复本地状态与日志；补 4 例单测 | — | M |
 
 ## 依赖关系
 
@@ -147,3 +148,4 @@ P1-C1（flake 修复）─→ P1-D1 大批量补测（避免新增用例继承�
 | 2026-10-31 09:40 | REQ-17：新增 `PageSkeleton`/`ErrorStateCard` 公共组件，角色/道具/场景板/剧本四视图补齐「骨架 → 错误卡片 → 空态/内容」三态，控制台 hydrate 失败复用同一错误卡片，资产空态补「去分镜页看看」CTA。四门全绿（1852 用例 / 118 文件）；Phase 2（P1 9 条）全部交付 |
 | 2026-10-31 09:55 | REQ-14：`QueueView`/`ShotTablePanel` 右键菜单复用全局 `ContextMenu`（Esc/失焦/边缘钳位，分镜表按 id 锚定行）、设置快捷键表补 `Delete`/`Ctrl+S`/`Ctrl+E`、分镜表单选列 + 批量条（入队/标跳过/删除，渲染中锁定）、对话 chip 改「重渲第X镜」+ `shared/quickCommands`（2 例单测）。四门全绿（1854 用例 / 119 文件） |
 | 2026-10-31 10:10 | REQ-15：`director:finished` 补镜头数，主进程失焦时发系统通知；`comfyui:status-changed` 健康轮询驱动运行条「ComfyUI 已断开」红色态；`system:disk-space`/`system:cleanup-tmp` + 运行条 <5GB 警告与清理入口（复用 `taskQueue.cleanupTmpFiles`）；补 11 例单测。四门全绿（1867 用例 / 122 文件） |
+| 2026-10-31 10:40 | REQ-16：新增 `shared/undoWindow`（5 秒后悔窗纯状态机）与 `utils/undoToast`；分镜单个/批量删除软删除（撤销原位恢复、产物延迟作废）、角色/道具/场景板删除 5 秒撤销、「取消全部渲染」撤销重新入队、「清空任务」撤销恢复本地展示；补 4 例单测。四门全绿（1871 用例 / 123 文件） |
