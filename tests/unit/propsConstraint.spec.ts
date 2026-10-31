@@ -128,14 +128,13 @@ describe('场景无路人锁 noExtrasLockFor（2026-10-23《雨夜山门 v2》�
     const s = { action: '缓缓拔出青锋剑，剑指铁髯', characterIds: ['c1'], shotSize: 'medium' } as any
     const b = noExtrasLockFor(s)
     expect(b).toContain('exactly ONE person')
-    expect(b).toContain('no bystanders')
-    expect(b).toContain('no background crowd')
+    expect(b).toContain('background is empty')
   })
   it('武打镜（英文 duel 双人）→ 锁仅 2 人', () => {
     const s = { action: 'two swordsmen duel in the courtyard, blades clash', characterIds: ['c1', 'c2'], shotSize: 'medium' } as any
     const b = noExtrasLockFor(s)
     expect(b).toContain('exactly 2 people')
-    expect(b).toContain('no silhouettes of strangers')
+    expect(b).toContain('only the 2 characters from the reference images')
   })
   it('台词特写镜 → 同样锁无路人（背景不得出现剧本外人物）', () => {
     const s = { action: '冷声喝问', characterIds: ['c1'], shotSize: 'closeup' } as any

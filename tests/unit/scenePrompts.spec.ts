@@ -18,10 +18,11 @@ import {
 
 describe('scenePrompts · 镜头/场景提示组装域（2026-10-30 补前几个简单函数）', () => {
   describe('eraLockBlock：时代锁块', () => {
-    it('民国 → 1930s republican-era，禁止 hanfu', () => {
+    it('民国 → 1930s republican-era（正向写旗袍/长衫，不用否定式）', () => {
       const v = eraLockBlock('民国上海滩')
       expect(v).toContain('republican-era')
-      expect(v).toContain('no ancient hanfu')
+      expect(v).toContain('qipao')
+      expect(v).not.toMatch(/no ancient hanfu/)
     })
 
     it('古装武侠 → wuxia + hanfu，禁止 modern/katana/ninja', () => {
@@ -100,11 +101,9 @@ describe('scenePrompts · 镜头/场景提示组装域（2026-10-30 补前几个
   })
 
   describe('interiorCueFor：室内/室外 cue', () => {
-    it('室内 → 封闭四面墙（应无 exterior view）', () => {
+    it('室内 → 封闭四面墙（正向描述，不写否定词）', () => {
       const v = interiorCueFor('男厕所')
       expect(v).toContain('fully enclosed interior')
-      // 注意 interiorCueFor 内部含 "no exterior view"，所以会含 exterior 字样但是否定
-      expect(v).toMatch(/no exterior/)
       expect(v).not.toMatch(/exterior location/)
     })
 

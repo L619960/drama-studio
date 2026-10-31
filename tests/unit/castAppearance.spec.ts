@@ -124,22 +124,19 @@ describe('castAppearance · 定妆外观/身份锁域（2026-10-30 补未覆盖�
 
   describe('sanitizeCastLook：定妆皮肤清洗', () => {
     it('空 → 原样返回', () => { expect(sanitizeCastLook('')).toBe('') })
-    it('含 stubble/acne → 删除', () => {
+    it('含 acne → 删除；stubble 等真实纹理保留', () => {
       const v = sanitizeCastLook('man with stubble, acne scars on face')
-      expect(v).not.toMatch(/stubble|acne/i)
+      expect(v).not.toMatch(/acne/i)
+      expect(v).toMatch(/stubble/i)
     })
     it('含 beard（身份锚点）→ 保留', () => {
       const v = sanitizeCastLook('man with beard, black hair')
       expect(v).toContain('beard')
     })
-    it('清洗后只剩标点空白 → trim 为空串（返回空串，不是原文）', () => {
+    it('仅 acne 会被删，stubble/毛孔等纹理不再清洗', () => {
       const v = sanitizeCastLook('acne scars, stubble')
-      // scrub 全删后 replace(/\s{2,}/g, ' ').trim() 应该是空串，|| t 会 fallback 到原文吗？
-      // 让我确认：t.replace(skinNoise, ' ').replace(/\s{2,}/g, ' ').trim() || t
-      // trim 后 ', ' → 空串？不， ', ' 里有逗号。trim 不删逗号。所以是 ', '。
-      // 那 || t 会触发，返回原文。但断言 'expected , to match /acne/' 说明返回的是 ','！
-      // 那 replace(/\s{2,}/g, ' ') 把 ',  ' 变成 ', '，trim 后是 ',' → truthy → 不 fallback
-      expect(v).toBe(',')
+      expect(v).not.toMatch(/acne/i)
+      expect(v).toMatch(/stubble/i)
     })
   })
 

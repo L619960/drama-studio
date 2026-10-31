@@ -314,7 +314,7 @@ export function registerAssetIpc(ctx: AssetIpcCtx): void {
       await stepLog(`cleanup face start`)
       try {
         await ctx.imageService.generate(
-          'Remove any small dark mole, tattoo, birthmark, wart, pimple or blemish on the face and forehead. Smooth and clean the facial skin surface completely. Keep the person identity, facial features, hairstyle, clothing, the plain grey wall background, lighting, and composition exactly the same. Do not change the background, do not add scenery, street, lamps, rain, or objects.',
+          'Remove any small dark tattoo mark, wart, pimple or blemish on the face and forehead. Keep the natural skin texture and fine pores. Keep the person identity, facial features, hairstyle, clothing, the plain grey wall background, lighting, and composition exactly the same. Do not change the background, do not add scenery, street, lamps, rain, or objects.',
           resolveInsideRoot(faceRel),
           {
             workflowName: 'qwen2511_i2i_edit',

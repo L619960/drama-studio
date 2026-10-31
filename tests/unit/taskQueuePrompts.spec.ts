@@ -171,8 +171,8 @@ describe('noExtrasLockFor · 场景无路人锁', () => {
     const out = noExtrasLockFor(mkShot({ action: '', shotSize: 'closeup', characterIds: ['c1'] }))
     expect(out).toContain('NO EXTRAS')
     expect(out).toContain('exactly ONE person')
-    expect(out).toContain('no other people')
-    expect(out).toContain('empty background')
+    expect(out).toContain('background is empty')
+    expect(out).toContain('clear of any other figures')
   })
 
   it('单人 + medium 同样触发', () => {

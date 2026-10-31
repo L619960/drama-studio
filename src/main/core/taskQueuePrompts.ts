@@ -109,9 +109,9 @@ export function noExtrasLockFor(shot: Pick<Shot, 'action' | 'characterIds' | 'sh
     return ''
   }
   if (n <= 1) {
-    return 'NO EXTRAS: the scene contains exactly ONE person (the protagonist in the reference image), no other people, no bystanders, no background crowd, no silhouettes of strangers, empty background around the character'
+    return 'NO EXTRAS: the scene contains exactly ONE person (the protagonist in the reference image), the surrounding background is empty and clear of any other figures'
   }
-  return `NO EXTRAS: the scene contains exactly ${n} people (only the ${n} characters from the reference images), no other people, no bystanders, no background crowd, no silhouettes of strangers`
+  return `NO EXTRAS: the scene contains exactly ${n} people (only the ${n} characters from the reference images), the surrounding background is empty and clear of any other figures`
 }
 
 /**

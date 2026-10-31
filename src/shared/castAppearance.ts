@@ -92,17 +92,17 @@ export function stripModernWardrobe(lookEn: string): string {
   // 否则删词后残留（black katana / boots / dark alley）仍会被画成现代黑武士
   const removedHighRisk = /tactical|combat|uniform|mask|swat|army|hoodie|ninja|samurai|katana/i.test(t)
   const cleaned = t.replace(modern, ' ').replace(/\s{2,}/g, ' ').trim()
-  // 高危现代形态仍残留（面罩/制服/战斗服/忍者/武士），或残留现代场景词（街道灯/沥青/霓虹/汽车/摩天楼），
+  // 高危现代形态仍残留（面罩/制服/战斗服/忍者/武士），或残留现代场景词（街道灯/沥青/汽车/摩天楼），
   // 或清洗后太短：追加古装兜底（保证画出来是古装，不画成现代武士/现代街道）
   const stillModern =
     /\b(mask|uniform|combat|tactical|swat|army|ninja|samurai|katana)\b/i.test(cleaned) ||
-    /\b(street\s?lamps?|streetlight|street\b|asphalt|neon|glass\s+building|skyscraper|car\b|vehicle|motorcycle|traffic|billboard|subway|elevator)\b/i.test(cleaned)
+    /\b(street\s?lamps?|streetlight|street\b|asphalt|glass\s+building|skyscraper|car\b|vehicle|motorcycle|traffic|subway|elevator)\b/i.test(cleaned)
   const wordCount = cleaned.split(/\s+/).filter(Boolean).length
   if (!cleaned) {
     return 'chinese person, wearing traditional ancient chinese hanfu robes, classical hairstyle with hairpin, natural matte skin'
   }
   if (removedHighRisk || stillModern || wordCount < 8) {
-    return `${cleaned}, wearing traditional ancient chinese hanfu robes, no modern clothing`
+    return `${cleaned}, wearing traditional ancient chinese hanfu robes`
   }
   return cleaned
 }
@@ -114,17 +114,14 @@ export function isPeriodGenre(genre: string | undefined): boolean {
 }
 
 /**
- * 定妆皮肤清洗：LLM 的 lookEn 常混入 stubble/pores/acne/scar 等皮肤瑕疵词，
- * 直接复读会在 closeup 定妆被放大成麻子/疤/胡茬。清洗后保留发型/脸型/服装/痣等身份特征。
- * 注意：剧本明确要求的角色特征（beard/mustache 络腮胡/胡须、眉型、痣等身份锚点）
- * 必须保留——它们是角色差异化锚点（如劫匪络腮胡），不属于随机瑕疵；
- * 仅随机胡茬类（stubble / five o'clock shadow / unshaven）与皮肤瑕疵词被清洗。
+ * 定妆皮肤清洗：只移除 LLM lookEn 里会放大成病变的严重瑕疵词（痤疮/痘印/化脓/皮疹）；
+ * 毛孔、细纹、胡茬、浅痣、肤色不匀等真实纹理一律保留——它们是人脸真实感来源，
+ * 删掉会直接得到「磨皮娃娃脸」。剧本明确要求的 beard/mustache/痣等身份锚点同样保留。
  */
 export function sanitizeCastLook(lookEn: string): string {
   const t = (lookEn || '').trim()
   if (!t) return t
-  const skinNoise =
-    /\b(stubble|five o.?clock shadow|unshaven|visible pores|pores|porous skin|rough skin|coarse skin|acne|acne scars|pockmarks|pockmark|blemishes|blemish|freckles|freckled|freckle|wrinkles|wrinkled|wrinkle|creases|skin texture|textured skin|imperfect skin|sun damaged|sun-damaged|scarred|scar|scars|scratches|rash|dry skin|flaky skin|blotchy|discolored skin|uneven skin|oily skin|greasy skin|moles?|mole|birthmark|lumps?|bumps?|skin tags?|warts?|cysts?|tumou?rs?|growths?|protrusions?|raised skin|pimple|pimples|spots?|marks? on (?:face|skin|forehead|cheek))\b/g
+  const skinNoise = /\b(acne scars|acne|pockmarks?|pimples?|blemishes?|rash)\b/g
   return t.replace(skinNoise, ' ').replace(/\s{2,}/g, ' ').trim() || t
 }
 

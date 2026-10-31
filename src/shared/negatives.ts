@@ -39,13 +39,10 @@ export function realismPositiveExtra(lock: 'standard' | 'strong' = 'standard'): 
 }
 
 export function realismNegativeFor(lock: 'standard' | 'strong' = 'standard'): string {
-  // 皮肤瑕疵补充项（mergeNegative 会自动去掉与 REALISM_NEGATIVE 重复的词）
+  // 只保留病变/严重瑕疵；细纹、胡茬、浅痣、肤色不匀属于真实皮肤纹理，压制会得到塑料脸
   const cleanSkin =
-    'acne, acne scars, pockmarks, skin blotches, age spots, rashes, sunburn, peeling skin, ' +
-    'wrinkles, creases, stubble shadow, five o clock shadow, beard stubble, unshaven, ' +
-    'dirty skin, greasy skin, uneven skin tone, discolored patches, blemishes, freckles, ' +
-    'dermatitis, eczema, skin disease, scars, cuts, wounds, bruising, ' +
-    'moles, mole, birthmarks, lumps, bumps, skin tags, warts, cysts, tumors, growths, protrusions, raised skin, pimples, spots on face'
+    'acne, acne scars, pockmarks, rashes, sunburn, peeling skin, ' +
+    'dermatitis, eczema, skin disease, lumps, bumps, skin tags, warts, cysts, tumors, growths, protrusions, raised skin, pimples, greasy skin'
   if (lock !== 'strong') return mergeNegative(REALISM_NEGATIVE, cleanSkin)
   return mergeNegative(
     REALISM_NEGATIVE,
@@ -134,7 +131,7 @@ export function castingNegativeFor(lock: 'standard' | 'strong' = 'standard', gen
 /** 定妆不是老年时，负向压住老年脸，避免正向漏网后仍被画成老头。 */
 export function ageDriftNegativeFor(lookEn: string): string {
   if (!lookEn?.trim() || lookAllowsElderly(lookEn)) return ''
-  return 'old man, old woman, elderly face, white stubble, grey stubble, white beard, weathered face, age shift, different person'
+  return 'old man, old woman, elderly face, white stubble, grey stubble, white beard, age shift, different person'
 }
 
 /** 首帧/尾帧人数负向：单人镜必须压住「第二个人」，否则会被画成两人同框

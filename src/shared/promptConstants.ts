@@ -8,7 +8,7 @@ export const REALISM_POSITIVE =
   [
     'photorealistic live-action chinese vertical short-drama frame',
     'shot on ARRI Alexa Mini LF with Zeiss Supreme Prime 50mm T1.5',
-    'natural real skin texture with soft subtle pores and healthy even tone, no beauty filter',
+    'natural real skin texture with soft subtle pores, healthy even tone, unretouched complexion',
     'subtle Kodak Vision3 film grain, practical motivated lighting',
     'soft volumetric atmosphere, accurate fabric weave and material response',
     'true-to-life asian facial proportions, documentary color science, matte finish'
@@ -36,13 +36,12 @@ export const REALISM_NEGATIVE =
     'anamorphic flare spam', 'over-sharpened', 'plastic specular',
     'reverse motion', 'playing backwards', 'car reversing', 'wheels spinning backward',
     'morphing face', 'identity flicker', 'limb melt',
-    // 皮肤瑕疵与面部水珠：定妆/首帧/视频人脸统一压制（雨滴只出现在场景与空气，不在脸上）
-    'acne', 'acne scars', 'pockmarks', 'skin blotches', 'age spots', 'blemishes', 'freckles',
-    'moles', 'mole', 'birthmarks', 'lumps', 'bumps', 'skin tags', 'warts', 'cysts', 'tumors',
-    'growths', 'protrusions', 'raised skin', 'pimples', 'spots on face', 'stubble shadow',
-    'five o clock shadow', 'beard stubble', 'unshaven', 'wrinkles', 'creases', 'scars', 'cuts',
-    'water droplets on face', 'raindrops on face', 'wet skin', 'sweat on face', 'perspiration',
-    'dirty skin', 'greasy skin', 'uneven skin tone', 'discolored patches', 'rash', 'sunburn'
+    // 只压病变/严重瑕疵与面部水珠；毛孔、细纹、胡茬、浅痣等真实纹理必须保留，
+    // 否则人脸会被磨成塑料娃娃（用户反馈「AI 感太重」的主要根因之一）
+    'acne', 'acne scars', 'pockmarks', 'rash', 'sunburn', 'peeling skin',
+    'lumps', 'bumps', 'skin tags', 'warts', 'cysts', 'tumors', 'growths', 'protrusions', 'raised skin',
+    'pimples', 'dermatitis', 'eczema', 'skin disease', 'greasy skin',
+    'water droplets on face', 'raindrops on face', 'wet skin', 'sweat on face', 'perspiration'
   ].join(', ')
 
 /**
@@ -51,10 +50,10 @@ export const REALISM_NEGATIVE =
  * REALISM_POSITIVE 已含画质/肤质/颗粒，本块侧重特效/运镜/光效/场景锁定。
  */
 export const CINEMATIC_QUALITY_BLOCK = [
-  'cinematic vfx discipline: practical effects only, no CGI, no 3d render, no illustration',
-  'motivated camera language: smooth continuous move, no whip-pan, no crash zoom, no teleport cut',
+  'cinematic vfx discipline: practical in-camera effects, photoreal rendering',
+  'motivated camera language: smooth continuous move, stable framing',
   'motivated practical lighting: single consistent key direction, volumetric atmosphere, scene-matched color temperature',
-  'locked set continuity: same physical location, key props persist, no scene swap, no reverse motion',
+  'locked set continuity: same physical location, key props persist',
   'era-locked world: objects, architecture and clothing match the story era'
 ].join(', ')
 
@@ -67,7 +66,7 @@ export const CINEMATIC_QUALITY_BLOCK = [
  *  注意：服装黑名单不在此静态清单——静态禁词不感知定妆锁（定妆就是西装/制服时会
  *  与身份锁自相矛盾），OOC 服装压制统一走 oocWardrobeNegativeFor(lookEn)。 */
 export const VIDEO_NEGATIVE_BASE =
-  'avoid acne, pockmarks, moles, birthmarks, warts, scars, cuts, stubble shadow, water droplets or sweat on face, wet skin; avoid extra people, extra limbs, morphing face, identity flicker, outfit change, costume change, hairstyle change, hair length change, background object displacement, prop morphing, reverse motion, playing backwards, limb melt, deformed face, distorted hands, distorted limbs, blurry, low quality; no lighting flicker, no extra characters; consistent background, no background swap; no subtitles, no watermark, no text, no captions'
+  'avoid acne, pockmarks, warts, water droplets or sweat on face, wet skin; avoid extra people, extra limbs, morphing face, identity flicker, outfit change, costume change, hairstyle change, hair length change, background object displacement, prop morphing, reverse motion, playing backwards, limb melt, deformed face, distorted hands, distorted limbs, blurry, low quality; no lighting flicker, no extra characters; consistent background, no background swap; no subtitles, no watermark, no text, no captions'
 
 /** 视频渲染通用负向指令·动作压制组（条件化注入，经 videoNegativeFor 拼装）：
  *  位移镜（DISPLACEMENT_ACTION_RE 命中）与强动作镜（STRONG_ACTION_RE 命中）必须跳过——

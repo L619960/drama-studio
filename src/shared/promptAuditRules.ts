@@ -32,7 +32,7 @@ export const CROSS_SOURCE =
 /** 时代隔离组：古装/年代剧负向必须包含（实测事故：古装酒楼镜门外开进现代 SUV） */
 export const ERA_TERMS = [
   'no modern vehicles', 'no cars', 'no electronics',
-  'no asphalt road', 'no glass buildings', 'no billboards'
+  'no asphalt road', 'no glass buildings'
 ]
 /** 古装/年代线索（只对命中该线索的镜头做时代隔离校验，避免现代剧被误加 no cars） */
 const PERIOD_RE =

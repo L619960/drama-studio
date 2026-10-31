@@ -56,16 +56,19 @@ describe('promptStrips · 文本净化域（2026-10-30 补覆盖率）', () => {
     })
   })
 
-  describe('scrubSummoningTerms：正向里的概念召唤词剥离', () => {
-    it('old man → 剥离', () => {
-      expect(scrubSummoningTerms('an old man sits down')).toContain('sits down')
-      expect(scrubSummoningTerms('an old man sits down')).not.toMatch(/old man/)
+  describe('scrubSummoningTerms：正向里的否定式召唤词剥离', () => {
+    it('否定式 "no old man" → 剥离；剧本合法的老年角色保留', () => {
+      const neg = scrubSummoningTerms('no old man appears, woman sits down')
+      expect(neg).not.toMatch(/old man/)
+      expect(neg).toContain('sits down')
+      expect(scrubSummoningTerms('an old man sits down')).toContain('old man')
     })
 
-    it('汽车类召唤词 → 剥离', () => {
-      const v = scrubSummoningTerms('a car passes by')
-      expect(v).not.toMatch(/\bcar\b/)
-      expect(v).toContain('passes by')
+    it('否定式 "no cars" → 剥离；剧本合法车辆描述保留', () => {
+      const neg = scrubSummoningTerms('no cars on the street, rain falls')
+      expect(neg).not.toMatch(/\bcars?\b/)
+      expect(neg).toContain('rain falls')
+      expect(scrubSummoningTerms('a car passes by')).toContain('car')
     })
 
     it('neon → 保留（不再压制招牌/霓虹场景）', () => {

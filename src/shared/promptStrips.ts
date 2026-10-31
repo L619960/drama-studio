@@ -35,8 +35,13 @@ export function sanitizeCinematicPrompt(prompt: string): string {
   return p.trim()
 }
 
+/**
+ * 只剥离「否定式」召唤词（如 "no old man" / "without cars"），保留剧本本体里合法的
+ * 年龄/胡茬/车辆正写内容——此前裸词剥离会把老年角色与真实皮肤纹理一起删掉，
+ * 属于压制模型正面发挥的规则（2026-10-31 整改）。
+ */
 const SUMMON_RE =
-  /\b(?:old man|old woman|elderly(?:\s+(?:face|man|woman|person))?|white stubble|gr[ae]y stubble|weathered face|white beard|gr[ae]y beard|automobiles?|vehicles?|cars?|suv|motorcycle)\b/gi
+  /\b(?:no|without|avoid|never|not)\s+(?:old man|old woman|elderly(?:\s+(?:face|man|woman|person))?|white stubble|gr[ae]y stubble|weathered face|white beard|gr[ae]y beard|automobiles?|vehicles?|cars?|suv|motorcycle)\b/gi
 
 /** 送进正向提示词前去掉会把概念召进画面的词。负向词只允许进有负向入口的工作流。 */
 export function scrubSummoningTerms(text: string): string {
