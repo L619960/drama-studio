@@ -40,7 +40,7 @@
     "class_type": "ModelSamplingAuraFlow",
     "inputs": {
       "model": [
-        "21",
+        "20",
         0
       ],
       "shift": 3
@@ -165,23 +165,6 @@
     },
     "_meta": {
       "title": "CheckpointLoaderSimple"
-    }
-  },
-  "21": {
-    "class_type": "ReservedVRAMSetter",
-    "inputs": {
-      "anything": [
-        "20",
-        0
-      ],
-      "reserved": 0.8,
-      "mode": "manual",
-      "seed": "$SEED$",
-      "auto_max_reserved": 0,
-      "clean_gpu_before": true
-    },
-    "_meta": {
-      "title": "ReservedVRAMSetter"
     }
   },
   "_comment": "Qwen Rapid AIO 二次采样竖版文生图。$PROMPT$ $NEGATIVE$ $SEED$ $WIDTH$ $HEIGHT$"
