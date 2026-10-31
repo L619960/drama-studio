@@ -1,6 +1,6 @@
 # Drama Studio 全链路交付验收报告（2026-10-31）
 
-> **验收基线**：分支 `feat/agent-autonomy`，HEAD `f933147`（已推送）；verify run `41195055356` / `41195810778` 三平台全绿；tag `v1.0.0-rc.1` 触发 package job（run `41196501451`）
+> **验收基线**：分支 `feat/agent-autonomy`，HEAD `f61b9c4`（已推送）；verify run `41195055356` / `41195810778` / `41196992891` 三平台全绿；tag `v1.0.0-rc.2` 的 run `41196992891` **三平台 package 全部 success**（rc.1 的 run `41196501451` 曾在隐式发布步骤失败，见 P1-03）
 > **验收角色**：工业级交付测试（静态枚举 → 真实路径驱动 → 三平台 CI 交叉验证）
 > **运行环境**：Windows 11 · Electron 44.5.1 · RTX 5060 Ti 16 GB · ComfyUI 0.39.0（白名单节点模式，8188 就绪）
 > **证据目录**：[docs/audit/evidence/acceptance-2026-10-31](file:///e:/drama-studio/docs/audit/evidence/acceptance-2026-10-31)
@@ -13,13 +13,13 @@
 | 维度 | 结论 |
 |---|---|
 | P0 阻断缺陷 | **1 项**：`useRouteProjectId` 初始化顺序触发的 TDZ，导致剧本 / 角色库 / 场景板首屏永久骨架屏、剧本页全部按钮无效。**已修复、已提交并复验**。 |
-| P1 高优先级 | 3 项：ComfyUI 启动命令文案矛盾（已修复）；真实生成/渲染链路（**文生图已实测通过**，剧本→成片仍受 LLM 配置限制）；CI tag 不触发 workflow 导致 package job 死配置（**已修复并触发实跑**）。 |
+| P1 高优先级 | 3 项：ComfyUI 启动命令文案矛盾（已修复）；真实生成/渲染链路（**文生图已实测通过**，剧本→成片仍受 LLM 配置限制）；CI tag 链路（**两层问题均已修复**：tag 不触发 workflow、tag 触发后隐式发布因缺 `GH_TOKEN` 失败；rc.2 三平台 package 全部 success）。 |
 | P2 中优先级 | 4 项**全部闭环**：磁盘检查 ENOENT 回退（含 4 条单测）、跨平台启动命令示例、右键菜单自动化、快捷指令占位文案。 |
 | 页面可用性 | 10 个一级页面全部可加载；首屏 351 ms，路由切换渲染 6–49 ms；0 pageerror / 0 console error。 |
 | 按钮与隐藏入口 | 10 页共 80 个可见按钮完成清点；5 个新建类弹窗开/关通过；向导、Alt+1~6、Ctrl+,、侧栏折叠、**项目/角色右键菜单**全部实测通过。 |
 | 门禁 | typecheck 0 错误 · lint 0 error/0 warning · vitest 128 文件 / **1921** 用例全过 · build 成功 · acceptance E2E 1 passed（31.6 s）。 |
 | 真实链路 | `builtin_t2i` 经应用 IPC 提交 ComfyUI 实际出图成功：**73.6 s / 310 KB**，证据 [18-real-t2i.png](computer://e:\drama-studio\docs\audit\evidence\acceptance-2026-10-31\18-real-t2i.png)。 |
-| CI 交叉验证 | verify run `41195055356`（`a7ecf66`）与 `41195810778`（`f933147`）ubuntu / windows / macos 全绿；tag run `41196501451` 进入 package 实跑。 |
+| CI 交叉验证 | verify run `41195055356`（`a7ecf66`）、`41195810778`（`f933147`）、`41196992891`（`f61b9c4`）ubuntu / windows / macos 全绿；tag run `41196992891`（`v1.0.0-rc.2`）package 三平台全部 success，产物已上传 artifact。 |
 
 ---
 
@@ -171,10 +171,11 @@ onMounted(() => {
 
 ---
 
-### P1-03 · CI tag 不触发 workflow，package job 曾是死配置（已修复并实跑）
+### P1-03 · CI tag 链路：先不触发 workflow，触发后又因隐式发布失败（两层均已修复）
 
 **严重度**：P1（发布工程风险）
-**根因**：`.github/workflows/ci.yml` 的 `on.push` 只声明了 `branches`。GitHub Actions 在同时声明 `branches`/`tags` 时按各自过滤器匹配；只写 `branches` 意味着 **tag 推送不会触发 workflow**，因此 `if: startsWith(github.ref, 'refs/tags/v')` 的 package job 即使打了 tag 也永远 skipped。此前 run `41174040293` 的 skipped 并非「未打 tag」，而是配置不可达。
+
+**第一层根因**：`.github/workflows/ci.yml` 的 `on.push` 只声明了 `branches`。GitHub Actions 在同时声明 `branches`/`tags` 时按各自过滤器匹配；只写 `branches` 意味着 **tag 推送不会触发 workflow**，因此 `if: startsWith(github.ref, 'refs/tags/v')` 的 package job 即使打了 tag 也永远 skipped。此前 run `41174040293` 的 skipped 并非「未打 tag」，而是配置不可达。
 **修复**：`on.push` 增加 `tags: ['v*']`。
 
 ```yaml
@@ -184,7 +185,21 @@ on:
     tags: ['v*']
 ```
 
-**验证**：打 `v1.0.0-rc.1` 后 tag run `41196501451` 已产生并执行 package（windows/mac/linux 三平台）。注意 `package.json` 版本仍为 `1.0.0`，该 tag 仅用于打包链路验证，非正式发布。
+**第二层根因（修复第一层后才暴露）**：tag run `41196501451` 三平台 verify 全绿，但 package job **全部失败**。日志显示 `Implicit publishing triggered by git tag`——electron-builder 26 在检测到 git tag 时隐式触发发布，随后报 `GitHub Personal Access Token is not set ... env "GH_TOKEN"`。三个平台都在产物构建完成后的发布步骤挂掉（macOS 的 dmg/zip、Linux 的 AppImage/deb、Windows 的 setup.exe 均已生成）。
+**修复**：三个打包脚本显式关闭发布，产物只通过 artifact 上传（正式发布应另设显式 release 流程与 token）。
+
+```json
+"build:win": "electron-vite build && electron-builder --win --publish never",
+"build:mac": "electron-vite build && electron-builder --mac --publish never",
+"build:linux": "electron-vite build && electron-builder --linux --publish never"
+```
+
+**验证**：`v1.0.0-rc.2`（`f61b9c4`）→ run `41196992891`：verify 三平台 success，**package 三平台 success**；产物：
+- Windows：`本地AI短剧工坊-1.0.0-setup.exe`（nsis，x64）
+- macOS：`本地AI短剧工坊-1.0.0-arm64.dmg` + `.zip`
+- Linux：`本地AI短剧工坊-1.0.0-x86_64.AppImage` + `本地AI短剧工坊-1.0.0-amd64.deb`
+
+artifact 归档体积：windows 810.6 MB / macos 1306.1 MB / ubuntu 1578.9 MB（含未压缩目录，非安装包单体大小）。注意 `package.json` 版本仍为 `1.0.0`，该 tag 仅用于打包链路验证，非正式发布。
 
 ---
 
@@ -231,13 +246,16 @@ on:
 | verify | ubuntu-latest | ✅ success | run `41195055356` / `41195810778`：typecheck / lint / vitest / build |
 | verify | windows-latest | ✅ success | 同上 |
 | verify | macos-latest | ✅ success | 同上 |
-| package | 三平台 | 🔄 实跑中（run `41196501451`） | tag `v1.0.0-rc.1` 生效；此前因 `on.push` 未声明 tags 而永远 skipped，已修复 |
+| package | windows-latest | ✅ success | tag run `41196992891`：`本地AI短剧工坊-1.0.0-setup.exe` |
+| package | macos-latest | ✅ success | 同上：`-arm64.dmg` + `-arm64.zip`（未签名，本地安装需绕过 Gatekeeper） |
+| package | ubuntu-latest | ✅ success | 同上：`-x86_64.AppImage` + `-amd64.deb` |
 
 **交叉验证结论**：
 - CI 证明 **代码在三种 OS 的 Node/Electron 构建链上可编译、单测可过**，覆盖类型、lint、单元测试、构建四项；
-- 本轮修复（TDZ、文案、磁盘回退、跨平台示例、右键覆盖、CI tag 触发）均在 `a7ecf66`/`f933147` 上通过三平台 verify；
-- CI **不覆盖** Electron 运行时 UI、真实文件对话框、ComfyUI/GPU 渲染、安装包安装；
-- 打包产物需等 tag run 完成后登记（见第九节）。
+- 本轮修复（TDZ、文案、磁盘回退、跨平台示例、右键覆盖、CI tag 触发、打包禁止隐式发布）均在 `a7ecf66`/`f933147`/`f61b9c4` 上通过三平台 verify；
+- tag `v1.0.0-rc.2` 的 run `41196992891` 首次跑通 **package 三平台全绿**，安装包产物已上传 artifact；
+- CI **不覆盖** Electron 运行时 UI、真实文件对话框、ComfyUI/GPU 渲染、安装包安装后启动；
+- rc.1（run `41196501451`）三平台 package 曾在隐式发布步骤失败，已由 `f61b9c4` 修复并以 rc.2 复验。
 
 ---
 
@@ -251,6 +269,7 @@ on:
 | 构建 | `npm run build` | ✅ main / preload / renderer 三产物成功 |
 | 验收 E2E | `npx playwright test --config=e2e/playwright.config.ts e2e/acceptance.spec.ts` | ✅ 1 passed（31.6 s），含右键菜单新步骤 |
 | 真实出图 | 应用 IPC → `builtin_t2i` → ComfyUI 8188 | ✅ 73.6 s / 310 KB PNG / 0 报错 |
+| 三平台打包 | tag `v1.0.0-rc.2` → run `41196992891` | ✅ package windows / macos / ubuntu 全部 success |
 
 ---
 
@@ -267,7 +286,7 @@ on:
 | macOS / Linux 运行时 UI | 本机仅 Windows | 未执行（CI 仅编译/单测） |
 | 项目包导入导出（真实大包） | 需真实素材与长耗时 | 未执行 |
 | 右键菜单 | — | ✅ 已覆盖（项目卡片 + 角色卡片） |
-| 三平台安装包 | tag run `41196501451` | 🔄 打包中 |
+| 三平台安装包 | — | ✅ 已产出（run `41196992891`，package 三平台 success）；安装后启动冒烟未执行 |
 
 ---
 
@@ -282,7 +301,8 @@ on:
 | `6003cc2` | [ComfyuiSection.vue](file:///e:/drama-studio/src/renderer/src/components/settings/ComfyuiSection.vue) | 示例按平台渲染 | P2-02 |
 | `6003cc2` | [DirectorChat.vue](file:///e:/drama-studio/src/renderer/src/components/console/DirectorChat.vue) | 「重渲第X镜」→「重渲单镜」 | P2-04 |
 | `a7ecf66` | acceptance 脚本 + 证据 | 右键菜单步骤与重跑证据 | P2-03 |
-| `f933147` | [ci.yml](file:///e:/drama-studio/.github/workflows/ci.yml) | `on.push.tags: ['v*']` | 修复 package job 死配置（P1-03） |
+| `f933147` | [ci.yml](file:///e:/drama-studio/.github/workflows/ci.yml) | `on.push.tags: ['v*']` | 修复 package job 死配置（P1-03 第一层） |
+| `f61b9c4` | [package.json](file:///e:/drama-studio/package.json) | 三个打包脚本加 `--publish never` | 修复 tag 触发隐式发布失败（P1-03 第二层） |
 | `a7ecf66` / 本报告提交 | [docs/audit/evidence/acceptance-2026-10-31](file:///e:/drama-studio/docs/audit/evidence/acceptance-2026-10-31) | 17 张截图 + `walkthrough.json` + `18-real-t2i.png` | 验收留证 |
 
 ---
@@ -290,7 +310,7 @@ on:
 ## 九、建议后续动作（按优先级）
 
 1. ✅ 已提交并推送修复，三平台 verify 全绿（`41195055356` / `41195810778`）。
-2. 🔄 `v1.0.0-rc.1` tag 已触发 package（`41196501451`），待三平台产物产出后做安装/启动冒烟并登记哈希。
+2. ✅ `v1.0.0-rc.2`（`f61b9c4`）tag run `41196992891` 三平台 package 全部 success，产物已上传 artifact；安装后启动冒烟仍未做（见第七节）。
 3. ✅ P2-01/02/03/04 已修复并复验。
 4. ⏳ 配置可用 LLM Key 后执行 `E2E_REAL_CHAIN=1 npm run test:e2e -- real-chain`，补齐剧本→成片签收。
 5. ⏳ 生产发布前把 `package.json` 版本与正式 tag 对齐（当前 tag 仅用于打包验证）。
