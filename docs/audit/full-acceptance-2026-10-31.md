@@ -13,12 +13,12 @@
 | 维度 | 结论 |
 |---|---|
 | P0 阻断缺陷 | **1 项**：`useRouteProjectId` 初始化顺序触发的 TDZ，导致剧本 / 角色库 / 场景板首屏永久骨架屏、剧本页全部按钮无效。**已修复、已提交并复验**。 |
-| P1 高优先级 | 3 项：ComfyUI 启动命令文案矛盾（已修复）；真实生成/渲染链路（**默认 `qwen_t2i_hq` 曾因缺自定义节点整体 400，已修复并实测出图**；剧本→成片仍受 LLM 配置限制）；CI tag 链路（**两层问题均已修复**：tag 不触发 workflow、tag 触发后隐式发布因缺 `GH_TOKEN` 失败；rc.2 三平台 package 全部 success）。 |
+| P1 高优先级 | 3 项：ComfyUI 启动命令文案矛盾（已修复）；真实生成/渲染链路（**默认工作流曾整体 400，已修复；并已把默认出图切到 FLUX.2 Klein 降低 AI 塑料感**；剧本→成片仍受 LLM 配置限制）；CI tag 链路（**两层问题均已修复**：tag 不触发 workflow、tag 触发后隐式发布因缺 `GH_TOKEN` 失败；rc.2 三平台 package 全部 success）。 |
 | P2 中优先级 | 4 项**全部闭环**：磁盘检查 ENOENT 回退（含 4 条单测）、跨平台启动命令示例、右键菜单自动化、快捷指令占位文案。 |
 | 页面可用性 | 10 个一级页面全部可加载；首屏 351 ms，路由切换渲染 6–49 ms；0 pageerror / 0 console error。 |
 | 按钮与隐藏入口 | 10 页共 80 个可见按钮完成清点；5 个新建类弹窗开/关通过；向导、Alt+1~6、Ctrl+,、侧栏折叠、**项目/角色右键菜单**全部实测通过。 |
 | 门禁 | typecheck 0 错误 · lint 0 error/0 warning · vitest 128 文件 / **1921** 用例全过 · build 成功 · acceptance E2E 1 passed（31.6 s）。 |
-| 真实链路 | 默认 `qwen_t2i_hq`（4 步蒸馏 + 1.5× latent 放大）经应用 IPC 出图：**15.2 s / 1152×1728 / 2.1 MB**，写实电影感；修复前该工作流因缺 `ReservedVRAMSetter` 节点导致所有默认生成 400。证据 [18-real-t2i.png](computer://e:\drama-studio\docs\audit\evidence\acceptance-2026-10-31\18-real-t2i.png)。 |
+| 真实链路 | 默认 `klein_t2i_clean`（FLUX.2 Klein，8 步 · cfg 4）经应用 IPC 出图：**32.3 s / 1024×1536 / 2.6 MB**，真实剧照质感（阴天平光、毛孔与不均匀色差、非对称五官、小巷投影逻辑成立）；回退链 `klein → qwen_t2i_hq（15.2 s）→ builtin_t2i（92.6 s）`。证据 [18-real-t2i.png](computer://e:\drama-studio\docs\audit\evidence\acceptance-2026-10-31\18-real-t2i.png)。 |
 | CI 交叉验证 | verify run `41195055356`（`a7ecf66`）、`41195810778`（`f933147`）、`41196992891`（`f61b9c4`）ubuntu / windows / macos 全绿；tag run `41196992891`（`v1.0.0-rc.2`）package 三平台全部 success，产物已上传 artifact。 |
 
 ---
@@ -160,11 +160,11 @@ onMounted(() => {
 
 **修复**：`workflows/qwen_t2i_hq.json` 去掉 `ReservedVRAMSetter` 中转，`ModelSamplingAuraFlow` 直接接 `CheckpointLoaderSimple` 的 MODEL 输出，工作流回到全内置节点。
 
-**修复后实测（默认路径）**：
-- `window.api.image.generate(prompt, rel, { workflowName: 'qwen_t2i_hq', width: 768, height: 1152 })`
-- 耗时 **15.2 s**（4 步蒸馏采样 + 1.5× latent 放大），产物 **1152×1728 PNG / 2.1 MB**
-- 画面写实：雨丝、湿皮革高光、霓虹湿地倒影、自然皮肤质感与布料纹理；证据 [18-real-t2i.png](computer://e:\drama-studio\docs\audit\evidence\acceptance-2026-10-31\18-real-t2i.png)
-- 对照：同提示词走 `builtin_t2i`（20 步 / cfg 7 / 768×1152）耗时 92.6 s，画面明显偏插画感——**低分辨率 + 与蒸馏模型不匹配的采样参数是「假」的主因**，默认链路已用推荐参数规避。
+**修复后实测（默认路径，不传 `workflowName`）**：
+- `window.api.image.generate(prompt, rel, { width: 1024, height: 1536, seed: 20261031 })`
+- 命中 `klein_t2i_clean`（FLUX.2 Klein，8 步 · cfg 4），耗时 **32.3 s**，产物 **1024×1536 PNG / 2.6 MB**
+- 画面写实：阴天平光、水泥墙真实肌理、皮肤毛孔与不均匀色差、五官轻微不对称、小巷空间与投影逻辑成立；证据 [18-real-t2i.png](computer://e:\drama-studio\docs\audit\evidence\acceptance-2026-10-31\18-real-t2i.png)
+- 对照：`qwen_t2i_hq`（4 步蒸馏 + 1.5× 放大）15.2 s / 1152×1728，但脸部过度平整、光影戏剧化、会给室内场景凭空加雨；`builtin_t2i`（20 步 / cfg 7）92.6 s，插画感最重——**低分辨率 + 与蒸馏模型不匹配的采样参数是「假」的主因**。
 - ComfyUI 完整自定义节点（112 个）冷启动 25 分钟未监听 8188 的问题已通过白名单收敛规避；`ComfyuiSection.vue` 的启动命令示例现在按平台渲染（P2-02）。
 
 **仍属未验证**：
@@ -172,6 +172,20 @@ onMounted(() => {
 - 需配置可用 LLM Key 后执行 `E2E_REAL_CHAIN=1 npm run test:e2e -- real-chain` 签收。
 
 **结论**：「应用 ↔ ComfyUI ↔ 落盘」已闭环，默认工作流修复后真实感达到短剧首帧可用水平；「LLM → 剧本 → 分镜 → 视频」仍需可用模型与 Key。
+
+**出图真实感升级（用户反馈「AI 感太重」后的二次复验）**：
+- 复验对比 3 个模型路径（同题材提示词）：
+
+| 路径 | 耗时 | 结果 | 真实感判断 |
+|---|---:|---|---|
+| FLUX.2 Klein `klein_t2i_clean`（8 步 / cfg 4） | 32.3 s | 1024×1536 | **最接近真实剧照**：阴天自然光、皮肤有毛孔与不均匀色差、五官轻微不对称、小巷投影逻辑成立、无招牌文字伪影 |
+| Qwen Rapid `qwen_t2i_hq`（4 步蒸馏 + 1.5× 放大） | 15–41 s | 1152×1728 | 仍有塑料感：脸部过度平整、光影戏剧化、模型会给室内场景凭空加雨 |
+| `builtin_t2i`（20 步 / cfg 7） | 92.6 s | 768×1152 | 插画感最重（采样参数与蒸馏模型不匹配） |
+
+- 落地改动：`ImageService.DEFAULT_T2I_WORKFLOW = 'klein_t2i_clean'`，未显式指定工作流时按 `klein_t2i_clean → qwen_t2i_hq → builtin_t2i` 回退；显式指定但模板缺失时仍沿用旧语义回退 `builtin_t2i`（[imageService.ts](file:///e:/drama-studio/src/main/core/imageService.ts#L49-L53)）。
+- 验证：默认路径（不传 `workflowName`）768×1152 实测 20.7 s、产物 768×1152（确认命中 Klein，而非 Qwen 的 1.5× 放大尺寸）；1024×1536 实测 32.3 s / 2.6 MB，即当前证据图。
+- 提示词层复验：同模型下「霓虹招牌夜景」会生成无意义招牌文字（强 AI 感来源），改为「阴天自然光小巷」后伪影消失——已把该结论写进验收说明；霓虹/文字类场景属于模型固有短板。
+- 剩余可继续调的方向：VAE 二次重绘（denoise 0.3）压蒸馏残留、或在设置里允许用户指定其他写实 checkpoint。
 
 ---
 
@@ -272,7 +286,7 @@ artifact 归档体积：windows 810.6 MB / macos 1306.1 MB / ubuntu 1578.9 MB（
 | 单元/集成测试 | `npm test` | ✅ 128 个 spec / **1921** 用例全过（6.01 s） |
 | 构建 | `npm run build` | ✅ main / preload / renderer 三产物成功 |
 | 验收 E2E | `npx playwright test --config=e2e/playwright.config.ts e2e/acceptance.spec.ts` | ✅ 1 passed（31.6 s），含右键菜单新步骤 |
-| 真实出图 | 应用 IPC → 默认 `qwen_t2i_hq`（修复后） | ✅ 15.2 s / 1152×1728 PNG / 2.1 MB；`builtin_t2i` 对照 92.6 s |
+| 真实出图 | 应用 IPC → 默认 `klein_t2i_clean`（FLUX.2 Klein） | ✅ 32.3 s / 1024×1536 PNG / 2.6 MB；`qwen_t2i_hq` 15.2 s、`builtin_t2i` 92.6 s 对照 |
 | 三平台打包 | tag `v1.0.0-rc.2` → run `41196992891` | ✅ package windows / macos / ubuntu 全部 success |
 
 ---
@@ -282,7 +296,7 @@ artifact 归档体积：windows 810.6 MB / macos 1306.1 MB / ubuntu 1578.9 MB（
 | 项 | 原因 | 状态 |
 |---|---|---|
 | AI 写剧本 / 拆镜 / 审稿 | 真实 profile 的 `settings.llm.apiKey` 为空 | 未执行（需配置 Key） |
-| 文生图 | — | ✅ 已实测（默认 `qwen_t2i_hq` 15.2 s / 1152×1728；`builtin_t2i` 对照 92.6 s） |
+| 文生图 | — | ✅ 已实测（默认 `klein_t2i_clean` 32.3 s / 1024×1536 / 2.6 MB；`qwen_t2i_hq` 15.2 s、`builtin_t2i` 92.6 s 对照） |
 | 图生图 / 文生视频 / TTS | 需对应工作流与模型；单次耗时数分钟 | 未执行 |
 | 成片合成 / 字幕 / BGM / 导出 | 依赖上游渲染产物 | 未执行 |
 | 原生文件选择/保存对话框 | Playwright 无法操作系统级对话框 | 未执行（见 manual-ux 清单） |
@@ -308,6 +322,7 @@ artifact 归档体积：windows 810.6 MB / macos 1306.1 MB / ubuntu 1578.9 MB（
 | `f933147` | [ci.yml](file:///e:/drama-studio/.github/workflows/ci.yml) | `on.push.tags: ['v*']` | 修复 package job 死配置（P1-03 第一层） |
 | `f61b9c4` | [package.json](file:///e:/drama-studio/package.json) | 三个打包脚本加 `--publish never` | 修复 tag 触发隐式发布失败（P1-03 第二层） |
 | `a6b01bb` | [qwen_t2i_hq.json](file:///e:/drama-studio/workflows/qwen_t2i_hq.json) | 移除未安装的 `ReservedVRAMSetter`，MODEL 直连 Checkpoint | 修复默认工作流 400（P1-02） |
+| `a967ef7` | [imageService.ts](file:///e:/drama-studio/src/main/core/imageService.ts) / [creationSettings.ts](file:///e:/drama-studio/src/shared/creationSettings.ts) / [promptConstants.ts](file:///e:/drama-studio/src/shared/promptConstants.ts) | 默认工作流改 `klein_t2i_clean`，回退 `qwen_t2i_hq → builtin_t2i` | 降低出图 AI 塑料感（P1-02） |
 | `a7ecf66` / 本报告提交 | [docs/audit/evidence/acceptance-2026-10-31](file:///e:/drama-studio/docs/audit/evidence/acceptance-2026-10-31) | 17 张截图 + `walkthrough.json` + `18-real-t2i.png` | 验收留证 |
 
 ---
@@ -338,5 +353,5 @@ artifact 归档体积：windows 810.6 MB / macos 1306.1 MB / ubuntu 1578.9 MB（
 | `15-settings-render.png` | 渲染设置分区 |
 | `16-console-selfcheck.png` | 系统自检面板 |
 | `17-sidebar-collapsed.png` | 侧栏折叠态 |
-| `18-real-t2i.png` | 真实出图产物（默认 `qwen_t2i_hq`，1152×1728，2.1 MB） |
+| `18-real-t2i.png` | 真实出图产物（默认 `klein_t2i_clean`，1024×1536，2.6 MB） |
 | `walkthrough.json` | 步骤、耗时、按钮、右键菜单、错误、主进程日志尾部 |
