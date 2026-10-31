@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { createLogger } from '../../src/main/core/logger'
+import * as nodeFs from 'node:fs'
+import * as os from 'node:os'
+import * as path from 'node:path'
+import { createLogger, initFileLogger, setLogLevel } from '../../src/main/core/logger'
 
 /**
  * 主进程日志器单测（logger 首个 spec）：
@@ -45,5 +48,31 @@ describe('createLogger', () => {
     createLogger('B').warn('y')
     expect(String(logSpy.mock.calls[0][0])).toContain('[A] x')
     expect(String(warnSpy.mock.calls[0][0])).toContain('[B] y')
+  })
+})
+
+describe('P2-1 级别过滤与文件落盘', () => {
+  it('debug 默认被过滤，setLogLevel(debug) 后输出', () => {
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    const log = createLogger('Level')
+    setLogLevel('info')
+    log.debug('hidden')
+    expect(spy).not.toHaveBeenCalled()
+    setLogLevel('debug')
+    log.debug('visible')
+    expect(spy).toHaveBeenCalledTimes(1)
+    expect(String(spy.mock.calls[0][0])).toContain('[Level] visible')
+    setLogLevel('info')
+    spy.mockRestore()
+  })
+
+  it('initFileLogger 后日志批量落盘 main.log（含级别）', async () => {
+    const dir = nodeFs.mkdtempSync(path.join(os.tmpdir(), 'drama-log-'))
+    initFileLogger(dir)
+    createLogger('File').info('hello', { shot: 1 })
+    await new Promise(r => setTimeout(r, 450))
+    const content = nodeFs.readFileSync(path.join(dir, 'main.log'), 'utf-8')
+    expect(content).toMatch(/\d{2}:\d{2}:\d{2}\.\d{3} INFO \[File\] hello \{"shot":1\}/)
+    nodeFs.rmSync(dir, { recursive: true, force: true })
   })
 })

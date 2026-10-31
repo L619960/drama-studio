@@ -156,8 +156,8 @@ export class DirectorAgent extends EventEmitter {
     return buildShotsImpl(this, projectId, analysis, characterMap)
   }
   sanitizeCameraForFrame(camera: string) { return sanitizeCameraForFrameImpl(camera) }
-  buildCloseupEditPrompt(lookEn: string, sceneHint: string, d: { as: { action?: string; emotion?: string; camera?: string; shotSize?: string; firstFrameEn?: string; lastFrameEn?: string; props?: string[] } }, sizeCue: string, phase: 'start' | 'end' = 'start') {
-    return buildCloseupEditPromptImpl(lookEn, sceneHint, d, sizeCue, phase)
+  buildCloseupEditPrompt(sceneHint: string, d: { as: { action?: string; emotion?: string; camera?: string; shotSize?: string; firstFrameEn?: string; lastFrameEn?: string; props?: string[] } }, sizeCue: string, phase: 'start' | 'end' = 'start') {
+    return buildCloseupEditPromptImpl(sceneHint, d, sizeCue, phase)
   }
   buildPanoEditPrompt(lookEn: string, sceneHint: string, d: { as: { action?: string; emotion?: string; camera?: string; shotSize?: string; firstFrameEn?: string; lastFrameEn?: string; props?: string[] } }, sizeCue: string, phase: 'start' | 'end' = 'start') {
     return buildPanoEditPromptImpl(lookEn, sceneHint, d, sizeCue, phase)

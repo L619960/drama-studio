@@ -1,4 +1,4 @@
-import type { DirectorStage } from '../../shared/ipcTypes'
+import type { DirectorStage, AppSettings } from '../../shared/ipcTypes'
 
 /**
  * AI 导演流水线的共享常量与纯函数（从 directorAgent.ts 抽出，
@@ -25,6 +25,19 @@ export const STAGE_LABELS: Record<DirectorStage, string> = {
 /** 阶段序号（断点续跑的先后比较用） */
 export function stageIndexOf(stage: DirectorStage): number {
   return STAGE_ORDER.indexOf(stage)
+}
+
+/**
+ * P2-2：读取「按阶段配置」的图片工作流覆盖值；未配置返回 undefined，由调用方回退内置默认。
+ * 注意不回退 settings.workflow.default——后者是视频渲染默认（wan22_i2v 等），
+ * 拿它来做 t2i/i2i 会直接选错模型。
+ */
+export function stageWorkflowOverride(
+  settings: AppSettings | undefined | null,
+  stage: 'casting' | 'scene' | 'shot' | 'prop'
+): string | undefined {
+  const v = settings?.workflow?.[stage]
+  return typeof v === 'string' && v.trim() ? v.trim() : undefined
 }
 
 /** 日志自增序号上限（每项目） */

@@ -107,7 +107,7 @@ async function testLLM() {
   llmTesting.value = true
   try {
     // 先保存再测试，确保主进程拿到最新 Key
-    await window.api.settings.save(JSON.parse(JSON.stringify(props.settings)))
+    props.settings.revision = await window.api.settings.save(JSON.parse(JSON.stringify(props.settings)))
     const model = await window.api.llm.test()
     llmStatus.value = { type: 'success', text: `已连接（${model}）` }
   } catch (e) {

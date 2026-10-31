@@ -40,6 +40,7 @@ function decryptApiKey(stored: unknown): string {
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
+  revision: 0,
   general: {
     autoSave: true,
     autoLearn: false
@@ -64,7 +65,10 @@ const DEFAULT_SETTINGS: AppSettings = {
     turboH3: true,
     assetFallbackProjectId: '',
     // 首帧融合两级失败后默认硬阻断：不允许带病回退文生（身份参考丢失→画面漂移）
-    fusionFallback: 'block'
+    fusionFallback: 'block',
+    // i2i 参考图权重默认 1（保持既有出图行为）；首帧相似度阈值默认按需求 0.7
+    i2iDenoise: 1,
+    firstFrameFaceThreshold: 0.7
   },
   creation: structuredClone(DEFAULT_CREATION),
   comfyui: {
@@ -83,6 +87,12 @@ const DEFAULT_SETTINGS: AppSettings = {
   },
   workflow: {
     default: 'wan22_i2v'
+  },
+  negatives: {
+    casting: '',
+    scene: '',
+    shot: '',
+    prop: ''
   },
   llm: {
     apiKey: '',
@@ -120,7 +130,7 @@ export class SettingsStore {
         && typeof saved.render.reviewGate === 'string') {
         saved.render.finalReviewGate = saved.render.reviewGate
       }
-      // 深合并，确保新字段有默认值
+      // 深合并，确保新字段有默认值；revision 由文件透传（无则 0），供保存时乐观并发校验
       return this.normalize(this.merge(DEFAULT_SETTINGS, saved))
     } catch {
       return this.normalize(structuredClone(DEFAULT_SETTINGS))
@@ -139,7 +149,19 @@ export class SettingsStore {
     } catch { /* 迁移失败下次读取再试 */ }
   }
 
-  async save(settings: AppSettings): Promise<void> {
+  /** 保存设置，返回落盘后的 revision（P2-14：调用方回填，供下次乐观并发校验） */
+  async save(settings: AppSettings): Promise<number> {
+    // P2-14：先读旧文件——用于 baseUrl 记忆、以及 revision 乐观并发校验
+    let old: { llm?: { baseUrl?: string }; revision?: unknown } = {}
+    try {
+      old = JSON.parse((await fs.readFile(this.settingsPath, 'utf-8')).replace(/^\uFEFF/, ''))
+    } catch { /* 首次保存或文件不存在 */ }
+    const storedRev = typeof old?.revision === 'number' && Number.isFinite(old.revision) ? old.revision : 0
+    if (typeof settings.revision === 'number' && settings.revision !== storedRev) {
+      throw new Error(
+        `设置已在别处更新（本地版本 ${settings.revision}，磁盘版本 ${storedRev}），请关闭并重新打开设置页后再保存`
+      )
+    }
     // LLM 接口地址下拉记忆：去重置顶，最多保留 12 条（UI 保存与对话内 llm_baseUrl 修改均走此入口）
     if (settings.llm) {
       const base = (settings.llm.baseUrl || '').trim()
@@ -147,22 +169,21 @@ export class SettingsStore {
         ? settings.llm.baseUrlHistory.filter((u): u is string => typeof u === 'string' && u.trim().length > 0)
         : []
       // 切换地址时把旧文件里的原地址也补进记忆，避免用户用过的地址丢失
-      let prevBase = ''
-      try {
-        const old = JSON.parse((await fs.readFile(this.settingsPath, 'utf-8')).replace(/^\uFEFF/, ''))
-        prevBase = String(old?.llm?.baseUrl || '').trim()
-      } catch { /* 首次保存或文件不存在 */ }
+      const prevBase = String(old?.llm?.baseUrl || '').trim()
       if (prevBase && prevBase !== base && !hist.includes(prevBase)) hist.push(prevBase)
       if (base && !hist.includes(base)) hist.unshift(base)
       settings.llm = { ...settings.llm, baseUrlHistory: hist.slice(0, 12) }
     }
     await fs.mkdir(path.dirname(this.settingsPath), { recursive: true })
     const normalized = this.normalize(settings)
+    // 落盘版本 = 磁盘版本 + 1（写成功即新版本）
+    normalized.revision = storedRev + 1
     // 9c：落盘前加密 apiKey（normalize 不改 apiKey；内存对象仍保留明文供本次调用方使用）
     if (normalized.llm?.apiKey) {
       normalized.llm = { ...normalized.llm, apiKey: encryptApiKey(normalized.llm.apiKey) }
     }
     await atomicWriteJson(this.settingsPath, normalized)
+    return normalized.revision
   }
 
   private merge(defaults: AppSettings, saved: Partial<AppSettings>): AppSettings {
@@ -228,6 +249,7 @@ export class SettingsStore {
 
     return {
       ...s,
+      revision: this.num(s.revision, 0, 0, Number.MAX_SAFE_INTEGER),
       creation,
       render: {
         ...s.render,
@@ -248,7 +270,9 @@ export class SettingsStore {
         turboH3: s.render?.turboH3 === true,
         assetConcurrency: conc,
         perShotAudit: s.render?.perShotAudit ?? true,
-        fusionFallback: this.enumOf<'block' | 'allow'>(s.render?.fusionFallback, ['block', 'allow'], 'block')
+        fusionFallback: this.enumOf<'block' | 'allow'>(s.render?.fusionFallback, ['block', 'allow'], 'block'),
+        i2iDenoise: this.dec(s.render?.i2iDenoise, 1, 0.1, 1),
+        firstFrameFaceThreshold: this.dec(s.render?.firstFrameFaceThreshold, 0.7, 0.1, 1)
       },
       tts: {
         ...s.tts,
@@ -272,7 +296,19 @@ export class SettingsStore {
         model: this.str(s.llm?.model, DEFAULT_SETTINGS.llm.model)
       },
       workflow: {
-        default: this.str(s.workflow?.default, DEFAULT_SETTINGS.workflow.default)
+        default: this.str(s.workflow?.default, DEFAULT_SETTINGS.workflow.default),
+        // P2-2：按阶段（定妆/场景/首尾帧/道具）覆盖图片工作流，空串=用内置默认
+        casting: this.str(s.workflow?.casting, DEFAULT_SETTINGS.workflow.casting),
+        scene: this.str(s.workflow?.scene, DEFAULT_SETTINGS.workflow.scene),
+        shot: this.str(s.workflow?.shot, DEFAULT_SETTINGS.workflow.shot),
+        prop: this.str(s.workflow?.prop, DEFAULT_SETTINGS.workflow.prop)
+      },
+      negatives: {
+        // P1-4：按阶段追加负向词（追加而非替换，内置画质底线始终生效）
+        casting: this.str(s.negatives?.casting, DEFAULT_SETTINGS.negatives.casting),
+        scene: this.str(s.negatives?.scene, DEFAULT_SETTINGS.negatives.scene),
+        shot: this.str(s.negatives?.shot, DEFAULT_SETTINGS.negatives.shot),
+        prop: this.str(s.negatives?.prop, DEFAULT_SETTINGS.negatives.prop)
       },
       general: {
         ...s.general,
@@ -287,6 +323,12 @@ export class SettingsStore {
   private num(v: unknown, fallback: number, min: number, max: number): number {
     const n = typeof v === 'number' && Number.isFinite(v) ? v : fallback
     return Math.max(min, Math.min(max, Math.round(n)))
+  }
+
+  /** 小数归一：非法类型/越界回退默认，保留一位小数（denoise、相似度阈值） */
+  private dec(v: unknown, fallback: number, min: number, max: number): number {
+    const n = typeof v === 'number' && Number.isFinite(v) ? v : fallback
+    return Math.round(Math.max(min, Math.min(max, n)) * 10) / 10
   }
 
   /** S-03：枚举白名单（非法值回退默认） */

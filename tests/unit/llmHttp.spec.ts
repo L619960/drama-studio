@@ -110,9 +110,18 @@ describe('httpChat · 重试 / 空响应 / signal', () => {
     expect(post).toHaveBeenCalledTimes(3)
   })
 
-  it('空 content → 抛「LLM 返回为空」并落盘诊断', async () => {
-    post.mockResolvedValueOnce({ data: { choices: [{ message: { content: '   ' } }], usage: {} } })
+  it('空 content → 同参重试 1 次仍空则抛「LLM 返回为空」并落盘诊断', async () => {
+    post.mockResolvedValue({ data: { choices: [{ message: { content: '   ' } }], usage: {} } })
     await expect(httpChat(getSettings, 'sys', 'user')).rejects.toThrow('LLM 返回为空')
+    expect(post).toHaveBeenCalledTimes(2)
+  })
+
+  it('首次空 content、重试成功 → 返回重试结果', async () => {
+    post
+      .mockResolvedValueOnce({ data: { choices: [{ message: { content: '' } }] } })
+      .mockResolvedValueOnce(okResp('second-try'))
+    await expect(httpChat(getSettings, 'sys', 'user')).resolves.toBe('second-try')
+    expect(post).toHaveBeenCalledTimes(2)
   })
 
   it('P1-2：signal 透传给 axios options', async () => {

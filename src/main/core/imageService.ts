@@ -30,6 +30,8 @@ export interface ImageGenerateOptions {
   /** 严格工作流：workflowName 模板不存在时直接报错（不降级到 builtin_t2i 文生）。
    *  用于双图融合等「必须用指定模板」的场景，失败由调用方回退其他路径。 */
   strictWorkflow?: boolean
+  /** i2i 参考图权重（KSampler denoise）：仅在工作流模板含 $DENOISE$ 占位符时生效 */
+  denoise?: number
   /** 瞬时故障重试次数（不含首次），默认 2 */
   retries?: number
   /** 取消探测：返回 true 时中断等待 */
@@ -156,6 +158,10 @@ export class ImageService {
     }
     if (meta?.placeholders.includes('WIDTH')) vars.WIDTH = options?.width ?? 768
     if (meta?.placeholders.includes('HEIGHT')) vars.HEIGHT = options?.height ?? 1152
+    if (meta?.placeholders.includes('DENOISE')) {
+      const raw = Number(options?.denoise)
+      vars.DENOISE = Number.isFinite(raw) ? Math.max(0.1, Math.min(1, raw)) : 1
+    }
     const refs = options?.referenceImagePaths?.length
       ? options.referenceImagePaths
       : options?.referenceImagePath

@@ -180,7 +180,7 @@ async function testComfyUI() {
   if (testingComfy.value) return
   testingComfy.value = true
   try {
-    await window.api.settings.save(JSON.parse(JSON.stringify(props.settings)))
+    props.settings.revision = await window.api.settings.save(JSON.parse(JSON.stringify(props.settings)))
     await checkHealth()
   } catch (e) {
     ElMessage.error(`保存配置失败：${e instanceof Error ? e.message : String(e)}`)

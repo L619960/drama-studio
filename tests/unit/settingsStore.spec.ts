@@ -120,4 +120,18 @@ describe('SettingsStore（S-03 归一化回归）', () => {
     s = await store.get()
     expect(s.render.fusionFallback).toBe('block')
   })
+
+  it('P2-14：save 返回递增 revision，回读与返回值一致', async () => {
+    const before = (await store.get()).revision ?? 0
+    const rev = await store.save(await store.get())
+    expect(rev).toBe(before + 1)
+    const s = await store.get()
+    expect(s.revision).toBe(rev)
+  })
+
+  it('P2-14：拿旧 revision 保存被拒（提示设置已在别处更新）', async () => {
+    const base = await store.get()
+    const stale = { ...base, revision: (base.revision ?? 0) - 1 }
+    await expect(store.save(stale)).rejects.toThrow(/设置已在别处更新/)
+  })
 })

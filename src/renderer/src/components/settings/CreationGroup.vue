@@ -352,7 +352,7 @@ async function runPreview(kind: 'character' | 'scene') {
   previewing.value = true
   previewUrl.value = ''
   try {
-    await window.api.settings.save(JSON.parse(JSON.stringify(props.settings)))
+    props.settings.revision = await window.api.settings.save(JSON.parse(JSON.stringify(props.settings)))
     const res = await window.api.settings.previewAsset({
       kind,
       promptHint: kind === 'character' ? previewLook.value : previewScene.value

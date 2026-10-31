@@ -23,7 +23,7 @@ export function pickPanoView(camera: string | undefined, views: string[] | undef
  */
 export function sanitizeCameraForFrame(camera: string): string {
   const segs = camera.split(/[,，]/).map(s => s.trim()).filter(Boolean)
-  const keep = segs.filter(s => !/(?:Su Wan|Lin Chuan|李强|苏晚|林川|another|other person|second person|background figure|blurred figure|out of focus|路人|人影|另一位|另一人|剪影)/i.test(s))
+  const keep = segs.filter(s => !/(?:another|other person|second person|background figure|blurred figure|out of focus|路人|人影|另一位|另一人|剪影)/i.test(s))
   return keep.join(', ')
 }
 

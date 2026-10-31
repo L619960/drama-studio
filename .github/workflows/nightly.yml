@@ -1,0 +1,46 @@
+name: Nightly
+
+# P2-13：夜间冷启动性能基线（人工触发 + 每日定时）。
+# 只在 windows runner 上跑：启动计时脚本会拉起 Electron 窗口，需要图形环境；
+# ubuntu runner 无 X server，无法测「窗口可交互」时间。
+on:
+  schedule:
+    # UTC 18:10 = 北京时间 02:10，避开高峰
+    - cron: '10 18 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: nightly-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  startup-metrics:
+    name: startup metrics (windows)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # 冷启动计时跑的是 out/ 下的真实构建产物，必须先 build
+      - name: Build app
+        run: npm run build
+
+      - name: Measure cold start
+        run: npm run measure-startup
+
+      # 产物留存，便于前后两个版本对比（console 输出也会写进 job 日志）
+      - uses: actions/upload-artifact@v4
+        with:
+          name: startup-metrics-${{ github.run_id }}
+          path: |
+            out/
+          retention-days: 3
+          if-no-files-found: warn

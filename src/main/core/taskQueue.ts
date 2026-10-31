@@ -9,7 +9,7 @@ import { FFmpegService } from './ffmpegService'
 import { ProjectStore } from './projectStore'
 import { SettingsStore } from './settingsStore'
 import { LipSyncService } from './lipSyncService'
-import { ConsistencyService, type LoadedRgb } from './consistencyService'
+import { ConsistencyService, type LoadedRgb, type ConsistencyResult } from './consistencyService'
 import { isTransientError, isOomError, classifyError } from './errorClassify'
 import { GENRE_TEMPLATES, SHOT_TIMING, type Project, type Shot, type ProgressEvent } from '../../shared/ipcTypes'
 import {
@@ -141,6 +141,20 @@ export class TaskQueue extends EventEmitter {
       this.consistency = new ConsistencyService(modelDir, (src, timeSec, size) => this.loadRgb(src, timeSec, size))
     }
     return this.consistency
+  }
+
+  /**
+   * 两张图片的人脸/全图相似度（供导演首帧生成后自检复用同一套模型与解码器）。
+   * 依赖或模型不可用时返回 null（调用方静默跳过，绝不阻塞流水线）。
+   */
+  async compareImages(referenceAbs: string, targetAbs: string): Promise<ConsistencyResult | null> {
+    try {
+      const svc = this.getConsistencyService()
+      if (!(await svc.available())) return null
+      return await svc.compare(referenceAbs, targetAbs)
+    } catch {
+      return null
+    }
   }
 
   /** ffmpeg 解码 size×size RGB24 裸帧（letterbox，绕开 sharp）；临时文件保留到 dispose，供人脸子进程读取 */

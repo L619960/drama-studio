@@ -48,7 +48,7 @@ import { SelfCheckService } from './core/selfCheckService'
 import { GENRE_TEMPLATES } from '../shared/ipcTypes'
 import { installGlobalErrorHandlers } from './core/errorHandler'
 import { childProcessManager } from './core/childProcessManager'
-import { createLogger } from './core/logger'
+import { createLogger, initFileLogger } from './core/logger'
 import { createComfyStatusWatcher } from './core/comfyStatusWatcher'
 import { buildFinishedNotification } from '../shared/notify'
 
@@ -57,6 +57,8 @@ const log = createLogger('Main')
 // ===== 全局异常兜底：未捕获的 Promise rejection / 同步异常落盘，防主进程静默崩溃 =====
 // 实现抽离到 ./core/errorHandler.ts（便于单测）；这里只负责接入 userData/logs 目录。
 installGlobalErrorHandlers(join(app.getPath('userData'), 'logs'))
+// P2-1：主进程日志落盘（userData/logs/main.log，5MB 轮转 ×2）；LOG_LEVEL 控制级别
+initFileLogger(join(app.getPath('userData'), 'logs'))
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged
 // 开发态开启 CDP 调试口，便于自动化测试工具（Playwright 等）连接操作窗口。

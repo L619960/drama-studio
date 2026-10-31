@@ -12,6 +12,8 @@
     "typecheck:web": "vue-tsc --noEmit -p tsconfig.web.json --composite false",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "measure-startup": "node scripts/measure-startup.mjs",
     "test:e2e": "playwright test --config=e2e/playwright.config.ts",
     "lint": "eslint .",
     "format": "prettier --write \"src/**/*.{ts,vue}\"",

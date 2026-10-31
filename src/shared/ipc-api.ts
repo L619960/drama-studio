@@ -203,7 +203,7 @@ export interface IpcApi {
   settings: {
     /** 主进程始终合并默认值后返回，不会是 null（I-11 修正：原契约误标 | null） */
     get(): Promise<AppSettings>
-    save(settings: AppSettings): Promise<void>
+    save(settings: AppSettings): Promise<number>
     /** 人物/场景试生成预览（写入 preview/，不进项目） */
     previewAsset(input: PreviewAssetInput): Promise<PreviewAssetResult>
   }

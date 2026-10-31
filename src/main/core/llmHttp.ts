@@ -146,42 +146,49 @@ export async function httpChat(
     max_tokens: maxTokens,
     thinking: { type: 'disabled' }
   }
-  let resp: { data: { choices?: Array<{ message?: { content?: string } }>; usage?: unknown } } | undefined
+  type ChatResp = { data: { choices?: Array<{ message?: { content?: string } }>; usage?: unknown } }
+  const post = (b: Record<string, unknown>): Promise<ChatResp> =>
+    axios.post(`${baseUrl}/chat/completions`, b, axOpts) as unknown as Promise<ChatResp>
   // 429/5xx 瞬时错误：最多重试 2 次（共 3 次尝试），退避 300ms/600ms
   const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504])
   const MAX_ATTEMPTS = 3
   let lastErr: unknown
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    try {
-      resp = await axios.post(`${baseUrl}/chat/completions`, baseBody, axOpts)
-      break
-    } catch (e) {
-      lastErr = e
-      // 部分 provider/模型不支持 thinking 参数（400/422）→ 去掉该参数重试一次
-      const st = (e as { response?: { status?: number } })?.response?.status
-      if (st === 400 || st === 422) {
-        const { thinking: _drop, ...fallbackBody } = baseBody
-        try {
-          resp = await axios.post(`${baseUrl}/chat/completions`, fallbackBody, axOpts)
-          break
-        } catch (e2) {
-          const detail = logLlmError(`chat(${s.llm.model})`, e2)
-          throw new Error(`LLM 请求失败：${detail}`, { cause: e2 })
+  const send = async (): Promise<ChatResp> => {
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      try {
+        return await post(baseBody)
+      } catch (e) {
+        lastErr = e
+        // 部分 provider/模型不支持 thinking 参数（400/422）→ 去掉该参数重试一次
+        const st = (e as { response?: { status?: number } })?.response?.status
+        if (st === 400 || st === 422) {
+          const { thinking: _drop, ...fallbackBody } = baseBody
+          try {
+            return await post(fallbackBody)
+          } catch (e2) {
+            const detail = logLlmError(`chat(${s.llm.model})`, e2)
+            throw new Error(`LLM 请求失败：${detail}`, { cause: e2 })
+          }
         }
+        if (RETRYABLE_STATUS.has(st ?? 0) && attempt < MAX_ATTEMPTS) {
+          await new Promise(r => setTimeout(r, 300 * 2 ** (attempt - 1)))
+          continue
+        }
+        const detail = logLlmError(`chat(${s.llm.model})`, e)
+        throw new Error(`LLM 请求失败：${detail}`, { cause: e })
       }
-      if (RETRYABLE_STATUS.has(st ?? 0) && attempt < MAX_ATTEMPTS) {
-        await new Promise(r => setTimeout(r, 300 * 2 ** (attempt - 1)))
-        continue
-      }
-      const detail = logLlmError(`chat(${s.llm.model})`, e)
-      throw new Error(`LLM 请求失败：${detail}`, { cause: e })
     }
-  }
-  if (!resp) {
     const detail = logLlmError(`chat(${s.llm.model})`, lastErr)
     throw new Error(`LLM 请求失败：${detail}`)
   }
-  const content: string = resp.data?.choices?.[0]?.message?.content?.trim() || ''
+  let resp = await send()
+  let content: string = resp.data?.choices?.[0]?.message?.content?.trim() || ''
+  // P2-5：空 content 多为思维链吃光输出配额或瞬时抖动，用同一参数重试 1 次再判失败
+  if (!content) {
+    log.warn(`LLM 返回空 content（model=${s.llm.model}），重试 1 次`)
+    resp = await send()
+    content = resp.data?.choices?.[0]?.message?.content?.trim() || ''
+  }
   if (!content) {
     // 诊断：长请求空响应时把响应结构落盘，区分「超时」「choices 空」「content 空」
     try {

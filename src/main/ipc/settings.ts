@@ -29,11 +29,13 @@ export function registerSettingsIpc(ctx: SettingsIpcCtx): void {
   // Settings
   handleIpc(IpcChannels.settingsGet, () => ctx.settingsStore.get())
   handleIpc(IpcChannels.settingsSave, async (_, settings: AppSettings) => {
-    await ctx.settingsStore.save(settings)
+    const revision = await ctx.settingsStore.save(settings)
     // ComfyUI 地址变更时运行时重连
     if (settings.comfyui?.baseUrl) {
       ctx.comfyuiClient.setBaseUrl(settings.comfyui.baseUrl).catch(() => {})
     }
+    // P2-14：把新版本号回传渲染层，供下次保存做乐观并发校验
+    return revision
   })
   handleIpc(IpcChannels.settingsPreviewAsset, async (_, input: { kind: 'character' | 'scene'; promptHint: string }) => {
     const s = await ctx.settingsStore.get()

@@ -654,7 +654,8 @@ export interface IpcApi {
   settings: {
     /** 主进程始终合并默认值后返回，不会是 null（I-11 修正：原契约误标 | null） */
     get(): Promise<AppSettings>
-    save(settings: AppSettings): Promise<void>
+    /** 保存设置；返回写入后的版本号（revision），用于乐观并发回填 */
+    save(settings: AppSettings): Promise<number>
     /** 人物/场景试生成预览（写入 preview/，不进项目） */
     previewAsset(input: PreviewAssetInput): Promise<PreviewAssetResult>
   }
@@ -823,6 +824,11 @@ export interface PreviewAssetResult {
 
 // ===== 设置数据模型 =====
 export interface AppSettings {
+  /**
+   * P2-14：设置版本号（乐观并发）。读取时由主进程填当前版本，保存时回传；
+   * 与磁盘版本不一致说明别处已改过，保存会被拒绝，避免多窗口互相覆盖配置。
+   */
+  revision?: number
   general: {
     autoSave: boolean
     /** 启动后自动触发导演「自主学习」（每周一轮，联网搜索+技能沉淀） */
@@ -873,6 +879,15 @@ export interface AppSettings {
      * allow = 允许回退文生兜底继续出图。
      */
     fusionFallback?: 'block' | 'allow'
+    /**
+     * i2i 参考图权重（KSampler denoise，0.1~1）。默认 1=保持既有出图行为；
+     * 需求建议 0.55（更强参考锁定），可按模型实测下调。仅对含 $DENOISE$ 占位符的工作流生效。
+     */
+    i2iDenoise?: number
+    /**
+     * 首帧-定妆照人脸相似度阈值（0~1，默认 0.7）；低于该值自动重抽 1 次，仍低只告警。
+     */
+    firstFrameFaceThreshold?: number
   }
   /** 创作四模块：分镜 / 人物 / 场景 / 剪辑（与 render/tts 双向镜像兼容） */
   creation: CreationSettings
@@ -902,6 +917,21 @@ export interface AppSettings {
   }
   workflow: {
     default: string  // 全局默认工作流名称
+    /** P2-2：按阶段覆盖工作流；留空回退 global.default / 内置默认（casting/scene/shot/prop） */
+    casting?: string
+    scene?: string
+    shot?: string
+    prop?: string
+  }
+  /**
+   * P1-4：按阶段补充负向词（追加在内置负向词之后，留空=仅用内置）。
+   * 不做清空式覆盖，避免用户误删写实/时代负向后画质失控。
+   */
+  negatives: {
+    casting: string
+    scene: string
+    shot: string
+    prop: string
   }
   llm: {
     apiKey: string   // 火山方舟 API Key

@@ -43,7 +43,7 @@ drama-studio/
 ├── src/
 │   ├── main/                     主进程（业务逻辑中心）
 │   │   ├── index.ts              入口 + 窗口创建 + IPC 注册
-│   │   ├── core/                 核心服务层（75 个模块）
+│   │   ├── core/                 核心服务层（78 个模块）
 │   │   │   ├── director*/        AI 导演子模块（状态机/流水线/资产/手动/完成）
 │   │   │   ├── taskQueue*.ts     渲染队列（8 文件拆分：调度/重试/渲染/音频/一致性/提示词）
 │   │   │   ├── conversation*/    AI 对话系统（session/service/agentLoop + 4 类 tool dispatcher）
@@ -65,14 +65,13 @@ drama-studio/
 │   │   │   ├── skillLibrary.ts / builtinSkills.ts / builtinToolSpecs.ts  技能/工具库
 │   │   │   ├── childProcessManager.ts  子进程生命周期管理
 │   │   │   ├── errorHandler.ts / errorClassify.ts  全局异常兜底 + 临时/持久错误分类
-│   │   │   └── logger.ts         统一日志工具（createLogger 封装）
-│   │   ├── ipc/                  IPC handler（17 个文件：16 个 handler + shared.ts 统一包装）
-│   │   └── agent/                MCP 协议桥接
+│   │   │   └── logger.ts         统一日志工具（分级 + 落盘 + 轮转）
+│   │   ├── ipc/                  IPC handler（18 个文件：17 个 handler + shared.ts 统一包装）
 │   ├── preload/index.ts          预加载桥接（contextBridge + sandbox CJS 输出）
-│   ├── renderer/src/             Vue 3 渲染层（28 组件 + 11 composables）
+│   ├── renderer/src/             Vue 3 渲染层（32 组件 + 12 composables）
 │   │   ├── views/                10 个页面视图
 │   │   ├── components/           业务组件（console/storyboard/settings/common）
-│   │   ├── composables/          组合函数（directorState/directorChat/inputMemory 等）
+│   │   ├── composables/          组合函数（directorState/directorChat/memoryManager 等）
 │   │   ├── router/               vue-router
 │   │   └── main.ts               Element Plus 按需引入 + ElMessage monkeypatch
 │   └── shared/                   跨进程共享层
@@ -84,8 +83,8 @@ drama-studio/
 │       ├── imagePrompts.ts       负面提示词预设
 │       └── ...                   其他共享模块（castAppearance/scenePrompts/assetReuse 等）
 ├── workflows/                    ComfyUI 工作流模板（h3_i2v/h3_r2v/wan22_i2v/latentsync/builtin_t2i）
-├── tests/unit/                   Vitest 单元测试（92 文件 / 1597 用例）
-├── e2e/                          Playwright E2E smoke 测试
+├── tests/unit/                   Vitest 单元测试（126 文件 / 1900+ 用例）
+├── e2e/                          Playwright E2E（窗口 smoke + 真实链路，后者需 E2E_REAL_CHAIN=1）
 ├── docs/                         技术文档（含 IPC 安全清单、技术审计报告）
 ├── electron.vite.config.ts       三分构建配置（main/preload/renderer）+ Element Plus 按需引入 + 代码分割
 ├── electron-builder.yml          NSIS Windows 打包配置

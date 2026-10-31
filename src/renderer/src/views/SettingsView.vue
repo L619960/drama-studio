@@ -152,6 +152,30 @@
               </el-select>
               <span class="form-tip" style="margin-left: 8px">定妆/场景板/首帧的客户端并发；ComfyUI 侧仍排队执行</span>
             </el-form-item>
+            <el-form-item label="i2i 参考图权重">
+              <el-slider
+                v-model="settings.render.i2iDenoise"
+                :min="0.1"
+                :max="1"
+                :step="0.05"
+                style="width: 320px"
+              />
+              <span class="form-tip" style="margin-left: 8px">
+                首帧图生图的重绘强度：1=最大幅度重绘（默认），越低越贴近参考图、构图更死板；建议 0.55~0.8
+              </span>
+            </el-form-item>
+            <el-form-item label="首帧人脸相似度阈值">
+              <el-slider
+                v-model="settings.render.firstFrameFaceThreshold"
+                :min="0.3"
+                :max="0.95"
+                :step="0.05"
+                style="width: 320px"
+              />
+              <span class="form-tip" style="margin-left: 8px">
+                首帧与定妆照的人脸余弦相似度低于此值会自动重抽 1 次，仍低只告警不阻塞（默认 0.7）
+              </span>
+            </el-form-item>
           </el-form>
         </div>
 
@@ -321,6 +345,7 @@ const frameOptions = [33, 49, 65, 81, 97, 113]
 /** 默认设置（首屏初始值 + 「恢复默认」共用一份，避免两处默认值漂移） */
 function createDefaultSettings(): AppSettings {
   return {
+    revision: 0,
     general: {
       autoSave: true,
       autoLearn: true
@@ -340,7 +365,9 @@ function createDefaultSettings(): AppSettings {
       finalReviewGate: 'block',
       assetConcurrency: 2,
       perShotAudit: true,
-      turboH3: false
+      turboH3: false,
+      i2iDenoise: 1,
+      firstFrameFaceThreshold: 0.7
     },
     creation: structuredClone(DEFAULT_CREATION),
     comfyui: {
@@ -355,7 +382,17 @@ function createDefaultSettings(): AppSettings {
       volume: 100
     },
     workflow: {
-      default: 'wan22_i2v'
+      default: 'wan22_i2v',
+      casting: '',
+      scene: '',
+      shot: '',
+      prop: ''
+    },
+    negatives: {
+      casting: '',
+      scene: '',
+      shot: '',
+      prop: ''
     },
     llm: {
       apiKey: '',
@@ -455,7 +492,7 @@ async function persistSettings(showToast = true): Promise<boolean> {
     creationGroupRef.value?.rememberInputs()
     comfyuiSectionRef.value?.rememberInputs()
     llmSectionRef.value?.rememberInputs()
-    await window.api.settings.save(JSON.parse(JSON.stringify(settings)))
+    settings.revision = await window.api.settings.save(JSON.parse(JSON.stringify(settings)))
     applyTheme()
     // 通知侧栏立刻复查 ComfyUI（地址可能已变）
     window.dispatchEvent(new Event('comfyui:recheck'))

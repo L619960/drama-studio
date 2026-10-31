@@ -246,7 +246,7 @@ describe('buildCloseupEditPromptImpl', () => {
   })
 
   it('start 相位优先 action，含关键道具锁', () => {
-    const p = buildCloseupEditPromptImpl('look', '书房', d(), 'CU', 'start')
+    const p = buildCloseupEditPromptImpl('书房', d(), 'CU', 'start')
     expect(p).toContain('把图1中的人物放入场景「书房」')
     expect(p).toContain('，Lin opens the door')
     expect(p).toContain('，calm的表情')
@@ -255,19 +255,19 @@ describe('buildCloseupEditPromptImpl', () => {
   })
 
   it('end 相位优先 lastFrameEn，action 兜底', () => {
-    const p = buildCloseupEditPromptImpl('look', '书房', d(), 'CU', 'end')
+    const p = buildCloseupEditPromptImpl('书房', d(), 'CU', 'end')
     expect(p).toContain('，Lin closes door')
-    expect(buildCloseupEditPromptImpl('look', '书房', d({ lastFrameEn: '   ' }), 'CU', 'end'))
+    expect(buildCloseupEditPromptImpl('书房', d({ lastFrameEn: '   ' }), 'CU', 'end'))
       .toContain('，Lin opens the door')
   })
 
   it('start 相位 action 为空时 firstFrameEn 兜底', () => {
-    const p = buildCloseupEditPromptImpl('look', '书房', d({ action: '  ' }), 'CU', 'start')
+    const p = buildCloseupEditPromptImpl('书房', d({ action: '  ' }), 'CU', 'start')
     expect(p).toContain('，Lin at door')
   })
 
   it('无 emotion/props 时的默认道具约束文案', () => {
-    const p = buildCloseupEditPromptImpl('look', '书房', d({ emotion: '  ', props: [] }), 'CU', 'start')
+    const p = buildCloseupEditPromptImpl('书房', d({ emotion: '  ', props: [] }), 'CU', 'start')
     expect(p).toContain('动作描述中出现的手持道具必须清晰入画')
     expect(p).toContain('严禁出现与动作描述无关的碗、筷、勺')
     expect(p).not.toContain('calm的表情')
@@ -589,7 +589,7 @@ describe('generateShotFirstFrameImpl', () => {
       .rejects.toThrow(/已 halt（fusionFallback=block）/)
   })
 
-  it('两级失败 + fusionFallback=allow：文生兜底 + face restore + 跳过 face-sim（Python 不可用）', async () => {
+  it('两级失败 + fusionFallback=allow：文生兜底 + face restore + 自检降级跳过', async () => {
     const { agent, image } = makeAgent()
     agent.settings.get.mockImplementation(async () => mkSettings({ render: { fusionFallback: 'allow' } }))
     image.generate.mockRejectedValueOnce(new Error('fusion down')).mockResolvedValueOnce(undefined)
@@ -600,18 +600,16 @@ describe('generateShotFirstFrameImpl', () => {
     expect(image.generate.mock.calls[1][2].workflowName).toBe('klein_t2i_clean')
     expect(image.restoreFace).toHaveBeenCalledTimes(1)
     expect(state.fsCalls.some(c => c.fn === 'rename')).toBe(true)
-    // face-sim：settings.get 无 startCommand → 跳过重抽，generate 仍 2 次
-    expect(image.generate).toHaveBeenCalledTimes(2)
   })
 
-  it('无定妆图（faceAbs 空）：跳过融合直达文生兜底，仍 restoreFace', async () => {
+  it('无定妆图（faceAbs 空）：跳过融合直达文生兜底，无可恢复参照故不做 face restore', async () => {
     const { agent, image } = makeAgent()
     const d = mkFrameD({ character: mkChar('林川', { faceImagePath: '' }) })
     await generateShotFirstFrameImpl(agent, 'p1', d, sc, neverAbort, ['林川'])
     expect(d.firstFramePath).toBe('projects/p1/shots/shot_x_first.png')
     expect(image.generate).toHaveBeenCalledTimes(1)
     expect(image.generate.mock.calls[0][2].workflowName).toBe('klein_t2i_clean')
-    expect(image.restoreFace).toHaveBeenCalledTimes(1)
+    expect(image.restoreFace).not.toHaveBeenCalled()
   })
 
   it('文生兜底也失败且有定妆图：copyFile 定妆图作首帧', async () => {
@@ -655,6 +653,126 @@ describe('generateShotFirstFrameImpl', () => {
     expect(prompt).toContain('distant background silhouettes of the convoy') // escort 从句被替换
     // 全景双图/文生兜底未触发
     expect(image.generate).toHaveBeenCalledTimes(1)
+  })
+
+  // —— P1-2 多角色同框逐角色参考图 ——
+  it('多角色同框：走 qwen2511_i2i_multi，场景板+每位角色各一张定妆', async () => {
+    const { agent, image } = makeAgent()
+    const d = mkFrameD({
+      characters: [
+        mkChar('林川', { id: 'c1', faceImagePath: 'projects/p1/characters/c1_face.png' }),
+        mkChar('苏晚', { id: 'c2', faceImagePath: 'projects/p1/characters/c2_face.png' })
+      ],
+      board: mkBoard({ panoViews: ['projects/p1/scenes/v0.png', 'projects/p1/scenes/v1.png', 'projects/p1/scenes/v2.png', 'projects/p1/scenes/v3.png'] }),
+      as: mkShot({ camera: 'left side, medium eye level' })
+    })
+    await generateShotFirstFrameImpl(agent, 'p1', d, sc, neverAbort, ['林川', '苏晚'])
+    expect(d.firstFramePath).toBe('projects/p1/shots/shot_x_first.png')
+    expect(image.generate).toHaveBeenCalledTimes(1)
+    expect(image.generate.mock.calls[0][2].workflowName).toBe('qwen2511_i2i_multi')
+    expect(image.generate.mock.calls[0][2].referenceImagePaths).toEqual([
+      path.join(baseDir, 'projects/p1/scenes/v3.png'),
+      path.join(baseDir, 'projects/p1/characters/c1_face.png'),
+      path.join(baseDir, 'projects/p1/characters/c2_face.png')
+    ])
+    // 图1=场景板，人物在图2、图3
+    expect(image.generate.mock.calls[0][0]).toContain('图2、图3')
+    expect(image.generate.mock.calls[0][0]).toContain('放进图1的场景')
+  })
+
+  it('无场景板的多角色：图1、图2 直接取两位定妆图', async () => {
+    const { agent, image } = makeAgent()
+    const d = mkFrameD({
+      characters: [
+        mkChar('林川', { id: 'c1', faceImagePath: 'projects/p1/characters/c1_face.png' }),
+        mkChar('苏晚', { id: 'c2', faceImagePath: 'projects/p1/characters/c2_face.png' })
+      ],
+      board: mkBoard({ panoViews: [] })
+    })
+    await generateShotFirstFrameImpl(agent, 'p1', d, sc, neverAbort, ['林川', '苏晚'])
+    expect(image.generate.mock.calls[0][2].referenceImagePaths).toEqual([
+      path.join(baseDir, 'projects/p1/characters/c1_face.png'),
+      path.join(baseDir, 'projects/p1/characters/c2_face.png')
+    ])
+    expect(image.generate.mock.calls[0][0]).toContain('把图1、图2中的 2 位人物一起放在场景')
+  })
+
+  it('多角色融合失败 → 回退单角色融合', async () => {
+    const { agent, image } = makeAgent()
+    image.generate.mockRejectedValueOnce(new Error('multi down')).mockResolvedValueOnce(undefined)
+    const d = mkFrameD({
+      characters: [
+        mkChar('林川', { id: 'c1', faceImagePath: 'projects/p1/characters/c1_face.png' }),
+        mkChar('苏晚', { id: 'c2', faceImagePath: 'projects/p1/characters/c2_face.png' })
+      ]
+    })
+    await generateShotFirstFrameImpl(agent, 'p1', d, sc, neverAbort, ['林川', '苏晚'])
+    expect(d.firstFramePath).toBe('projects/p1/shots/shot_x_first.png')
+    expect(image.generate).toHaveBeenCalledTimes(2)
+    expect(image.generate.mock.calls[1][2].workflowName).toBe('qwen2511_i2i_edit')
+  })
+
+  // —— P1-1 首帧人脸相似度自检 + 自动重抽 ——
+  it('相似度达标：只记录 info，不重抽', async () => {
+    const { agent, image } = makeAgent({ queue: { compareImages: vi.fn(async () => ({ score: 0.9, method: 'face' })) } })
+    const d = mkFrameD()
+    await generateShotFirstFrameImpl(agent, 'p1', d, sc, neverAbort, ['林川'])
+    expect(image.generate).toHaveBeenCalledTimes(1)
+    expect(agent.states.get('p1')!.logs.some(l => l.message.includes('首帧人脸相似度 0.900'))).toBe(true)
+  })
+
+  it('相似度偏低：自动重抽 1 次，恢复达标记录 info', async () => {
+    const { agent, image } = makeAgent()
+    const compareImages = vi.fn()
+      .mockResolvedValueOnce({ score: 0.45, method: 'face' })
+      .mockResolvedValueOnce({ score: 0.82, method: 'face' })
+    ;(agent as unknown as { queue: unknown }).queue = { compareImages }
+    const d = mkFrameD()
+    await generateShotFirstFrameImpl(agent, 'p1', d, sc, neverAbort, ['林川'])
+    expect(image.generate).toHaveBeenCalledTimes(2)
+    expect(d.firstFramePath).toBe('projects/p1/shots/shot_x_first.png')
+    const logs = agent.states.get('p1')!.logs
+    expect(logs.some(l => l.message.includes('自动重抽 1 次'))).toBe(true)
+    expect(logs.some(l => l.message.includes('重抽后相似度 0.820'))).toBe(true)
+  })
+
+  it('重抽后仍偏低：只告警放行，不再重抽', async () => {
+    const { agent, image } = makeAgent()
+    const compareImages = vi.fn(async () => ({ score: 0.5, method: 'face' }))
+    ;(agent as unknown as { queue: unknown }).queue = { compareImages }
+    const d = mkFrameD()
+    await generateShotFirstFrameImpl(agent, 'p1', d, sc, neverAbort, ['林川'])
+    expect(image.generate).toHaveBeenCalledTimes(2)
+    expect(compareImages).toHaveBeenCalledTimes(2)
+    expect(agent.states.get('p1')!.logs.some(l => l.message.includes('重抽后相似度仍偏低'))).toBe(true)
+  })
+
+  it('相似度依赖不可用（返回 null）：静默跳过，不重抽', async () => {
+    const { agent, image } = makeAgent()
+    ;(agent as unknown as { queue: unknown }).queue = { compareImages: vi.fn(async () => null) }
+    const d = mkFrameD()
+    await generateShotFirstFrameImpl(agent, 'p1', d, sc, neverAbort, ['林川'])
+    expect(image.generate).toHaveBeenCalledTimes(1)
+  })
+
+  it('多人同框取最低相似度作为判定分', async () => {
+    const { agent, image } = makeAgent()
+    const compareImages = vi.fn()
+      .mockResolvedValueOnce({ score: 0.9, method: 'face' })
+      .mockResolvedValueOnce({ score: 0.4, method: 'face' })
+      .mockResolvedValueOnce({ score: 0.9, method: 'face' })
+      .mockResolvedValueOnce({ score: 0.9, method: 'face' })
+    ;(agent as unknown as { queue: unknown }).queue = { compareImages }
+    const d = mkFrameD({
+      characters: [
+        mkChar('林川', { id: 'c1', faceImagePath: 'projects/p1/characters/c1_face.png' }),
+        mkChar('苏晚', { id: 'c2', faceImagePath: 'projects/p1/characters/c2_face.png' })
+      ]
+    })
+    await generateShotFirstFrameImpl(agent, 'p1', d, sc, neverAbort, ['林川', '苏晚'])
+    // 第一轮最低 0.4 → 重抽；第二轮 0.9 → 放行
+    expect(image.generate).toHaveBeenCalledTimes(2)
+    expect(compareImages).toHaveBeenCalledTimes(4)
   })
 })
 

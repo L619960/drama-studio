@@ -41,8 +41,8 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Unit tests
-        run: npm test
+      - name: Unit tests (${{ matrix.os }})
+        run: ${{ matrix.os == 'ubuntu-latest' && 'npm run test:coverage' || 'npm test' }}
 
       - name: Build app
         run: npm run build

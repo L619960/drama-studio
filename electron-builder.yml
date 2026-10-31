@@ -41,6 +41,13 @@ win:
       arch:
         - x64
   artifactName: ${productName}-${version}-setup.${ext}
+  # P1-4 代码签名骨架：证书不入仓，由 CI secrets 注入
+  #   CSC_LINK          pfx 证书（base64 或绝对路径）
+  #   CSC_KEY_PASSWORD  证书口令
+  # 未配置 secrets 时 electron-builder 自动跳过签名（产物可用，但 Windows SmartScreen 会提示"未知发布者"）。
+  signtoolOptions:
+    signingHashAlgorithms:
+      - sha256
 
 nsis:
   oneClick: false

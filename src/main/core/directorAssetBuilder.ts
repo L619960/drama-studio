@@ -1,5 +1,4 @@
 import * as fs from 'node:fs/promises'
-import { existsSync } from 'node:fs'
 import * as path from 'node:path'
 import type {
   AnalyzeResult, Character, Shot, SceneBoard
@@ -9,15 +8,17 @@ import {
   faceCastingPrompt, bodySheetPrompt, scenePlatePrompt, shotFramePrompt, SHOT_SIZE_CUE,
   panoramaScenePrompt, realismNegativeFor, sceneNegativeFor, emptySceneNegativeFor,
   frameCrowdNegativeFor, castingNegativeFor, stripOtherPersonClauses, mergeNegative,
-  stripDialogueDirections, castLookForGenre, oocWardrobeNegativeFor, ageDriftNegativeFor
+  stripDialogueDirections, castLookForGenre, oocWardrobeNegativeFor, ageDriftNegativeFor,
+  withNegativeOverride
 } from '../../shared/imagePrompts'
 import { resolveCreation } from '../../shared/creationSettings'
 import { hardenLookEnList } from '../../shared/castAppearance'
 import { mapPool } from './asyncPool'
 import { ImageGenerateCancelled } from './imageService'
+import { FIRST_FRAME_FACE_THRESHOLD } from './consistencyService'
 import { genreCompatible } from './assetReuse'
 import type { DirectorAgent } from './directorAgent'
-import { pickPanoView, FEMALE_VOICES, MALE_VOICES } from './directorConstants'
+import { pickPanoView, FEMALE_VOICES, MALE_VOICES, stageWorkflowOverride } from './directorConstants'
 import {
   logImpl, setStageImpl, isCancelledImpl
 } from './directorStateMachine'
@@ -41,7 +42,6 @@ export function sanitizeCameraForFrameImpl(camera: string): string {
 }
 
 export function buildCloseupEditPromptImpl(
-  lookEn: string,
   sceneHint: string,
   d: { as: { action?: string; emotion?: string; camera?: string; shotSize?: string; firstFrameEn?: string; lastFrameEn?: string; props?: string[] } },
   sizeCue: string,
@@ -95,6 +95,48 @@ export function buildPanoEditPromptImpl(
     `写实电影感，自然光影，背景严格符合图1场景氛围，不得改成其他地点。`
 }
 
+/**
+ * 多角色同框首帧提示词（P1-2）：每位角色各自一张定妆参考图，避免多人同框时只锁一人、
+ * 其余人物靠文字生成导致换脸/串装。
+ * scenePlateIncluded 决定图序：true = 图1场景板 + 图2..N 角色；false = 图1..N 角色（图1同时作构图基底）。
+ */
+export function buildMultiEditPromptImpl(
+  sceneHint: string,
+  d: { as: { action?: string; emotion?: string; camera?: string; shotSize?: string; firstFrameEn?: string; lastFrameEn?: string; props?: string[] } },
+  sizeCue: string,
+  personCount: number,
+  scenePlateIncluded: boolean,
+  phase: 'start' | 'end' = 'start'
+): string {
+  const frameCue = phase === 'start'
+    ? (d.as.action?.trim() || d.as.firstFrameEn?.trim())
+    : (d.as.lastFrameEn?.trim() || d.as.action?.trim())
+  const action = frameCue ? `，${frameCue}` : ''
+  const emotion = d.as.emotion?.trim() ? `，${d.as.emotion.trim()}的表情` : ''
+  const camera = d.as.camera?.trim() ? `，${sanitizeCameraForFrameImpl(d.as.camera)}` : ''
+  const props = (d.as.props?.length ? d.as.props : []).join('、')
+  const propLock = props
+    ? `。画面中必须清晰出现本镜关键道具：${props}（手持或置于身前，不得缺失）`
+    : `。动作描述中出现的手持道具必须清晰入画，置于手中或身前台面上，不得缺失`
+  const tablewareBan = `。严禁出现与动作描述无关的碗、筷、勺、杯、盘、餐具、食物或任何手持容器，人物双手严格按动作描述摆放，否则双手自然下垂空置、不得持物`
+  const personIdx = scenePlateIncluded
+    ? Array.from({ length: personCount }, (_, i) => i + 2)
+    : Array.from({ length: personCount }, (_, i) => i + 1)
+  const personRefs = personIdx.map(i => `图${i}`).join('、')
+  const scenePhrase = scenePlateIncluded
+    ? `把${personRefs}中的 ${personCount} 位人物一起放进图1的场景「${sceneHint}」`
+    : `把${personRefs}中的 ${personCount} 位人物一起放在场景「${sceneHint}」`
+  return `${scenePhrase}：${sizeCue}${action}${emotion}${camera}${propLock}${tablewareBan}。` +
+    `${personRefs} 分别是 ${personCount} 位不同角色，每位人物的面部、发型、服装、肤色须与其各自定妆参考图完全一致，` +
+    `严禁互换服装、串脸、把两人合并成一张脸；各自身份、性别、年龄、体态不得混淆；` +
+    `人物姿态、视线方向、手持道具状态严格按动作描述执行（不得改为直视镜头，除非动作本就如此）；` +
+    `画面中只允许上述 ${personCount} 位人物出现，严禁路人、额外人脸、背景人影、镜像倒影人影；` +
+    (scenePlateIncluded
+      ? `场景的空间布局、光线、色调、机位角度与图1完全一致（图1是该场景的全景方位图，全剧复用）；`
+      : '') +
+    `写实电影感，自然光影，背景严格符合场景氛围，不得改成其他地点。`
+}
+
 /** 角色建档：面部定妆 + 全身三视图；角色间有限并发，单图失败带重试 */
 export async function buildCharactersImpl(
   agent: DirectorAgent,
@@ -110,8 +152,9 @@ export async function buildCharactersImpl(
   const concurrency = Math.max(1, Math.min(3, settingsSnap.render.assetConcurrency || 2))
   const ch = resolveCreation(settingsSnap).character
   const faceCount = Math.max(1, Math.min(4, ch.candidates || 1))
-  const wfOpt = ch.t2iWorkflow ? { workflowName: ch.t2iWorkflow } : {}
-  const neg = { negative: castingNegativeFor(ch.realismLock) }
+  const castingWf = stageWorkflowOverride(settingsSnap, 'casting')
+  const wfOpt = castingWf ? { workflowName: castingWf } : ch.t2iWorkflow ? { workflowName: ch.t2iWorkflow } : {}
+  const neg = { negative: withNegativeOverride(castingNegativeFor(ch.realismLock), settingsSnap.negatives, 'casting') }
   const abort = (): boolean => isCancelledImpl(agent, projectId)
 
   setStageImpl(agent, projectId, 'casting', 'running',
@@ -264,8 +307,9 @@ export async function buildPropAssetsImpl(
   const settingsSnap = await agent.settings.get()
   const concurrency = Math.max(1, Math.min(3, settingsSnap.render.assetConcurrency || 2))
   const ch = resolveCreation(settingsSnap).character
-  const wfOpt = ch.t2iWorkflow ? { workflowName: ch.t2iWorkflow } : { workflowName: 'klein_t2i_clean' }
-  const neg = { negative: sceneNegativeFor(ch.realismLock) }
+  const propWf = stageWorkflowOverride(settingsSnap, 'prop')
+  const wfOpt = propWf ? { workflowName: propWf } : ch.t2iWorkflow ? { workflowName: ch.t2iWorkflow } : { workflowName: 'klein_t2i_clean' }
+  const neg = { negative: withNegativeOverride(sceneNegativeFor(ch.realismLock), settingsSnap.negatives, 'prop') }
   const abort = (): boolean => isCancelledImpl(agent, projectId)
   let doneCount = 0
 
@@ -397,6 +441,7 @@ export async function generateShotFirstFrameImpl(
     board?: SceneBoard
     characterIds: string[]
     character?: Character
+    characters?: Character[]
     firstFramePath?: string
   },
   sc: { frameWidth: number; frameHeight: number },
@@ -404,6 +449,12 @@ export async function generateShotFirstFrameImpl(
   allCharacterNames: string[] = []
 ): Promise<void> {
   const look = d.character?.appearanceLock || 'chinese person, natural everyday appearance'
+  const settingsSnap = await agent.settings.get()
+  // P1-3: i2i 参考图权重（denoise）可调，越界回退默认 1（保持既有出图行为）
+  const rawDenoise = Number(settingsSnap.render?.i2iDenoise)
+  const denoiseStrength = Number.isFinite(rawDenoise) ? Math.max(0.1, Math.min(1, rawDenoise)) : 1
+  const rawThreshold = Number(settingsSnap.render?.firstFrameFaceThreshold)
+  const faceThreshold = Number.isFinite(rawThreshold) ? Math.max(0.1, Math.min(1, rawThreshold)) : FIRST_FRAME_FACE_THRESHOLD
   const sizeCue = SHOT_SIZE_CUE[d.as.shotSize || 'medium']
   const env = d.as.sceneEn || d.as.scene
   const maskOtherIn = (t: string): string => {
@@ -423,9 +474,15 @@ export async function generateShotFirstFrameImpl(
     : env) + (shotSceneDesc ? `；本镜场景：${shotSceneDesc}` : '')
   const firstRel = `projects/${projectId}/shots/${d.id}_first.png`
   const firstAbs = path.join(agent.baseDir, firstRel)
-  const faceAbs = d.character?.faceImagePath
-    ? path.join(agent.baseDir, d.character.faceImagePath)
-    : ''
+  // P1-2：同框角色各自的定妆图（最多 3 张，超出部分由文字约束兜底）
+  const facesAbs: string[] = []
+  for (const c of (d.characters?.length ? d.characters : d.character ? [d.character] : [])) {
+    if (!c.faceImagePath) continue
+    const p = path.join(agent.baseDir, c.faceImagePath)
+    if (!facesAbs.includes(p)) facesAbs.push(p)
+    if (facesAbs.length >= 3) break
+  }
+  const faceAbs = facesAbs[0] || ''
   const dMasked = {
     ...d,
     as: {
@@ -437,150 +494,184 @@ export async function generateShotFirstFrameImpl(
     }
   }
 
-  let fusionRoot = ''
-  if (faceAbs) {
-    try {
-      await agent.image.generate(
-        buildCloseupEditPromptImpl(look, plateHint, dMasked, sizeCue, 'start'),
-        firstAbs,
-        {
-          workflowName: 'qwen2511_i2i_edit',
-          referenceImagePath: faceAbs,
-          shouldAbort: abort
-        }
-      )
-      d.firstFramePath = firstRel
-    } catch (e) {
-      if (e instanceof ImageGenerateCancelled) throw e
-      fusionRoot = e instanceof Error ? e.message : String(e)
-      logImpl(agent, projectId, 'scenes', 'warn',
-        `第${d.index}镜单图定妆融合失败（${fusionRoot}），尝试全景双图融合`)
-      const panoViewRel = pickPanoView(d.as.camera, d.board?.panoViews)
-      if (panoViewRel) {
-        try {
-          await agent.image.generate(
-            buildPanoEditPromptImpl(look, plateHint, dMasked, sizeCue, 'start'),
-            firstAbs,
-            {
-              workflowName: 'qwen2511_i2i_two',
-              referenceImagePaths: [path.join(agent.baseDir, panoViewRel), faceAbs],
-              strictWorkflow: true,
-              shouldAbort: abort
-            }
-          )
-          d.firstFramePath = firstRel
-        } catch (e2) {
-          if (e2 instanceof ImageGenerateCancelled) throw e2
-          fusionRoot = e2 instanceof Error ? e2.message : String(e2)
-          logImpl(agent, projectId, 'scenes', 'warn',
-            `第${d.index}镜全景双图融合失败（${fusionRoot}）`)
+  /**
+   * 首帧产出过程（单图融合 → 全景双图 → 文生兜底）。
+   * 抽成闭包以便低相似度时用同一套参数重抽一次。
+   */
+  const produceFirstFrame = async (): Promise<void> => {
+    let fusionRoot = ''
+    let copiedFromFace = false
+    // P1-2：多角色同框优先走逐角色参考图（图1场景板/[图1角色A] + 每位角色各一张定妆）
+    if (facesAbs.length >= 2) {
+      try {
+        const panoViewRel = pickPanoView(d.as.camera, d.board?.panoViews)
+        const refs = panoViewRel
+          ? [path.join(agent.baseDir, panoViewRel), ...facesAbs]
+          : facesAbs
+        await agent.image.generate(
+          buildMultiEditPromptImpl(plateHint, dMasked, sizeCue, facesAbs.length, Boolean(panoViewRel), 'start'),
+          firstAbs,
+          {
+            workflowName: 'qwen2511_i2i_multi',
+            referenceImagePaths: refs,
+            strictWorkflow: true,
+            denoise: denoiseStrength,
+            shouldAbort: abort
+          }
+        )
+        d.firstFramePath = firstRel
+      } catch (e) {
+        if (e instanceof ImageGenerateCancelled) throw e
+        fusionRoot = e instanceof Error ? e.message : String(e)
+        logImpl(agent, projectId, 'scenes', 'warn',
+          `第${d.index}镜多角色融合失败（${fusionRoot}），回退单角色融合`)
+      }
+    }
+    if (!d.firstFramePath && faceAbs) {
+      try {
+        await agent.image.generate(
+          buildCloseupEditPromptImpl(plateHint, dMasked, sizeCue, 'start'),
+          firstAbs,
+          {
+            workflowName: 'qwen2511_i2i_edit',
+            referenceImagePath: faceAbs,
+            denoise: denoiseStrength,
+            shouldAbort: abort
+          }
+        )
+        d.firstFramePath = firstRel
+      } catch (e) {
+        if (e instanceof ImageGenerateCancelled) throw e
+        fusionRoot = e instanceof Error ? e.message : String(e)
+        logImpl(agent, projectId, 'scenes', 'warn',
+          `第${d.index}镜单图定妆融合失败（${fusionRoot}），尝试全景双图融合`)
+        const panoViewRel = pickPanoView(d.as.camera, d.board?.panoViews)
+        if (panoViewRel) {
+          try {
+            await agent.image.generate(
+              buildPanoEditPromptImpl(look, plateHint, dMasked, sizeCue, 'start'),
+              firstAbs,
+              {
+                workflowName: 'qwen2511_i2i_two',
+                referenceImagePaths: [path.join(agent.baseDir, panoViewRel), faceAbs],
+                strictWorkflow: true,
+                denoise: denoiseStrength,
+                shouldAbort: abort
+              }
+            )
+            d.firstFramePath = firstRel
+          } catch (e2) {
+            if (e2 instanceof ImageGenerateCancelled) throw e2
+            fusionRoot = e2 instanceof Error ? e2.message : String(e2)
+            logImpl(agent, projectId, 'scenes', 'warn',
+              `第${d.index}镜全景双图融合失败（${fusionRoot}）`)
+          }
         }
       }
     }
-  }
-  if (!d.firstFramePath && faceAbs) {
-    const fusionFallback = (await agent.settings.get()).render.fusionFallback
-    if (fusionFallback !== 'allow') {
-      throw new Error(
-        `首帧融合失败（第${d.index}镜）：${fusionRoot || '单图/双图融合均未产出首帧'}，已 halt（fusionFallback=block）；修复工作流/模型后 resume`)
+    if (!d.firstFramePath && faceAbs) {
+      const fusionFallback = (await agent.settings.get()).render.fusionFallback
+      if (fusionFallback !== 'allow') {
+        throw new Error(
+          `首帧融合失败（第${d.index}镜）：${fusionRoot || '单图/双图融合均未产出首帧'}，已 halt（fusionFallback=block）；修复工作流/模型后 resume`)
+      }
     }
-  }
-  if (!d.firstFramePath) {
-    try {
-      const frameAction = dMasked.as.action?.trim() || dMasked.as.firstFrameEn?.trim() || ''
-      await agent.image.generate(
-        shotFramePrompt({
-          phase: 'start',
-          lookEn: look,
-          scene: plateHint,
-          action: frameAction,
-          shotSizeCue: sizeCue,
-          emotion: dMasked.as.emotion || undefined,
-          camera: dMasked.as.camera || undefined,
-          lighting: dMasked.as.lighting,
-          facing: dMasked.as.facing,
-          continuity: dMasked.as.continuity,
-          characterCount: d.characterIds.length || 1,
-          props: d.as.props
-        }),
-        firstAbs,
-        {
-          width: sc.frameWidth, height: sc.frameHeight, shouldAbort: abort,
-          negative: mergeNegative(realismNegativeFor('standard'), frameCrowdNegativeFor(d.characterIds.length || 1), oocWardrobeNegativeFor(look || ''), ageDriftNegativeFor(look || '')),
-          workflowName: 'klein_t2i_clean'
+    if (!d.firstFramePath) {
+      try {
+        const frameAction = dMasked.as.action?.trim() || dMasked.as.firstFrameEn?.trim() || ''
+        await agent.image.generate(
+          shotFramePrompt({
+            phase: 'start',
+            lookEn: look,
+            scene: plateHint,
+            action: frameAction,
+            shotSizeCue: sizeCue,
+            emotion: dMasked.as.emotion || undefined,
+            camera: dMasked.as.camera || undefined,
+            lighting: dMasked.as.lighting,
+            facing: dMasked.as.facing,
+            continuity: dMasked.as.continuity,
+            characterCount: d.characterIds.length || 1,
+            props: d.as.props
+          }),
+          firstAbs,
+          {
+            width: sc.frameWidth, height: sc.frameHeight, shouldAbort: abort,
+            negative: withNegativeOverride(mergeNegative(realismNegativeFor('standard'), frameCrowdNegativeFor(d.characterIds.length || 1), oocWardrobeNegativeFor(look || ''), ageDriftNegativeFor(look || '')), settingsSnap.negatives, 'shot'),
+            workflowName: stageWorkflowOverride(settingsSnap, 'shot') || 'klein_t2i_clean'
+          }
+        )
+        d.firstFramePath = firstRel
+      } catch (e) {
+        if (e instanceof ImageGenerateCancelled) throw e
+        if (faceAbs) {
+          try {
+            await fs.copyFile(faceAbs, firstAbs)
+            d.firstFramePath = firstRel
+            copiedFromFace = true
+          } catch { /* 三级都失败：留空，渲染时回退定妆图 */ }
         }
-      )
-      d.firstFramePath = firstRel
-      // P1-3: face restore 后处理（CodeFormer），修复 i2i 融合导致的五官漂移
+      }
+    }
+    // P1-3: face restore 后处理（CodeFormer），修复 i2i 融合导致的五官漂移；
+    // 定妆图直接复制成首帧时无需修复。
+    if (d.firstFramePath && faceAbs && !copiedFromFace) {
       try {
         const restoredAbs = firstAbs.replace(/\.png$/, '_fr.png')
         await agent.image.restoreFace(firstAbs, restoredAbs)
         await fs.rename(restoredAbs, firstAbs)
       } catch { /* face restore 失败不阻塞 */ }
-      // P1-1: 人脸相似度比对（首帧 vs 定妆照），低于阈值重抽 1 次
-      if (faceAbs) {
-        try {
-          // 动态解析 python.exe：从 ComfyUI startCommand 提取，避免硬编码
-          const { comfyInstallRoot } = await import('../../shared/pipelineGuards')
-          const settings = await agent.settings.get()
-          let pyExe = ''
-          const cmd = settings.comfyui?.startCommand
-          if (cmd) {
-            const argv: string[] = []
-            const re = /"([^"]*)"|'([^']*)'|(\S+)/g
-            let m: RegExpExecArray | null
-            while ((m = re.exec(cmd)) !== null) argv.push(m[1] ?? m[2] ?? m[3])
-            pyExe = argv[0] || '' // startCommand 首段即 python.exe 路径
+    }
+  }
+
+  await produceFirstFrame()
+
+  // P1-1: 首帧-定妆照人脸相似度比对（多人同框取最低分）；低于阈值用同参数重抽 1 次，仍低只告警不阻塞。
+  if (d.firstFramePath && facesAbs.length && typeof agent.queue?.compareImages === 'function') {
+    const compareImages = agent.queue.compareImages.bind(agent.queue)
+    const worstFaceScore = async (): Promise<number | null> => {
+      const scores: number[] = []
+      for (const f of facesAbs) {
+        const r = await compareImages(f, firstAbs)
+        if (r && r.method === 'face') scores.push(r.score)
+      }
+      return scores.length ? Math.min(...scores) : null
+    }
+    try {
+      const score = await worstFaceScore()
+      if (score !== null) {
+        logImpl(agent, projectId, 'scenes', 'info',
+          `第${d.index}镜首帧人脸相似度 ${score.toFixed(3)}（阈值 ${faceThreshold}${facesAbs.length > 1 ? `，${facesAbs.length} 人取最低` : ''}）`)
+        if (score < faceThreshold) {
+          logImpl(agent, projectId, 'scenes', 'warn',
+            `第${d.index}镜首帧人脸相似度偏低（${score.toFixed(3)} < ${faceThreshold}），自动重抽 1 次`)
+          const prevFirst = d.firstFramePath
+          d.firstFramePath = undefined
+          try {
+            await produceFirstFrame()
+          } catch (e) {
+            if (e instanceof ImageGenerateCancelled) throw e
+            // 重抽失败保留原首帧，不让自检拖垮流水线
+            d.firstFramePath = prevFirst
+            logImpl(agent, projectId, 'scenes', 'warn',
+              `第${d.index}镜重抽失败，保留原首帧：${e instanceof Error ? e.message : String(e)}`)
+            return
           }
-          if (!pyExe || !existsSync(pyExe)) {
-            // Python 不可用 → 跳过，不阻塞首帧
-            // 同时清理旧的 tmp/face_sim.py 依赖（开发态实验代码）
-            void comfyInstallRoot // 保留 import 引用防止 TS 报未使用
-          } else {
-            // 脚本路径：优先 baseDir/face_sim.py，回退 data root 同级的 tmp/
-            const scriptCandidates = [
-              path.join(agent.baseDir, 'face_sim.py'),
-              path.join(agent.baseDir, '..', 'tmp', 'face_sim.py')
-            ]
-            const pyScript = scriptCandidates.find(p => existsSync(p))
-            if (pyScript) {
-              const { execFileSync } = await import('node:child_process')
-              const pyOut = execFileSync(pyExe, [pyScript, faceAbs, firstAbs], { timeout: 60000, encoding: 'utf-8' })
-              const lastLine = pyOut.trim().split('\n').pop() || '{}'
-              const result = JSON.parse(lastLine)
-              log.info(`face sim score=${result.score} faces1=${result.faces1} faces2=${result.faces2}`)
-              if (result.score >= 0 && result.score < 0.4) {
-                log.warn(`face sim low (${result.score}), regenerating once...`)
-                await agent.image.generate(
-                  shotFramePrompt({
-                    phase: 'start', lookEn: look, scene: plateHint, action: frameAction,
-                    shotSizeCue: sizeCue, emotion: dMasked.as.emotion || undefined,
-                    camera: dMasked.as.camera || undefined, lighting: dMasked.as.lighting,
-                    facing: dMasked.as.facing, continuity: dMasked.as.continuity,
-                    characterCount: d.characterIds.length || 1, props: d.as.props
-                  }),
-                  firstAbs,
-                  {
-                    width: sc.frameWidth, height: sc.frameHeight, shouldAbort: abort,
-                    negative: mergeNegative(realismNegativeFor('standard'), frameCrowdNegativeFor(d.characterIds.length || 1), oocWardrobeNegativeFor(look || ''), ageDriftNegativeFor(look || '')),
-                    workflowName: 'klein_t2i_clean'
-                  }
-                )
-              }
+          if (d.firstFramePath) {
+            const second = await worstFaceScore()
+            if (second !== null && second < faceThreshold) {
+              logImpl(agent, projectId, 'scenes', 'warn',
+                `第${d.index}镜重抽后相似度仍偏低（${second.toFixed(3)}），已放行，可在分镜页手动重出首帧`)
+            } else if (second !== null) {
+              logImpl(agent, projectId, 'scenes', 'info',
+                `第${d.index}镜重抽后相似度 ${second.toFixed(3)}`)
             }
           }
-        } catch (e) {
-          log.warn(`face sim check failed (non-blocking): ${e instanceof Error ? e.message : e}`)
         }
       }
     } catch (e) {
-      if (e instanceof ImageGenerateCancelled) throw e
-      if (faceAbs) {
-        try {
-          await fs.copyFile(faceAbs, firstAbs)
-          d.firstFramePath = firstRel
-        } catch { /* 三级都失败：留空，渲染时回退定妆图 */ }
-      }
+      // 自检依赖不可用/解码失败：只记录，不影响首帧产出
+      log.warn(`首帧相似度自检失败（不阻塞）: ${e instanceof Error ? e.message : e}`)
     }
   }
 }
@@ -625,6 +716,8 @@ export async function buildShotsImpl(
   }
   const panoOn = sc.panorama !== false
   const panoViewsCount = Math.max(2, Math.min(6, sc.panoViewsCount || 4))
+  const sceneWf = stageWorkflowOverride(settingsSnap, 'scene') || 'klein_t2i_clean'
+  const shotWf = stageWorkflowOverride(settingsSnap, 'shot') || 'klein_t2i_clean'
   const abort = (): boolean => isCancelledImpl(agent, projectId)
   let platesDone = 0
   setStageImpl(agent, projectId, 'scenes', 'running',
@@ -650,7 +743,7 @@ export async function buildShotsImpl(
         await agent.image.generate(
           panoramaScenePrompt(u.sceneEn || u.name, u.emotion || undefined, { weatherHint: sc.weatherHint }),
           panoAbs,
-          { width: 1536, height: 768, seed, negative: emptySceneNegativeFor('standard', u.sceneEn || u.name), shouldAbort: abort, workflowName: 'klein_t2i_clean' }
+          { width: 1536, height: 768, seed, negative: withNegativeOverride(emptySceneNegativeFor('standard', u.sceneEn || u.name), settingsSnap.negatives, 'scene'), shouldAbort: abort, workflowName: sceneWf }
         )
         const viewsAbs = await agent.ffmpeg.cropPanoramaViews(panoAbs, scenesDir, {
           count: panoViewsCount,
@@ -684,7 +777,7 @@ export async function buildShotsImpl(
           await agent.image.generate(
             scenePlatePrompt(u.sceneEn || u.name, u.emotion || undefined, plateOpts),
             path.join(agent.baseDir, rel),
-            { width: sc.plateWidth, height: sc.plateHeight, seed, negative: emptySceneNegativeFor('standard', u.sceneEn || u.name), shouldAbort: abort, workflowName: 'klein_t2i_clean' }
+            { width: sc.plateWidth, height: sc.plateHeight, seed, negative: withNegativeOverride(emptySceneNegativeFor('standard', u.sceneEn || u.name), settingsSnap.negatives, 'scene'), shouldAbort: abort, workflowName: sceneWf }
           )
           candRels.push({ rel, seed })
         }
@@ -754,6 +847,7 @@ export async function buildShotsImpl(
     board?: SceneBoard
     characterIds: string[]
     character?: Character
+    characters?: Character[]
     sceneImagePath?: string
     firstFramePath?: string
     lastFramePath?: string
@@ -765,11 +859,20 @@ export async function buildShotsImpl(
     const board = boardByKey.get(sceneKey)
     let characterIds: string[] = []
     let character: Character | undefined
-    if (as.type === 'i2v' && as.characterName) {
-      character = characterMap.get(as.characterName)
-      if (character) characterIds = [character.id]
+    let characters: Character[] | undefined
+    if (as.type === 'i2v') {
+      // P1-2：同镜多人时按 characters 名单逐个解析定妆图；characterName 作为兼容兜底
+      const names = [...(as.characters || []), ...(as.characterName ? [as.characterName] : [])]
+      const resolved: Character[] = []
+      for (const n of names) {
+        const c = characterMap.get(n)
+        if (c && !resolved.some(x => x.id === c.id)) resolved.push(c)
+      }
+      character = resolved[0]
+      characters = resolved.length > 1 ? resolved.slice(0, 3) : undefined
+      characterIds = resolved.map(c => c.id)
     }
-    return { id, index: i + 1, as, board, characterIds, character }
+    return { id, index: i + 1, as, board, characterIds, character, characters }
   })
 
   // —— 2a) 首帧 / 空镜参考：有限并发 ——
@@ -848,8 +951,8 @@ export async function buildShotsImpl(
         path.join(agent.baseDir, lastRel),
         {
           width: sc.frameWidth, height: sc.frameHeight, shouldAbort: abort,
-          negative: mergeNegative(realismNegativeFor('standard'), frameCrowdNegativeFor(d.characterIds.length || 1), oocWardrobeNegativeFor(look || ''), ageDriftNegativeFor(look || '')),
-          workflowName: 'klein_t2i_clean'
+          negative: withNegativeOverride(mergeNegative(realismNegativeFor('standard'), frameCrowdNegativeFor(d.characterIds.length || 1), oocWardrobeNegativeFor(look || ''), ageDriftNegativeFor(look || '')), settingsSnap.negatives, 'shot'),
+          workflowName: shotWf
         }
       )
       d.lastFramePath = lastRel

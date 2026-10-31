@@ -124,6 +124,10 @@
 
 ## 六、仍存在的问题（诚实标注）
 
+> **状态说明（2026-10-31）**：第 4、5 条已在 2026-10-31 清理（`lookEn` 死形参与 `directorPrompts` 硬编码角色名已删除）；
+> 第 1~3 条属环境模型缺失/需重启进程的验证项。后续跟踪见
+> [项目未完成事项总览-2026-10-31.md](file:///e:/drama-studio/docs/项目未完成事项总览-2026-10-31.md) 的 P1-02 / P2-03 / P2-04。
+
 1. **Wan2.2 Remix 模型未安装**：`wan22_remix_flf2v` 工作流所需的 umt5 clip / 3 个 LoRA / 2 个 Remix diffusion 模型缺失，跨镜位移+尾帧的镜头无法走 Wan Remix 路径。这是环境问题，不是代码问题；本次第 1、2 镜因此失败。要让跨镜位移镜头可渲，需用户把对应模型放进 ComfyUI 模型目录。
 2. **H3 出片后低一致性重渲回落到 Wan Remix**：第 3 镜 H3 成功但 score 低，重渲路径选了缺模型的 wan remix，导致整镜 failed 而非「接受低质片」。`consistencyMode=rerender` 的设计如此，但当前环境没有备用引擎兜底。
 3. **本次跑的项目带武器 bug**：修复 `cecd961` 只影响新跑的剧；`p_1793075280832_g64v` 的 appearanceLock 里仍写着 `carrying one traditional chinese weapon`（跑的时候修还没进进程）。Electron 主进程需重启加载新代码后，再跑才会验证修复效果。本次未重启 Electron（会打断用户环境）。

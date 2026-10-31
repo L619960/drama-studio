@@ -67,6 +67,12 @@ function solve4(Ain: number[][], bin: number[]): number[] {
 export const FACE_CONSISTENCY_THRESHOLD = 0.5
 export const CONSISTENCY_THRESHOLD = 0.7
 /**
+ * 首帧 vs 定妆照的相似度阈值（P1-1）。
+ * 需求文档给定 0.7：首帧由定妆照直接 i2i 生成，构图/姿态接近，同人分数应显著高于
+ * 视频末帧口径（实测同人 0.558）。低于该值自动用同参数重抽 1 次，仍低只告警不阻塞。
+ */
+export const FIRST_FRAME_FACE_THRESHOLD = 0.7
+/**
  * H3 引擎身份漂移严重阈值：分数低于此值时，同引擎换 seed 重渲大概率仍是漂移，
  * 直接自动切换 Wan i2v 重渲（Wan 用首帧做物理起点图，身份锁定远强于 H3 r2v）。
  * 2026-10 实测：该镜 H3 r2v 人脸相似度 0.26~0.30（夸张大笑+脸型变形），

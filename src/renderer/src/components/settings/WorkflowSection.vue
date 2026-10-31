@@ -17,6 +17,43 @@
         </el-select>
         <span class="form-tip" style="margin-left: 8px">未指定工作流的分镜使用此默认值</span>
       </el-form-item>
+      <el-form-item label="按阶段覆盖">
+        <div class="stage-grid">
+          <div v-for="stage in STAGES" :key="stage.key" class="stage-row">
+            <span class="stage-label">{{ stage.label }}</span>
+            <el-select
+              v-model="settings.workflow[stage.key]"
+              clearable
+              placeholder="内置默认"
+              style="width: 240px"
+            >
+              <el-option
+                v-for="w in workflows"
+                :key="w.name"
+                :label="w.name"
+                :value="w.name"
+              />
+            </el-select>
+          </div>
+        </div>
+        <span class="form-tip">留空=用内置默认图片工作流（定妆/场景板/首尾帧是 t2i/i2i，不是上面的视频默认工作流）</span>
+      </el-form-item>
+      <el-form-item label="负向词补充">
+        <div class="stage-grid">
+          <div v-for="stage in STAGES" :key="stage.key" class="stage-row">
+            <span class="stage-label">{{ stage.label }}</span>
+            <el-input
+              v-model="settings.negatives[stage.key]"
+              type="textarea"
+              :rows="2"
+              resize="none"
+              placeholder="逗号分隔，例如：水印、多余手指"
+              style="width: 340px"
+            />
+          </div>
+        </div>
+        <span class="form-tip">按阶段追加到内置负向词（追加而非替换，画质/时代底线始终生效）</span>
+      </el-form-item>
     </el-form>
 
     <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 24px">
@@ -103,6 +140,13 @@ const props = defineProps<{
 }>()
 
 const workflows = ref<WorkflowMeta[]>([])
+/** P2-2 / P1-4：图片生成阶段（按阶段工作流覆盖 + 负向词补充） */
+const STAGES = [
+  { key: 'casting', label: '定妆照' },
+  { key: 'scene', label: '场景板' },
+  { key: 'shot', label: '首/尾帧' },
+  { key: 'prop', label: '道具' }
+] as const
 /** 测试连接 / 停止 ComfyUI / 导入工作流 按钮 loading（UXA-P1-05） */
 const importingWf = ref(false)
 
@@ -221,6 +265,10 @@ async function saveParam(param: WorkflowParam) {
 }
 
 .form-tip { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+
+.stage-grid { display: flex; flex-direction: column; gap: 8px; }
+.stage-row { display: flex; align-items: flex-start; gap: 10px; }
+.stage-label { width: 56px; flex-shrink: 0; font-size: 12px; color: var(--text-secondary); line-height: 32px; }
 
 .workflow-card {
   background: var(--bg-card);

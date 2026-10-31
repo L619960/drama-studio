@@ -79,8 +79,9 @@ export default tseslint.config(
       'vue/first-attribute-linebreak': 'off',
       'vue/html-closing-bracket-newline': 'off',
       'vue/one-component-per-file': 'off',
-      // 70+ 处 prop 直接 mutation（Element Plus 双向绑定模式），重构工作量大，降为 warn
-      'vue/no-mutating-props': 'warn'
+      // P2-08：当前 lint 已 0 violation，把该规则从 warn 升为 error 固化门禁；
+      // 已接受"就地编辑 props 对象"的组件组在下面单独关闭（不重写业务逻辑）。
+      'vue/no-mutating-props': 'error'
     }
   },
 

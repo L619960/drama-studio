@@ -9,6 +9,7 @@
  * - comfy-mcp 本体在独立 venv（由设置里的 ComfyUI 启动命令推导），不碰 ComfyUI 内嵌 Python。
  */
 
+import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import * as path from 'node:path'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
@@ -241,9 +242,17 @@ export class ComfyMcpService {
   /** app 退出时关闭子进程 */
   async dispose(): Promise<void> {
     const t = this.transport
+    const pid = t?.pid
     this.client = null
     this.transport = null
     this.toolSpecs = null
     if (t) await t.close().catch(() => undefined)
+    // P2-6：comfy-mcp 会再派生 comfy CLI 子进程，close 只结束直接子进程；
+    // Windows 上用 taskkill /T 强杀整棵进程树，避免退出后残留孤儿进程占端口。
+    if (pid && process.platform === 'win32') {
+      try {
+        spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true, timeout: 3000 })
+      } catch { /* 进程可能已退出 */ }
+    }
   }
 }

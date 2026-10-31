@@ -161,3 +161,26 @@ export function negativeForSlot(hasSlot: boolean, negative: string): string | un
   if (!hasSlot || !text) return undefined
   return text
 }
+
+/** 负向词可覆盖阶段（与 settings.negatives 的四个键一一对应） */
+export type NegativeStage = 'casting' | 'scene' | 'shot' | 'prop'
+export interface NegativeOverrides {
+  casting?: string
+  scene?: string
+  shot?: string
+  prop?: string
+}
+
+/**
+ * P1-4：把 settings.json 中该阶段的用户负向词追加到内置负向词之后。
+ * 采用「追加」而非「替换」：内置写实/时代/空场景负向是画质底线，用户误清空会直接掉画质；
+ * 用户只需补本剧特有的穿帮词。
+ */
+export function withNegativeOverride(
+  base: string,
+  overrides: NegativeOverrides | undefined | null,
+  stage: NegativeStage
+): string {
+  const extra = (overrides?.[stage] || '').trim()
+  return extra ? mergeNegative(base, extra) : base
+}
