@@ -84,11 +84,11 @@
       </div>
     </div>
 
-    <!-- 快捷指令按钮（REQ-14 DC-OPEN-26：继续/暂停/重渲第X镜/看进度） -->
+    <!-- 快捷指令按钮（REQ-14 DC-OPEN-26：继续/暂停/重渲单镜/看进度） -->
     <div class="quick-actions">
       <el-button size="small" plain @click="emit('useQuick', '继续')">继续</el-button>
       <el-button size="small" plain @click="emit('useQuick', '暂停')">暂停</el-button>
-      <el-button size="small" plain @click="quickRerenderShot">重渲第X镜</el-button>
+      <el-button size="small" plain @click="quickRerenderShot">重渲单镜</el-button>
       <el-button size="small" plain @click="emit('useQuick', '看看进度')">看进度</el-button>
     </div>
 
@@ -191,7 +191,7 @@ function handleSend(): void {
   emit('send')
 }
 
-/** REQ-14 DC-OPEN-26：重渲第X镜——先问镜号，再按统一文案发送指令 */
+/** REQ-14 DC-OPEN-26：重渲单镜——先问镜号，再按统一文案发送指令 */
 async function quickRerenderShot(): Promise<void> {
   try {
     const r = await ElMessageBox.prompt('要重渲第几镜？', '重渲单镜', {

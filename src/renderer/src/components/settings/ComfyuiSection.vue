@@ -83,7 +83,7 @@
           />
         </el-select>
         <div class="form-tip">
-          一键启动用的完整命令行，路径用英文引号包裹（如 "D:\ComfyUI\python\python.exe" "D:\ComfyUI\main.py"）；留空时启动按钮会提示先填写本机路径
+          一键启动用的完整命令行，路径用英文引号包裹（如 {{ startCmdExample }}）；留空时启动按钮会提示先填写本机路径
         </div>
       </el-form-item>
       <el-form-item label="工作流库目录">
@@ -131,6 +131,13 @@ const memComfyBase = useInputMemory('comfyui-baseurl')
 const memModelsDir = useInputMemory('comfyui-modelsdir')
 const memStartCmd = useInputMemory('comfyui-startcmd')
 const memWfLib = useInputMemory('comfyui-wflib')
+
+/** 启动命令示例按运行平台渲染，避免 macOS/Linux 用户照抄 Windows 路径 */
+const startCmdExample = /Macintosh|Mac OS X/.test(navigator.userAgent)
+  ? '"/Applications/ComfyUI/python/bin/python3" "/Applications/ComfyUI/main.py"'
+  : /Linux/.test(navigator.userAgent)
+    ? '"/path/to/python3" "/path/to/ComfyUI/main.py"'
+    : '"D:\\ComfyUI\\python\\python.exe" "D:\\ComfyUI\\main.py"'
 
 // 右键菜单实例（模板 ref）
 const inputCtxMenu = ref<InstanceType<typeof InputContextMenu> | null>(null)
