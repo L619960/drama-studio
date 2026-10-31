@@ -120,12 +120,23 @@
           <el-tag :type="statusType(row.status)" size="small">{{ statusText(row.status) }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="190" align="center">
+      <el-table-column label="操作" width="210" align="center">
         <template #default="{ row, $index }">
           <el-button link type="primary" size="small" @click.stop="emit('edit', $index)" :disabled="isRendering">编辑</el-button>
           <el-button link type="warning" size="small" @click.stop="emit('review', $index)" :disabled="isRendering">审核</el-button>
           <el-button link type="success" size="small" @click.stop="emit('render', row)" :disabled="row.status === 'rendering' || isRendering">渲染</el-button>
           <el-button link type="danger" size="small" @click.stop="emit('delete', $index)" :disabled="isRendering">删除</el-button>
+          <!-- REQ-19：触屏/键盘等价入口，打开与右键一致的菜单 -->
+          <el-button
+            link
+            size="small"
+            class="more-btn"
+            title="更多操作（等同右键菜单）"
+            aria-label="更多操作"
+            @click.stop="openRowMenu(row, $event)"
+          >
+            <el-icon><MoreFilled /></el-icon>
+          </el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -138,7 +149,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import {
-  VideoPlay, CopyDocument, DocumentCopy, Top, Bottom, Edit, RefreshLeft, Delete
+  VideoPlay, CopyDocument, DocumentCopy, Top, Bottom, Edit, RefreshLeft, Delete, MoreFilled
 } from '@element-plus/icons-vue'
 import type { Character, SceneBoard, Shot } from '../../../../shared/ipcTypes'
 import { statusTagType as statusType, shotStatusText as statusText } from '../../utils/status'
@@ -211,8 +222,21 @@ const menuItems = computed<CtxItem[]>(() => {
 
 function onRowContextMenu(row: Shot, _column: unknown, event: MouseEvent) {
   event.preventDefault()
+  openRowMenu(row, event)
+}
+
+/** 打开行菜单：右键与「⋯」按钮共用；键盘触发（坐标 0,0）时锚定按钮右下角 */
+function openRowMenu(row: Shot, event: MouseEvent): void {
   menuRowId.value = row.id
-  menuRef.value?.open(event, row)
+  const target = event.currentTarget as HTMLElement | null
+  const hasPoint = event.clientX > 0 || event.clientY > 0
+  const anchor = hasPoint || !target
+    ? event
+    : {
+        clientX: target.getBoundingClientRect().right,
+        clientY: target.getBoundingClientRect().bottom
+      } as MouseEvent
+  menuRef.value?.open(anchor, row)
 }
 
 // 菜单动作：ContextMenu 在点击项后自动关闭，这里直接上抛给父级处理数据

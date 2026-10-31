@@ -94,6 +94,7 @@
 | REQ-15 | 后台任务完成/失败通知（空白维度 3 + MP-12 + MP-07 + DC-OPEN-22） | ✅ 已交付：`director:finished` 追加 `totalShots/doneShots`，主进程 `Notification` 在窗口失焦时发系统通知（`shared/notify` 文案，取消不发，点击聚焦窗口）；新增 `comfyui:status-changed` 与 `comfyStatusWatcher` 健康轮询，运行条渲染中掉线显示红色「ComfyUI 已断开」；新增 `system:disk-space` / `system:cleanup-tmp`，启动与任务完成检查数据盘，<5GB 运行条出现警告与「清理临时产物」（复用 `taskQueue.cleanupTmpFiles`）；补 11 例单测 | REQ-05 | M |
 | REQ-16 | 撤销/重做基础（空白维度 7） | ✅ 已交付：新增 `shared/undoWindow`（5 秒后悔窗，只结算一次）与 `utils/undoToast`（`ElMessage` + 撤销按钮）；分镜单个/批量删除改为软删除（撤销原位恢复且不丢引用，产物与整集成片延迟到窗口结束才作废）；角色/道具/场景板删除支持 5 秒撤销并回写项目；「取消全部渲染」撤销按快照重新入队；「清空任务」撤销恢复本地状态与日志；补 4 例单测 | — | M |
 | REQ-18 | 日志面板信息架构（DC-OPEN-23） | ✅ 已交付：`DirectorLogEntry` 增加 `detail`/`errorKind`，主进程在自愈诊断、审核换种子重渲、失败镜头处写结构化明细；`LogPanel` warn 默认按阶段折叠并显示条数、单条日志点击展开 JSON/中文明细、errorKind 复用 `ERROR_KIND_TEXT` 着色；新增 `director:exportLogs` 将当前项目日志写入项目目录（`shared/logExport` 统一文本格式）；补 4 例单测 | REQ-11 | M |
+| REQ-19 | 可用性走查（ACS-01 / ACS-02 / ACS-03） | ✅ 已交付：盘查确认基线已满足——`theme.css` 全局 `:focus-visible` 2px 品牌色描边（`StageTimeline` 另有自定义焦点环）、`.el-button.ds-danger-confirm` 深字浅红对比度约 6.5:1、`App.vue` 侧栏可折叠（220px/72px）且 `DirectorRunBar` 为 `work-shell` 独立 flex 行不重叠、860px 断点已收边距；补分镜表操作列「⋯」按钮（`MoreFilled`，`aria-label` + `title`，与行右键共用 `openRowMenu`，键盘触发按按钮矩形锚定菜单），触屏/无鼠标场景可打开全部行操作 | REQ-14 | S |
 
 ## 依赖关系
 
@@ -151,3 +152,4 @@ P1-C1（flake 修复）─→ P1-D1 大批量补测（避免新增用例继承�
 | 2026-10-31 10:10 | REQ-15：`director:finished` 补镜头数，主进程失焦时发系统通知；`comfyui:status-changed` 健康轮询驱动运行条「ComfyUI 已断开」红色态；`system:disk-space`/`system:cleanup-tmp` + 运行条 <5GB 警告与清理入口（复用 `taskQueue.cleanupTmpFiles`）；补 11 例单测。四门全绿（1867 用例 / 122 文件） |
 | 2026-10-31 10:40 | REQ-16：新增 `shared/undoWindow`（5 秒后悔窗纯状态机）与 `utils/undoToast`；分镜单个/批量删除软删除（撤销原位恢复、产物延迟作废）、角色/道具/场景板删除 5 秒撤销、「取消全部渲染」撤销重新入队、「清空任务」撤销恢复本地展示；补 4 例单测。四门全绿（1871 用例 / 123 文件） |
 | 2026-10-31 11:05 | REQ-18：`DirectorLogEntry` 增加 `detail`/`errorKind`，自愈诊断/审核重渲/失败镜头写结构化明细；日志面板 warn 默认折叠 + 单条点击展开 + errorKind 着色；`director:exportLogs` 按项目导出到项目目录（`shared/logExport` + 4 例单测）。四门全绿（1875 用例 / 124 文件） |
+| 2026-10-31 11:20 | REQ-19：可用性走查——确认全局 `:focus-visible` 描边、危险按钮对比度、侧栏折叠与运行条不重叠等基线已达标（无需改动）；分镜表操作列新增「⋯」按钮（与行右键共用 `openRowMenu`，触屏/键盘可达全部行操作）。四门全绿（1875 用例 / 124 文件，无新增用例） |
