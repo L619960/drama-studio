@@ -83,7 +83,7 @@
           />
         </el-select>
         <div class="form-tip">
-          一键启动用的完整命令行，路径用英文引号包裹；留空自动用本机秋叶整合包默认路径启动
+          一键启动用的完整命令行，路径用英文引号包裹（如 "D:\ComfyUI\python\python.exe" "D:\ComfyUI\main.py"）；留空时启动按钮会提示先填写本机路径
         </div>
       </el-form-item>
       <el-form-item label="工作流库目录">
