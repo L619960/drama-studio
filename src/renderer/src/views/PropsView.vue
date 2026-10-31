@@ -25,6 +25,20 @@
       </div>
     </div>
 
+    <div class="toolbar">
+      <el-input
+        v-model="searchQuery"
+        clearable
+        size="small"
+        placeholder="搜索道具中文名 / 英文名"
+        style="width: 240px"
+      >
+        <template #prefix>
+          <el-icon><Search /></el-icon>
+        </template>
+      </el-input>
+    </div>
+
     <el-empty
       v-if="project && propsList.length === 0"
       class="glass-panel empty-panel"
@@ -35,9 +49,15 @@
       </el-button>
     </el-empty>
 
+    <el-empty
+      v-else-if="filteredProps.length === 0"
+      class="glass-panel empty-panel"
+      :description="`没有匹配「${searchQuery.trim()}」的道具`"
+    />
+
     <div v-else class="prop-grid">
       <el-card
-        v-for="(prop, i) in propsList"
+        v-for="(prop, i) in filteredProps"
         :key="prop.id"
         class="prop-card glass-card"
         :style="{ animationDelay: `${Math.min(i, 8) * 40}ms` }"
@@ -66,7 +86,7 @@
           <el-button size="small" @click="editProp(prop)">
             <el-icon><Edit /></el-icon>编辑
           </el-button>
-          <el-button size="small" type="danger" @click="deleteProp(prop)">
+          <el-button size="small" type="danger" :disabled="usageCount(prop.en) > 0" @click="deleteProp(prop)">
             <el-icon><Delete /></el-icon>
           </el-button>
         </div>
@@ -90,7 +110,11 @@
           <el-icon><Upload /></el-icon>上传本地图
         </div>
         <div class="menu-divider" />
-        <div class="menu-item danger" @click="deleteProp(menu.state.data!)">
+        <div
+          class="menu-item danger"
+          :class="{ disabled: usageCount(menu.state.data!.en) > 0 }"
+          @click="!(usageCount(menu.state.data!.en) > 0) && deleteProp(menu.state.data!)"
+        >
           <el-icon><Delete /></el-icon>删除道具
           <span v-if="usageCount(menu.state.data!.en) > 0" class="menu-tip">被分镜引用</span>
         </div>
@@ -131,8 +155,9 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Plus, Upload, Edit, Delete, MagicStick, Box } from '@element-plus/icons-vue'
+import { Plus, Upload, Edit, Delete, MagicStick, Box, Search } from '@element-plus/icons-vue'
 import type { Project, PropAsset, WorkflowMeta } from '../../../shared/ipcTypes'
+import { normalizeAssetName } from '../../../shared/assetNames'
 import { useFileUrl, clearFileUrlCache } from '../composables/useFileUrl'
 import { useRouteProjectId } from '../composables/useRouteProjectId'
 import { useContextMenu } from '../composables/useContextMenu'
@@ -159,6 +184,15 @@ let projectUpdatedUnsub: (() => void) | null = null
 const menu = useContextMenu<PropAsset>(180, 180)
 
 const propsList = computed(() => project.value?.props || [])
+const searchQuery = ref('')
+/** REQ-13 RA-09：按中文名 / 英文名关键字过滤，不做排序与虚拟滚动 */
+const filteredProps = computed(() => {
+  const q = searchQuery.value.trim().toLowerCase()
+  if (!q) return propsList.value
+  return propsList.value.filter(p =>
+    p.zh.toLowerCase().includes(q) || p.en.toLowerCase().includes(q)
+  )
+})
 
 function onMenuKeydown(e: KeyboardEvent) {
   if (e.key === 'Escape') menu.close()
@@ -236,6 +270,15 @@ async function saveProp(): Promise<void> {
   if (!project.value) return
   if (!propForm.value.zh.trim() || !propForm.value.en.trim()) {
     ElMessage.warning('中文名和英文名必填')
+    return
+  }
+  // REQ-13 RA-14：英文名是分镜 props 的关联键，重名会让引用含混，保存前拒绝
+  const dup = (project.value.props || []).find(p =>
+    p.id !== editingProp.value?.id &&
+    normalizeAssetName(p.en) === normalizeAssetName(propForm.value.en)
+  )
+  if (dup) {
+    ElMessage.warning(`已存在同名道具「${dup.zh}」（英文名 ${dup.en}），分镜按英文名关联，建议改名`)
     return
   }
   const oldEn = editingProp.value?.en
@@ -337,12 +380,21 @@ async function deleteProp(prop: PropAsset): Promise<void> {
   if (!project.value) return
   if (!throttleTap('prop-del-' + prop.id, 1000)) return
   menu.close()
-  const used = usageCount(prop.en)
-  let message = `确定删除道具「${prop.zh}」吗？此操作不可恢复。`
-  if (used > 0) {
-    message = `道具「${prop.zh}」正被 ${used} 个分镜引用，删除后这些分镜的提示词仍保留道具文本，但定妆资产将失效，建议先移除分镜道具引用。仍要删除吗？`
+  // REQ-13 RA-05：与角色/场景板统一为「被引用即硬拦截」，并列出引用镜号
+  const usedShots = (project.value.shots || []).filter(
+    s => Array.isArray(s.props) && s.props.includes(prop.en)
+  )
+  if (usedShots.length > 0) {
+    const indexes = usedShots.map(s => s.index).join('、')
+    ElMessage.warning(
+      `道具「${prop.zh}」正被分镜 ${indexes} 引用，无法删除；请先在分镜编辑里移除该道具引用`
+    )
+    return
   }
-  const ok = await confirmDanger(message, { title: '删除道具', confirmText: '删除' })
+  const ok = await confirmDanger(`确定删除道具「${prop.zh}」吗？此操作不可恢复。`, {
+    title: '删除道具',
+    confirmText: '删除'
+  })
   if (!ok) return
   project.value.props = (project.value.props || []).filter(p => p.id !== prop.id)
   try {
@@ -363,6 +415,7 @@ function previewProp(prop: PropAsset): void {
 <style scoped>
 .wf-picker { display: flex; align-items: center; gap: 6px; margin-right: 4px; }
 .wf-label { font-size: 12px; color: var(--text-muted); }
+.toolbar { margin-bottom: 12px; }
 .prop-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));

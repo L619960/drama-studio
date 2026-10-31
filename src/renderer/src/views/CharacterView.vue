@@ -25,6 +25,20 @@
       </div>
     </div>
 
+    <div class="toolbar">
+      <el-input
+        v-model="searchQuery"
+        clearable
+        size="small"
+        placeholder="搜索角色名称 / 描述"
+        style="width: 240px"
+      >
+        <template #prefix>
+          <el-icon><Search /></el-icon>
+        </template>
+      </el-input>
+    </div>
+
     <el-empty
       v-if="project && characters.length === 0"
       class="glass-panel empty-panel"
@@ -35,9 +49,15 @@
       </el-button>
     </el-empty>
 
+    <el-empty
+      v-else-if="filteredCharacters.length === 0"
+      class="glass-panel empty-panel"
+      :description="`没有匹配「${searchQuery.trim()}」的角色`"
+    />
+
     <div v-else class="character-grid">
       <el-card
-        v-for="(char, i) in characters"
+        v-for="(char, i) in filteredCharacters"
         :key="char.id"
         class="character-card glass-card"
         :style="{ animationDelay: `${Math.min(i, 8) * 40}ms` }"
@@ -45,13 +65,13 @@
       >
         <div class="asset-row">
           <div class="asset-slot" @click="previewPathOf(char, 'face')">
-            <img v-if="faceOf(char)" :src="urlCache[faceOf(char)]" alt="面部定妆" />
-            <div v-else class="no-image">面部定妆</div>
+            <img v-if="faceOf(char) && urlCache[faceOf(char)]" :src="urlCache[faceOf(char)]" alt="面部定妆" />
+            <div v-else class="no-image">{{ faceOf(char) ? '文件已移动' : '未生成' }}</div>
             <span class="asset-label">面部</span>
           </div>
           <div class="asset-slot wide" @click="previewPathOf(char, 'body')">
-            <img v-if="char.bodySheetPath" :src="urlCache[char.bodySheetPath]" alt="三视图" />
-            <div v-else class="no-image">三视图</div>
+            <img v-if="char.bodySheetPath && urlCache[char.bodySheetPath]" :src="urlCache[char.bodySheetPath]" alt="三视图" />
+            <div v-else class="no-image">{{ char.bodySheetPath ? '文件已移动' : '未生成' }}</div>
             <span class="asset-label">三视图</span>
           </div>
         </div>
@@ -69,7 +89,7 @@
           <el-button size="small" @click="editCharacter(char)">
             <el-icon><Edit /></el-icon>编辑
           </el-button>
-          <el-button size="small" type="danger" @click="deleteCharacter(char)">
+          <el-button size="small" type="danger" :disabled="isCharUsed(char.id)" @click="deleteCharacter(char)">
             <el-icon><Delete /></el-icon>
           </el-button>
         </div>
@@ -146,8 +166,9 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElLoading, ElMessage } from 'element-plus'
-import { Plus, Upload, Edit, Delete, VideoPlay, CopyDocument, MagicStick } from '@element-plus/icons-vue'
+import { Plus, Upload, Edit, Delete, VideoPlay, CopyDocument, MagicStick, Search } from '@element-plus/icons-vue'
 import type { Project, Character, WorkflowMeta } from '../../../shared/ipcTypes'
+import { findDuplicateByName } from '../../../shared/assetNames'
 import { useFileUrl, clearFileUrlCache } from '../composables/useFileUrl'
 import { useRouteProjectId } from '../composables/useRouteProjectId'
 import { useContextMenu } from '../composables/useContextMenu'
@@ -180,6 +201,15 @@ const t2iWorkflows = ref<WorkflowMeta[]>([])
 const charWorkflow = ref('')
 
 const characters = computed(() => project.value?.characters || [])
+const searchQuery = ref('')
+/** REQ-13 RA-09：按角色名 / 描述关键字过滤，不做排序与虚拟滚动 */
+const filteredCharacters = computed(() => {
+  const q = searchQuery.value.trim().toLowerCase()
+  if (!q) return characters.value
+  return characters.value.filter(c =>
+    c.name.toLowerCase().includes(q) || (c.description || '').toLowerCase().includes(q)
+  )
+})
 
 function faceOf(char: Character): string {
   return char.faceImagePath || char.refImagePath || ''
@@ -258,15 +288,22 @@ async function saveCharacter() {
     ElMessage.warning('请输入名称')
     return
   }
+  const name = charForm.value.name.trim()
+  // REQ-13 RA-14：角色按名称去重（忽略大小写与多余空格）
+  const dup = findDuplicateByName(project.value.characters, name, editingChar.value?.id)
+  if (dup) {
+    ElMessage.warning(`已存在同名角色「${dup.name}」，建议改名`)
+    return
+  }
 
   if (editingChar.value) {
-    editingChar.value.name = charForm.value.name
+    editingChar.value.name = name
     editingChar.value.description = charForm.value.description
     editingChar.value.voice = charForm.value.voice
   } else {
     const char: Character = {
       id: `char_${Date.now()}`,
-      name: charForm.value.name,
+      name,
       description: charForm.value.description,
       voice: charForm.value.voice,
       refImagePath: ''
@@ -431,6 +468,7 @@ function voiceName(voice: string) {
 .empty-panel { padding: 36px 16px; }
 .wf-picker { display: flex; align-items: center; gap: 6px; margin-right: 4px; }
 .wf-label { font-size: 12px; color: var(--text-muted); }
+.toolbar { margin-bottom: 12px; }
 .character-grid {  display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 16px;

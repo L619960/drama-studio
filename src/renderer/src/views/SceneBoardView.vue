@@ -26,6 +26,20 @@
       </div>
     </div>
 
+    <div class="toolbar">
+      <el-input
+        v-model="searchQuery"
+        clearable
+        size="small"
+        placeholder="搜索场景板名称 / 描述"
+        style="width: 240px"
+      >
+        <template #prefix>
+          <el-icon><Search /></el-icon>
+        </template>
+      </el-input>
+    </div>
+
     <el-empty
       v-if="project && boards.length === 0"
       class="glass-panel empty-panel"
@@ -34,9 +48,15 @@
       <el-button type="primary" @click="addBoard">添加场景板</el-button>
     </el-empty>
 
+    <el-empty
+      v-else-if="filteredBoards.length === 0"
+      class="glass-panel empty-panel"
+      :description="`没有匹配「${searchQuery.trim()}」的场景板`"
+    />
+
     <div v-else class="board-grid">
       <el-card
-        v-for="(board, i) in boards"
+        v-for="(board, i) in filteredBoards"
         :key="board.id"
         class="board-card glass-card"
         :style="{ animationDelay: `${Math.min(i, 8) * 40}ms` }"
@@ -153,9 +173,10 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Plus, Upload, Edit, Delete, MagicStick } from '@element-plus/icons-vue'
+import { Plus, Upload, Edit, Delete, MagicStick, Search } from '@element-plus/icons-vue'
 import type { Project, SceneBoard, WorkflowMeta } from '../../../shared/ipcTypes'
 import { normalizeSceneKey } from '../../../shared/ipcTypes'
+import { findDuplicateSceneBoard } from '../../../shared/assetNames'
 import { scenePlatePrompt, sceneNegativeFor } from '../../../shared/imagePrompts'
 import { useFileUrl, clearFileUrlCache } from '../composables/useFileUrl'
 import { useRouteProjectId } from '../composables/useRouteProjectId'
@@ -182,6 +203,15 @@ let projectUpdatedUnsub: (() => void) | null = null
 const menu = useContextMenu<SceneBoard>(180, 180)
 
 const boards = computed(() => project.value?.sceneBoards || [])
+const searchQuery = ref('')
+/** REQ-13 RA-09：按名称 / 描述关键字过滤，不做排序与虚拟滚动 */
+const filteredBoards = computed(() => {
+  const q = searchQuery.value.trim().toLowerCase()
+  if (!q) return boards.value
+  return boards.value.filter(b =>
+    b.name.toLowerCase().includes(q) || (b.description || '').toLowerCase().includes(q)
+  )
+})
 /** 项目是否启用全景固定场景模式（重出/生成走全景链路而非旧单图） */
 const panoramaMode = ref(false)
 
@@ -272,6 +302,12 @@ async function saveBoard() {
   if (!throttleTap('scene-save', 800)) return
   if (!project.value || !form.value.name.trim()) {
     ElMessage.warning('请输入场景名称')
+    return
+  }
+  // REQ-13 RA-14：同名场景板会让分镜静默绑定旧板，保存前按 normalizeSceneKey 拒绝
+  const dup = findDuplicateSceneBoard(project.value.sceneBoards || [], form.value.name, editing.value?.id)
+  if (dup) {
+    ElMessage.warning(`已存在同名场景板「${dup.name}」，分镜会绑定到旧板，建议改名`)
     return
   }
   saving.value = true
@@ -414,6 +450,7 @@ async function deleteBoard(board: SceneBoard) {
 .empty-panel { padding: 36px 16px; }
 .wf-picker { display: flex; align-items: center; gap: 6px; margin-right: 4px; }
 .wf-label { font-size: 12px; color: var(--text-muted); }
+.toolbar { margin-bottom: 12px; }
 .board-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
