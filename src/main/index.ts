@@ -12,6 +12,7 @@ import {
 import { ProjectStore } from './core/projectStore'
 import { handleIpc, resolveInsideRoot, DATA_ROOT, setMainWindow } from './ipc/shared'
 import { registerProjectIpc } from './ipc/project'
+import { registerProjectExportIpc } from './ipc/projectExport'
 import { registerRenderIpc } from './ipc/render'
 import { registerComfyIpc, validateWorkflowTemplates } from './ipc/comfy'
 import { registerFfmpegIpc } from './ipc/ffmpeg'
@@ -247,6 +248,7 @@ function registerIpc(): void {
   // ===== IPC 模块接线（原死代码复活）：16 个 registerXxxIpc 统一注册，
   // 替代原 1100 行内联 handleIpc。ctx 直接复用上方装配好的服务实例，模块签名不做改动。
   registerProjectIpc({ projectStore, conversationService, subtitleService })
+  registerProjectExportIpc({ projectStore, dataRoot: DATA_ROOT })
   registerRenderIpc({ projectStore, settingsStore, directorAgent, taskQueue, llmService })
   registerComfyIpc({ comfyuiClient, workflowLoader, settingsStore })
   registerFfmpegIpc({ ffmpegService, settingsStore })

@@ -235,6 +235,15 @@ export interface ProgressEvent {
   errorKind?: ErrorKind
 }
 
+/** 项目包导出/导入进度（REQ-20）：复用底部运行条反馈大项目打包耗时 */
+export interface ArchiveProgressEvent {
+  /** 导出=源项目 id；导入在解析 project.json 前为空串 */
+  projectId: string
+  direction: 'export' | 'import'
+  percent: number
+  message: string
+}
+
 /** 渲染队列快照（queue:list）：让任意页面回答「正渲哪镜 / 还排几镜 / 还要等多久」 */
 export interface QueueSnapshot {
   running: { projectId: string; shotId: string; step: ProgressEvent['step']; percent: number } | null
@@ -439,6 +448,12 @@ export interface IpcApi {
     duplicate(id: string): Promise<Project>
     importBgm(projectId: string): Promise<string>  // 选择并复制 BGM 到项目目录，返回相对路径
     importPropImage(projectId: string, propId: string): Promise<string>  // 道具上传本地图片并复制到项目目录，返回相对路径
+    /** 导出项目包（zip）：项目文件 + 资产 + 成片；返回落盘路径，取消返回 null（REQ-20） */
+    exportPackage(projectId: string, includeDirectorState?: boolean): Promise<string | null>
+    /** 选择项目包并导入：总是分配新项目 id，重名标题自动加「-副本」；取消返回 null（REQ-20） */
+    importPackage(): Promise<Project | null>
+    /** 订阅项目包导出/导入进度（运行条反馈），返回取消订阅函数（REQ-20） */
+    onArchiveProgress(cb: (e: ArchiveProgressEvent) => void): () => void
   }
   character: {
     importImage(projectId: string): Promise<string>
@@ -1359,6 +1374,9 @@ export const IpcChannels = {
   subtitleGenerate: 'subtitle:generate',
   projectImportBgm: 'project:importBgm',
   projectImportPropImage: 'project:importPropImage',
+  projectExportPackage: 'project:exportPackage',
+  projectImportPackage: 'project:importPackage',
+  projectArchiveProgress: 'project:archive-progress',
   fileExists: 'file:exists',
   fileSize: 'file:size',
   fileCopy: 'file:copy',

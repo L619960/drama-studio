@@ -35,7 +35,15 @@ const api: IpcApi = {
     delete: (id) => invoke(IpcChannels.projectDelete, id),
     duplicate: (id) => invoke(IpcChannels.projectDuplicate, id),
     importBgm: (projectId) => invoke(IpcChannels.projectImportBgm, projectId),
-    importPropImage: (projectId, propId) => invoke(IpcChannels.projectImportPropImage, { projectId, propId })
+    importPropImage: (projectId, propId) => invoke(IpcChannels.projectImportPropImage, { projectId, propId }),
+    exportPackage: (projectId, includeDirectorState) =>
+      invoke(IpcChannels.projectExportPackage, { projectId, includeDirectorState }),
+    importPackage: () => invoke(IpcChannels.projectImportPackage),
+    onArchiveProgress: (cb) => {
+      const listener = (_: unknown, e: unknown) => cb(e as Parameters<typeof cb>[0])
+      ipcRenderer.on(IpcChannels.projectArchiveProgress, listener)
+      return () => ipcRenderer.removeListener(IpcChannels.projectArchiveProgress, listener)
+    }
   },
   character: {
     importImage: (projectId) => invoke(IpcChannels.characterImport, projectId),

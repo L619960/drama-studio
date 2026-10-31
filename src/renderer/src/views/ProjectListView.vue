@@ -10,6 +10,9 @@
           <el-option v-for="o in PROJECT_SORT_OPTIONS" :key="o.value" :label="o.label" :value="o.value" />
         </el-select>
         <el-input v-model="searchKw" placeholder="搜索片名/剧本关键词" clearable style="width: 220px" :prefix-icon="Search" />
+        <el-button :loading="importingPackage" @click="importPackage">
+          <el-icon><Upload /></el-icon>导入项目包
+        </el-button>
         <el-button :loading="checkingComfy" @click="checkComfyUI">
           <el-icon><Connection /></el-icon>{{ checkingComfy ? '检测中...' : '检测 ComfyUI' }}
         </el-button>
@@ -163,6 +166,7 @@
         <div class="card-foot" @click.stop>
           <el-button link type="primary" size="small" @click="openProject(row)">打开</el-button>
           <el-button link type="primary" size="small" @click="void duplicateProject(row)">复制</el-button>
+          <el-button link type="primary" size="small" @click="void exportPackage(row)">导出包</el-button>
           <el-button link type="danger" size="small" @click="deleteProject(row)">删除</el-button>
         </div>
       </article>
@@ -236,7 +240,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { confirmDanger, confirmAction } from '../utils/confirm'
 import {
-  Plus, Edit, EditPen, CopyDocument, Download, FolderOpened, Delete, Connection, VideoCamera, Search, RefreshRight
+  Plus, Edit, EditPen, CopyDocument, Download, Upload, FolderOpened, Delete, Connection, VideoCamera, Search, RefreshRight
 } from '@element-plus/icons-vue'
 import type { Project, InterruptedTask, DirectorProgressEvent } from '../../../shared/ipcTypes'
 import { GENRE_TEMPLATES } from '../../../shared/ipcTypes'
@@ -282,6 +286,8 @@ const creating = ref(false)
 const checkingComfy = ref(false)
 /** 重命名确认按钮 loading（UXA-P1-12） */
 const renaming = ref(false)
+/** REQ-20：项目包导入进行中（对话框 + 解压） */
+const importingPackage = ref(false)
 
 // Ctrl+N 新建项目
 useHotkeys([
@@ -302,7 +308,8 @@ const projectMenuItems = computed<CtxItem[]>(() => {
     { label: '重命名', icon: EditPen, action: () => renameProject(row) },
     { label: '复制项目', icon: CopyDocument, action: () => void duplicateProject(row) },
     { divider: true },
-    { label: '导出项目', icon: Download, action: () => void exportProject(row) },
+    { label: '导出成片', icon: Download, action: () => void exportProject(row) },
+    { label: '导出项目包', icon: Download, action: () => void exportPackage(row), tip: '含资产与成片，不含导演运行状态' },
     { label: '在文件夹中显示', icon: FolderOpened, action: () => void showInFolder(row) },
     { divider: true },
     { label: '删除项目', icon: Delete, danger: true, action: () => void deleteProject(row) }
@@ -554,6 +561,38 @@ async function exportProject(project: Project) {
     ElMessage.success('导出成功')
   } catch {
     ElMessage.error('导出失败')
+  }
+}
+
+/** REQ-20：导出完整项目包（zip），大包进度由底部运行条反馈 */
+async function exportPackage(project: Project) {
+  const ok = await confirmAction(
+    '项目包包含剧本、分镜、资产与成片，可在另一台机器导入继续制作。\n导演运行状态（director-state.json）默认不打包，避免把中断状态带到新环境。',
+    { title: '导出项目包', confirmText: '导出' }
+  )
+  if (!ok) return
+  try {
+    const target = await window.api.project.exportPackage(project.id)
+    if (!target) return
+    ElMessage.success('项目包已导出')
+  } catch (e) {
+    ElMessage.error(`导出失败：${e instanceof Error ? e.message : String(e)}`)
+  }
+}
+
+/** REQ-20：导入项目包；主进程自动分配新 id，重名标题加「-副本」 */
+async function importPackage(): Promise<void> {
+  if (importingPackage.value) return
+  importingPackage.value = true
+  try {
+    const project = await window.api.project.importPackage()
+    if (!project) return
+    await loadProjects()
+    ElMessage.success(`已导入「${project.title}」`)
+  } catch (e) {
+    ElMessage.error(`导入失败：${e instanceof Error ? e.message : String(e)}`)
+  } finally {
+    importingPackage.value = false
   }
 }
 

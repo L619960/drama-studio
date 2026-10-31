@@ -8,8 +8,21 @@
         <el-button size="small" type="warning" plain :loading="cleaningTmp" @click="onCleanTmp">清理临时产物</el-button>
         <el-button v-if="!primary && !terminal" size="small" text @click="dismissDisk">关闭</el-button>
       </div>
+      <!-- REQ-20：项目包导出/导入进度（大项目复用运行条反馈） -->
+      <template v-if="archiveJob">
+        <span class="run-dot is-running" />
+        <div class="run-main">
+          <div class="run-line">
+            <span class="run-title">{{ archiveJob.direction === 'export' ? '导出项目包' : '导入项目包' }}</span>
+            <span class="run-stage">{{ archiveJob.message }}</span>
+            <span class="run-percent">{{ archiveJob.percent }}%</span>
+          </div>
+          <el-progress :percentage="archiveJob.percent" :stroke-width="4" :show-text="false" class="run-progress" />
+        </div>
+      </template>
+
       <!-- 终态反馈：完成变绿「查看成片」，失败变红「查看日志」 -->
-      <template v-if="terminal && tasks.length === 0">
+      <template v-else-if="terminal && tasks.length === 0">
         <span class="run-dot" :class="terminal.success ? 'is-success' : (terminal.cancelled ? 'is-idle' : 'is-error')" />
         <div class="run-main">
           <div class="run-title" :title="terminal.title">{{ terminal.title }}</div>
@@ -91,7 +104,7 @@ import { confirmDanger } from '../../utils/confirm'
 import { STAGE_ORDER, STAGE_LABELS } from '../../composables/useDirectorState'
 import { isLowDiskSpace, formatFreeSpace } from '../../../../shared/diskSpace'
 import type {
-  DirectorState, DirectorStage, DirectorFinishedEvent
+  DirectorState, DirectorStage, DirectorFinishedEvent, ArchiveProgressEvent
 } from '../../../../shared/ipcTypes'
 
 /**
@@ -102,6 +115,8 @@ import type {
 const router = useRouter()
 const tasks = ref<DirectorState[]>([])
 const terminal = ref<DirectorFinishedEvent | null>(null)
+/** REQ-20：项目包导出/导入进度（与导演任务共用底部运行条） */
+const archiveJob = ref<ArchiveProgressEvent | null>(null)
 const comfyConnected = ref(true)
 const diskLow = ref(false)
 const diskFreeText = ref('')
@@ -110,11 +125,14 @@ const cleaningTmp = ref(false)
 let offProgress: (() => void) | null = null
 let offFinished: (() => void) | null = null
 let offComfyStatus: (() => void) | null = null
+let offArchive: (() => void) | null = null
 let terminalTimer: number | null = null
+let archiveTimer: number | null = null
 
 const primary = computed(() => tasks.value[0] ?? null)
 const visible = computed(() =>
-  tasks.value.length > 0 || terminal.value !== null || (diskLow.value && !diskDismissed.value)
+  tasks.value.length > 0 || terminal.value !== null || archiveJob.value !== null
+  || (diskLow.value && !diskDismissed.value)
 )
 
 function stageOf(state: DirectorState): DirectorStage {
@@ -245,6 +263,16 @@ async function onCancel(projectId: string): Promise<void> {
   }
 }
 
+/** REQ-20：项目包进度；完成后停留 2.5 秒，异常中断（无 100% 事件）15 秒后自动收起 */
+function onArchiveProgress(e: ArchiveProgressEvent): void {
+  archiveJob.value = e
+  if (archiveTimer !== null) clearTimeout(archiveTimer)
+  archiveTimer = window.setTimeout(() => {
+    archiveJob.value = null
+    archiveTimer = null
+  }, e.percent >= 100 ? 2500 : 15000)
+}
+
 function goConsole(projectId: string): void {
   void router.push(`/project/${projectId}/console`)
 }
@@ -260,6 +288,7 @@ onMounted(() => {
   void refreshDisk()
   offProgress = window.api.director.onProgress((e) => upsert(e.state))
   offFinished = window.api.director.onFinished((e) => showTerminal(e))
+  offArchive = window.api.project.onArchiveProgress((e) => onArchiveProgress(e))
   // REQ-15 MP-07：ComfyUI 连接状态翻转 → 运行条红色「已断开」态
   offComfyStatus = window.api.comfyui.onStatusChanged((connected) => {
     comfyConnected.value = connected
@@ -270,11 +299,15 @@ onUnmounted(() => {
   offProgress?.()
   offFinished?.()
   offComfyStatus?.()
+  offArchive?.()
   offProgress = null
   offFinished = null
   offComfyStatus = null
+  offArchive = null
   if (terminalTimer !== null) clearTimeout(terminalTimer)
   terminalTimer = null
+  if (archiveTimer !== null) clearTimeout(archiveTimer)
+  archiveTimer = null
 })
 </script>
 
