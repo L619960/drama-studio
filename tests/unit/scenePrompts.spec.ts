@@ -144,6 +144,33 @@ describe('scenePrompts · 镜头/场景提示组装域（2026-10-30 补前几个
     it('古装 → 时代锁内容', () => {
       const v = periodLockFor('古装武侠')
       expect(v).toContain('ancient chinese')
+      expect(v).not.toContain('no modern objects')
+    })
+  })
+
+  describe('正向提示规则审计（2026-10-31 整改回归）', () => {
+    it('定妆/全景/首尾帧/视频运动提示不再含被清除的否定式硬规则', () => {
+      const face = faceCastingPrompt('young woman, black hair bun, beige coat')
+      expect(face).not.toContain('no film grain')
+      expect(face).not.toContain('no beauty filter')
+
+      const pano = panoramaScenePrompt('street corner')
+      expect(pano).not.toContain('no CGI')
+      expect(pano).not.toContain('no vignette')
+      expect(pano).not.toContain('no seam')
+
+      const frame = shotFramePrompt({
+        phase: 'start',
+        lookEn: 'young woman, black hair bun',
+        scene: 'street corner',
+        action: 'stands still'
+      })
+      expect(frame).not.toContain('no extra people')
+      expect(frame).not.toContain('no background crowd')
+
+      const motion = videoMotionPrompt({ action: 'woman walks' })
+      expect(motion).not.toContain('no mid-clip light change')
+      expect(motion).not.toContain('no side-slide')
     })
   })
 
