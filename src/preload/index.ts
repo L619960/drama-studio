@@ -44,6 +44,7 @@ const api: IpcApi = {
   render: {
     start: (projectId, shotIds, forceRebuildFirstFrame) => invoke(IpcChannels.renderStart, { projectId, shotIds, forceRebuildFirstFrame }),
     cancel: (projectId, shotId) => invoke(IpcChannels.renderCancel, { projectId, shotId }),
+    skipCurrent: (projectId, shotId) => invoke(IpcChannels.queueSkipCurrent, { projectId, shotId }),
     list: () => invoke(IpcChannels.queueList)
   },
   comfyui: {

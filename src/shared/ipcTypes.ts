@@ -211,7 +211,16 @@ export interface Shot {
   rawVideoPath?: string
   segmentPath?: string
   error?: string
+  /** 失败分层（REQ-11 MP-04）：决定 UI 差异化引导（oom→检查显存 / transient→自动重试中 / permanent→改提示词） */
+  errorKind?: ErrorKind
+  /** 已发生的自动重试次数（降档/瞬时重试合计） */
+  retryCount?: number
+  /** 自动重试预算（展示「已自动降档重试 1/2」） */
+  retryBudget?: number
 }
+
+/** 失败分层：复用 errorClassify 的判定结果，跨进程暴露给 UI */
+export type ErrorKind = 'transient' | 'oom' | 'permanent' | 'unknown'
 
 // ===== 进度事件 =====
 export interface ProgressEvent {
@@ -222,6 +231,8 @@ export interface ProgressEvent {
   percent: number
   message: string
   etaSeconds?: number
+  /** 失败事件的错误分层（仅 step='failed' 时携带） */
+  errorKind?: ErrorKind
 }
 
 /** 渲染队列快照（queue:list）：让任意页面回答「正渲哪镜 / 还排几镜 / 还要等多久」 */
@@ -437,6 +448,8 @@ export interface IpcApi {
     /** 返回 reviewGate='warn' 时告警放行的未审核人物镜序号（block 模式有未审核镜会直接 reject） */
     start(projectId: string, shotIds?: string[], forceRebuildFirstFrame?: boolean): Promise<{ warnedShots: number[] }>
     cancel(projectId: string, shotId?: string): Promise<void>
+    /** 跳过镜头：取消在跑/排队任务并标记 skipped（合成时自动剔除），队列继续下一镜 */
+    skipCurrent(projectId: string, shotId?: string): Promise<{ skippedShotId: string }>
     /** 队列快照：当前在渲镜 + 排队镜 + 剩余预计耗时（无历史样本时 etaSeconds=null） */
     list(): Promise<QueueSnapshot>
   }
@@ -1299,6 +1312,7 @@ export const IpcChannels = {
   renderStart: 'render:start',
   renderCancel: 'render:cancel',
   queueList: 'queue:list',
+  queueSkipCurrent: 'queue:skipCurrent',
   comfyuiHealth: 'comfyui:health',
   comfySystemStats: 'comfyui:systemStats',
   comfyObjectNodes: 'comfyui:objectNodes',

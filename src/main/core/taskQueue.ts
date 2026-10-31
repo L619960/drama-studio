@@ -10,7 +10,7 @@ import { ProjectStore } from './projectStore'
 import { SettingsStore } from './settingsStore'
 import { LipSyncService } from './lipSyncService'
 import { ConsistencyService, type LoadedRgb } from './consistencyService'
-import { isTransientError, isOomError } from './errorClassify'
+import { isTransientError, isOomError, classifyError } from './errorClassify'
 import { GENRE_TEMPLATES, SHOT_TIMING, type Project, type Shot, type ProgressEvent } from '../../shared/ipcTypes'
 import {
   videoMotionPrompt, cleanAction, identityLockBlock, CINEMATIC_QUALITY_BLOCK, videoNegativeFor,
@@ -270,6 +270,25 @@ export class TaskQueue extends EventEmitter {
       // setImmediate：调用方可能在 cancel 返回后才注册 waitForFinish
       setImmediate(() => this.emit('queue-finished', { projectId }))
     }
+  }
+
+  /**
+   * 跳过镜头（REQ-11 MP-08）：取消在跑/排队任务并落盘 skipped=true，
+   * 拼接成片时按 skipped 自然剔除；队列继续渲染后续镜头。
+   */
+  async skipShot(projectId: string, shotId?: string): Promise<{ skippedShotId: string }> {
+    const targetId =
+      shotId ||
+      (this.current?.projectId === projectId ? this.current.shotId : undefined) ||
+      this.queue.find(t => t.projectId === projectId)?.shotId
+    if (!targetId) throw new Error('当前没有可跳过的镜头')
+    await this.cancel(projectId, targetId)
+    await this.store.update(projectId, project => {
+      const shot = project.shots.find(s => s.id === targetId)
+      if (!shot) throw new Error('镜头不存在，可能已被删除')
+      shot.skipped = true
+    })
+    return { skippedShotId: targetId }
   }
 
   /**
@@ -537,6 +556,9 @@ export class TaskQueue extends EventEmitter {
         // 以下为 renderShot 全部会写入的字段（白名单）
         status: shot.status,
         error: shot.error,
+        errorKind: shot.errorKind,
+        retryCount: shot.retryCount,
+        retryBudget: shot.retryBudget,
         audioPath: shot.audioPath ?? prev.audioPath,
         audioFailed: shot.audioFailed ?? prev.audioFailed,
         audioFailedReason: shot.audioFailedReason ?? prev.audioFailedReason,
@@ -660,6 +682,9 @@ export class TaskQueue extends EventEmitter {
     }
 
     const watcher = this.cancellationWatcher(projectId, shotId)
+    /** 自动重试预算（降档/瞬时重试合计）：供 UI 展示「已自动降档重试 1/2」 */
+    const AUTO_RETRY_BUDGET = 2
+    let autoRetryCount = 0
 
     try {
       let refImageRel = resolveRefImageRel(shot, project)
@@ -1109,6 +1134,7 @@ export class TaskQueue extends EventEmitter {
 
           if (decision.kind === 'oom-light') {
             oomDowngraded = true
+            autoRetryCount++
             const downgraded = applyOomLightDowngrade(mode, { h3Length, h3Steps, wanDurationSec })
             h3Length = downgraded.h3Length
             h3Steps = downgraded.h3Steps
@@ -1123,6 +1149,7 @@ export class TaskQueue extends EventEmitter {
           if (decision.kind === 'oom-tier') {
             const lower = stepDownVramTier(tier)!
             resDowngraded = true
+            autoRetryCount++
             tier = lower
             const clamped = applyOomTierDowngrade(tier, h3Length, wanDurationSec)
             h3Length = clamped.h3Length
@@ -1146,6 +1173,7 @@ export class TaskQueue extends EventEmitter {
 
           if (decision.kind === 'transient') {
             transientRetries++
+            autoRetryCount++
             const delay = transientRetries * 4000
             this.emitProgress({
               projectId, shotId, step: 'render', percent: 20,
@@ -1286,6 +1314,9 @@ export class TaskQueue extends EventEmitter {
       // 完成
       shot.status = 'done'
       shot.error = undefined
+      shot.errorKind = undefined
+      shot.retryCount = undefined
+      shot.retryBudget = undefined
       await this.patchShot(projectId, shot)
       this.emitProgress({ projectId, shotId, step: 'done', percent: 100, message: '完成' })
 
@@ -1298,13 +1329,23 @@ export class TaskQueue extends EventEmitter {
       if (isCancelled) {
         shot.status = 'pending'
         shot.error = undefined
+        shot.errorKind = undefined
+        shot.retryCount = undefined
+        shot.retryBudget = undefined
         await this.patchShot(projectId, shot)
         this.emitProgress({ projectId, shotId, step: 'queued', percent: 0, message: '已取消' })
       } else {
         shot.status = 'failed'
         shot.error = error instanceof Error ? error.message : String(error)
+        // REQ-11 MP-04：结构化失败分层 + 自动重试次数，UI 据此出差异化引导
+        shot.errorKind = classifyError(error)
+        shot.retryCount = autoRetryCount
+        shot.retryBudget = AUTO_RETRY_BUDGET
         await this.patchShot(projectId, shot)
-        this.emitProgress({ projectId, shotId, step: 'failed', percent: 100, message: shot.error })
+        this.emitProgress({
+          projectId, shotId, step: 'failed', percent: 100,
+          message: shot.error, errorKind: shot.errorKind
+        })
       }
     } finally {
       watcher.stop()

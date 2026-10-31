@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isTransientError, isOomError } from '../../src/main/core/errorClassify'
+import { isTransientError, isOomError, classifyError } from '../../src/main/core/errorClassify'
 
 describe('errorClassify.isTransientError', () => {
   it('识别 axios 超时 / 网络层瞬态错误', () => {
@@ -43,3 +43,26 @@ describe('errorClassify.isOomError', () => {
     expect(isOomError(new Error('timeout of 60000ms exceeded'))).toBe(false)
   })
 })
+
+describe('errorClassify.classifyError', () => {
+  it('OOM 优先归为 oom', () => {
+    expect(classifyError(new Error('CUDA out of memory'))).toBe('oom')
+    expect(classifyError('显存不足')).toBe('oom')
+  })
+
+  it('网络/超时归为 transient', () => {
+    expect(classifyError(new Error('socket hang up'))).toBe('transient')
+    expect(classifyError(new Error('Request failed with status code 503'))).toBe('transient')
+  })
+
+  it('缺模型/参数类归为 permanent', () => {
+    expect(classifyError(new Error('model not found'))).toBe('permanent')
+    expect(classifyError(new Error('缺少模型：wan2.2'))).toBe('permanent')
+    expect(classifyError(new Error('内容安全拦截'))).toBe('permanent')
+  })
+
+  it('未识别原因归为 unknown', () => {
+    expect(classifyError(new Error('unexpected render failure'))).toBe('unknown')
+  })
+})
+

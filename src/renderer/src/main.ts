@@ -10,6 +10,7 @@ import 'element-plus/theme-chalk/dark/css-vars.css'
 import './assets/theme.css'
 import App from './App.vue'
 import router from './router'
+import { isCancelReject } from './utils/errorGuide'
 
 /**
  * Toast 时长统一（交互规范 1.2，2026-10-13 ux-standards.md）。
@@ -47,6 +48,8 @@ patchType('error', 3500)
  */
 let lastGlobalErrorTip = 0
 function globalErrorTip(message: string): void {
+  // DC-OPEN-08：文件选择等用户主动取消的 reject 不是故障，不弹「操作失败」
+  if (isCancelReject(message)) return
   const now = Date.now()
   if (now - lastGlobalErrorTip < 3000) return
   lastGlobalErrorTip = now

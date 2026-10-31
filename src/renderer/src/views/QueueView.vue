@@ -110,7 +110,13 @@
         </template>
       </el-table-column>
       <el-table-column label="消息" show-overflow-tooltip>
-        <template #default="{ row }">{{ row.error || '-' }}</template>
+        <template #default="{ row }">
+          <span>{{ row.error || '-' }}</span>
+          <div v-if="row.status === 'failed'" class="error-guide">
+            <span v-if="row.errorKind" class="error-kind">{{ errorKindHint(row.errorKind) }}</span>
+            <span v-if="retryBadge(row)" class="retry-badge">{{ retryBadge(row) }}</span>
+          </div>
+        </template>
       </el-table-column>
       <el-table-column label="操作" width="140" align="center">
         <template #default="{ row }">
@@ -160,6 +166,13 @@
         </div>
         <div class="menu-item" v-if="contextMenu.row?.status === 'rendering'" @click="cancelShot(contextMenu.row!)">
           <el-icon><CircleClose /></el-icon>取消
+        </div>
+        <div
+          class="menu-item"
+          v-if="contextMenu.row?.status === 'rendering' || contextMenu.row?.status === 'failed'"
+          @click="skipShot(contextMenu.row!)"
+        >
+          <el-icon><Remove /></el-icon>跳过此镜
         </div>
         <div class="menu-item" v-if="contextMenu.row?.status === 'done'" @click="previewShot(contextMenu.row!)">
           <el-icon><VideoPlay /></el-icon>预览
@@ -236,9 +249,10 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useHotkeys } from '../composables/useHotkeys'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Refresh, CircleClose, RefreshLeft, VideoPlay, Document, FolderOpened } from '@element-plus/icons-vue'
+import { Refresh, CircleClose, RefreshLeft, VideoPlay, Document, FolderOpened, Remove } from '@element-plus/icons-vue'
 import type { Project, Shot, ProgressEvent } from '../../../shared/ipcTypes'
 import { useFileUrl, clearFileUrlCache } from '../composables/useFileUrl'
+import { errorKindHint, retryBadge } from '../utils/errorGuide'
 import { useRouteProjectId } from '../composables/useRouteProjectId'
 import { useTaskBoard } from '../composables/useTaskBoard'
 import { snapshot } from '../utils/snapshot'
@@ -428,6 +442,23 @@ async function cancelShot(shot: Shot) {
   }
 }
 
+async function skipShot(shot: Shot) {
+  contextMenu.value.visible = false
+  const ok = await confirmDanger(
+    `跳过第 ${shot.index} 镜？将取消其渲染并标记「跳过」，拼接成片时不再包含该镜，队列继续后续镜头。`,
+    { title: '跳过此镜', confirmText: '跳过', cancelText: '取消' }
+  )
+  if (!ok) return
+  try {
+    await window.api.render.skipCurrent(projectId.value, shot.id)
+    delete progressMap.value[shot.id]
+    await loadProject()
+    ElMessage.success(`第 ${shot.index} 镜已跳过，队列继续后续镜头`)
+  } catch (e) {
+    ElMessage.error(`跳过失败：${e instanceof Error ? e.message : String(e)}`)
+  }
+}
+
 async function cancelRender() {
   const ok = await confirmAction('确定取消所有渲染任务吗？', {
     title: '取消全部',
@@ -597,6 +628,9 @@ function statusText(status: string): string {
 
 .progress-cell { display: flex; flex-direction: column; gap: 4px; }
 .progress-msg { font-size: 12px; color: var(--text-secondary); }
+.error-guide { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 2px; }
+.error-kind { font-size: 12px; color: var(--warning); }
+.retry-badge { font-size: 12px; color: var(--danger); }
 .detail-assets { display: flex; gap: 10px; flex-wrap: wrap; }
 .detail-asset { display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 12px; color: var(--text-secondary); }
 .detail-asset img {

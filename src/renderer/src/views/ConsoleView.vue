@@ -65,8 +65,26 @@
 
     <!-- ===== 中栏：按 activeModule 切换的面板 ===== -->
     <section class="console-main glass-panel">
+      <!-- RC-12：hydrate 失败单独出错误态卡片，不与「没有进行中的任务」空态混淆 -->
+      <el-alert
+        v-if="activeModule === 'workflow' && hydrateError"
+        type="error"
+        show-icon
+        :closable="false"
+        title="导演状态加载失败"
+        class="hydrate-error"
+      >
+        <div class="hydrate-error-body">
+          <p>这不是「没有进行中的任务」，只是本次状态读取失败，可重试加载。</p>
+          <p class="hydrate-error-detail">{{ hydrateError }}</p>
+          <div class="hydrate-error-actions">
+            <el-button size="small" type="primary" :loading="hydrateLoading" @click="runHydrate">重试加载</el-button>
+            <el-button size="small" @click="router.push('/')">回项目列表</el-button>
+          </div>
+        </div>
+      </el-alert>
       <WorkflowPanel
-        v-if="activeModule === 'workflow'"
+        v-if="activeModule === 'workflow' && !hydrateError"
         :state="state"
         :local-logs="localLogs"
         :expanded-stages="expandedStages"
@@ -250,6 +268,24 @@ const {
   onPause, onResume, onCancel, onClearTask, openFinalFolder,
   onResumeFrom, retryFailedShots
 } = useDirectorState(projectId)
+
+/** RC-12：hydrate 失败错误态（与「没有任务」空态严格区分；重试按钮可恢复） */
+const hydrateError = ref('')
+const hydrateLoading = ref(false)
+async function runHydrate(): Promise<void> {
+  if (hydrateLoading.value) return
+  hydrateLoading.value = true
+  hydrateError.value = ''
+  try {
+    if (projectId.value) await hydrate(projectId.value)
+    else await hydrateLatest()
+  } catch (e) {
+    hydrateError.value = e instanceof Error ? e.message : String(e)
+    ElMessage.error(`加载导演状态失败：${hydrateError.value}`)
+  } finally {
+    hydrateLoading.value = false
+  }
+}
 
 const {
   messages, inputText, sending, expandedTools, scrollTick, quickPrompts,
@@ -462,14 +498,7 @@ onMounted(async () => {
   // 改为并行 await，缩短首次进入控制台的阻塞时间（此前串行总耗时 ≈ 三者相加）。
   subscribe()
   subscribeChat()
-  const hydrateTask = (async () => {
-    try {
-      if (projectId.value) await hydrate(projectId.value)
-      else await hydrateLatest()
-    } catch (e) {
-      ElMessage.error(`加载导演状态失败：${e instanceof Error ? e.message : String(e)}`)
-    }
-  })()
+  const hydrateTask = runHydrate()
   await Promise.all([hydrateTask, loadSkills(), loadMemories(), loadChat()])
   void loadProjectData(projectId.value)
   void loadSuggestProject()
@@ -486,14 +515,7 @@ watch(projectId, async (id, old) => {
   if (id === old) return
   // R-9：加载失败不再产生 unhandled rejection，且后续 loadChat 不被连坐跳过
   resetForRouteSwitch()
-  const hydrateTask = (async () => {
-    try {
-      if (id) await hydrate(id)
-      else await hydrateLatest()
-    } catch (e) {
-      ElMessage.error(`加载项目状态失败：${e instanceof Error ? e.message : String(e)}`)
-    }
-  })()
+  const hydrateTask = runHydrate()
   await Promise.all([hydrateTask, loadChat()])
   void loadProjectData(id)
   void loadSuggestProject()
@@ -640,6 +662,12 @@ async function clearChatGuarded(): Promise<void> {
   overflow: hidden;
   padding: 12px;
 }
+
+.hydrate-error { margin: 0; }
+.hydrate-error-body { display: flex; flex-direction: column; gap: 6px; }
+.hydrate-error-body p { margin: 0; font-size: 13px; }
+.hydrate-error-detail { color: var(--text-muted); word-break: break-all; }
+.hydrate-error-actions { display: flex; gap: 8px; }
 
 .console-right {
   width: min(380px, 34vw);

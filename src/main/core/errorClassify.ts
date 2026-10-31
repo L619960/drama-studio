@@ -3,6 +3,8 @@
  * 永久性错误（缺模型、参数非法、内容拦截）重试无意义，应立即暂停交人工处理。
  * directorAgent（阶段级 LLM 调用）与 taskQueue（单镜渲染）共用同一份判定。
  */
+import type { ErrorKind } from '../../shared/ipcTypes'
+
 const TRANSIENT_RE = [
   'etimedout',
   'timeout of \\d+',           // axios："timeout of 60000ms exceeded"
@@ -42,4 +44,35 @@ export function isOomError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err)
   // outofmemory：兼容 torch.OutOfMemoryError 类名（类名无空格，'out of memory' 匹配不到）
   return /out of memory|outofmemory|\boom\b|cuda error|alloc.*(memory|failed)|insufficient.*vram|vram.*(insufficient|exceed|alloc)|hbm|显存不足|内存不足/i.test(msg)
+}
+
+/** 永久性故障（重试无意义，需人工改配置/提示词） */
+const PERMANENT_RE = [
+  'model not found',
+  'missing model',
+  'node[^\\n]*not found',
+  'missing node',
+  'not installed',
+  '找不到模型',
+  '缺少模型',
+  '模型.*(不存在|未安装|缺失)',
+  '节点.*(不存在|未安装|缺失)',
+  '参数(错误|非法|无效)',
+  'invalid (prompt|parameter|argument)',
+  'unsupported',
+  '不支持',
+  '内容(安全)?拦截',
+  'content (policy|filter)'
+].join('|')
+const PERMANENT = new RegExp(PERMANENT_RE, 'i')
+
+/**
+ * 失败分层（REQ-11 MP-04）：OOM → 返回 'oom'；瞬时故障 → 'transient'；
+ * 命中的永久性错误 → 'permanent'；其余 → 'unknown'。判定顺序与重试策略一致。
+ */
+export function classifyError(err: unknown): ErrorKind {
+  if (isOomError(err)) return 'oom'
+  if (isTransientError(err)) return 'transient'
+  const msg = err instanceof Error ? err.message : String(err)
+  return PERMANENT.test(msg) ? 'permanent' : 'unknown'
 }

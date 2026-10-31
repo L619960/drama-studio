@@ -64,6 +64,10 @@ export function registerRenderIpc(ctx: RenderIpcCtx): void {
   )
   // 队列可观测（REQ-01）：正在渲哪镜 / 还排几镜 / 预计还要等多久
   handleIpc(IpcChannels.queueList, () => ctx.taskQueue.getQueueSnapshot())
+  // 跳过卡死镜（REQ-11 MP-08）：取消在跑/排队任务并标记 skipped，队列继续后续镜头
+  handleIpc(IpcChannels.queueSkipCurrent, (_, payload: { projectId: string; shotId?: string }) =>
+    ctx.taskQueue.skipShot(payload.projectId, payload.shotId)
+  )
 
   // AI 导演
   handleIpc(IpcChannels.directorStart, (_, input: DirectorStartInput) =>
