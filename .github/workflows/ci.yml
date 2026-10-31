@@ -6,6 +6,9 @@ on:
       - main
       - master
       - feat/**
+    # 打 tag 必须显式声明，否则 push.tags 不触发 workflow，package job 永远 skipped
+    tags:
+      - 'v*'
   pull_request:
   workflow_dispatch:
 
