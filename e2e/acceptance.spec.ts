@@ -271,6 +271,42 @@ test('交付验收：全页面走查、按钮清点与错误采集', async () =>
     return `${Math.round(before)}→${Math.round(after)}→${Math.round(restored)}`
   })
 
+  // ===== 隐藏入口 4：右键菜单（项目卡片 / 素材卡片） =====
+  await record('隐藏入口：右键菜单展开与关闭（项目卡片 / 角色卡片）', async () => {
+    const readMenu = async (): Promise<string[]> => {
+      const menu = win.locator('.context-menu:visible').first()
+      await menu.waitFor({ timeout: 5_000 })
+      const items = await menu.locator('.menu-item').allInnerTexts()
+      return items.map((t) => t.replace(/\s+/g, ' ').trim()).filter(Boolean)
+    }
+    const closeMenu = async (): Promise<void> => {
+      await win.keyboard.press('Escape')
+      await win.locator('.context-menu').waitFor({ state: 'hidden', timeout: 5_000 }).catch(() => undefined)
+    }
+
+    await goto(win, '#/', '项目')
+    const projectCard = win.locator('.project-card').first()
+    await projectCard.waitFor({ timeout: 10_000 })
+    await projectCard.click({ button: 'right' })
+    const projectItems = await readMenu()
+    await closeMenu()
+
+    await goto(win, `#/project/${projectId}/characters`, '角色库')
+    await win.locator('button:has-text("添加角色")').first().click()
+    const charDialog = win.locator('.el-dialog:has-text("添加角色")')
+    await charDialog.waitFor({ timeout: 10_000 })
+    await charDialog.locator('input').first().fill('右键验收角色')
+    await charDialog.locator('button:has-text("保存")').click()
+    await win.locator('.character-card').first().waitFor({ timeout: 10_000 })
+    await win.locator('.character-card').first().click({ button: 'right' })
+    const charItems = await readMenu()
+    await closeMenu()
+
+    expect(projectItems.length, '项目卡片右键菜单应至少 4 项').toBeGreaterThanOrEqual(4)
+    expect(charItems.length, '角色卡片右键菜单应至少 4 项').toBeGreaterThanOrEqual(4)
+    return `项目卡片: ${projectItems.join(' / ')}；角色卡片: ${charItems.join(' / ')}`
+  })
+
   // ===== 全量按钮清点（按页面） =====
   await record('按钮清点：全部页面可见按钮', async () => {
     const out: string[] = []
