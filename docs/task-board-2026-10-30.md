@@ -1,7 +1,7 @@
 # 任务看板 · 2026-10-30
 
 > 基线：分支 `feat/agent-autonomy`，最新提交 `897a17f`
-> 门禁现状：`typecheck` ✅ · `npm test` 1852/1852（118 文件）✅ · `npm run build` ✅ · `eslint` 0 warning（0 error）
+> 门禁现状：`typecheck` ✅ · `npm test` 1854/1854（119 文件）✅ · `npm run build` ✅ · `eslint` 0 warning（0 error）
 > 本文以代码实测为准，已修正 `docs/remediation-plan-2026-10-27.md` / `docs/technical-audit-2026-10-30.md` 中过时结论。
 
 ## 优先级定义
@@ -86,6 +86,12 @@
 | REQ-13 | 资产一致性策略统一（RA-05/06/09/14） | ✅ 已交付：道具删除改「被引用即硬拦截」并列出引用镜号（卡片按钮/右键菜单同步 disabled，与角色、场景板口径一致）；角色卡面部/三视图 `<img>` 渲染前判 `urlCache`，缺失显示「未生成 / 文件已移动」占位（RA-06）；角色/道具/场景板三页新增关键字搜索框与无匹配空态（RA-09）；新增 `shared/assetNames`（`findDuplicateByName` / `findDuplicateSceneBoard`），三处保存前重名拒绝（场景板按 `normalizeSceneKey`，文案提示会绑定旧板）（RA-14）；补 3 例单测 | REQ-12 | M |
 | REQ-17 | 空/加载/校验/边界态补齐（RA-16 / DC-OPEN-05） | ✅ 已交付：新增 `components/common/PageSkeleton.vue`（cards/editor 两种骨架）与 `ErrorStateCard.vue`（统一加载失败卡片）；角色/道具/场景板/剧本四视图 `loading` 骨架 → 失败卡片（重试 + 回项目列表）→ 空态/内容三态严格分离，`project.get` 异常不再与「项目已删除」混同；控制台 hydrate 失败改用同一 `ErrorStateCard`（删除旧 alert 与冗余样式）；资产三页空态补「去分镜页看看」跨页 CTA；四门全绿（1852 用例 / 118 文件） | REQ-11 | M |
 
+### Phase 3（P2，6 条）
+
+| 编号 | 任务 | 状态 | 依赖 | 工作量 |
+| --- | --- | --- | --- | --- |
+| REQ-14 | 右键菜单统一与快捷键体系（RC-07/RA-08/RA-19/RA-20/DC-OPEN-26） | ✅ 已交付：`QueueView` 与 `ShotTablePanel` 自绘菜单替换为全局 `ContextMenu`（Esc/失焦/边缘钳位继承，菜单项与原层级一致，ShotTablePanel 按 id 锚定行防后台重排错位）；设置页快捷键表补 `Delete`（分镜）、`Ctrl+S`（剧本）、`Ctrl+E`（成片）；分镜表新增 selection 列与批量条（加入渲染队列 / 标记已跳过 / 删除所选，渲染中锁定），批量删除一次确认并逐镜作废产物；导演对话固定 chip 改为「继续/暂停/重渲第X镜/看进度」，「重渲第X镜」弹窗输入镜号后按 `shared/quickCommands` 生成指令发送；补 2 例单测 | — | M |
+
 ## 依赖关系
 
 ```
@@ -138,3 +144,4 @@ P1-C1（flake 修复）─→ P1-D1 大批量补测（避免新增用例继承�
 | 2026-10-31 08:30 | REQ-12：设置双写收敛（`mirrorEditToRender`/`mirrorRenderToEdit` 双向同值不写）+ 脏态离开拦截/恢复默认/读取失败提示 + 音色清单 `shared/ttsVoices` 三处共用 + 新建分镜尺寸读设置 + t2v 空镜保存确认 + ComfyUI 先存后测 + 参数保存 toast 合并（`ttsVoices`/`creationSettings` + 6 例单测）。四门全绿（1849 用例 / 117 文件） |
 | 2026-10-31 08:35 | REQ-13：道具删除硬拦截并列出引用镜号、角色卡图片缺失占位、三页搜索过滤与无匹配空态、`shared/assetNames` 重名校验（角色/道具/场景板，场景板按 `normalizeSceneKey`）；补 3 例单测。四门全绿（1852 用例 / 118 文件） |
 | 2026-10-31 09:40 | REQ-17：新增 `PageSkeleton`/`ErrorStateCard` 公共组件，角色/道具/场景板/剧本四视图补齐「骨架 → 错误卡片 → 空态/内容」三态，控制台 hydrate 失败复用同一错误卡片，资产空态补「去分镜页看看」CTA。四门全绿（1852 用例 / 118 文件）；Phase 2（P1 9 条）全部交付 |
+| 2026-10-31 09:55 | REQ-14：`QueueView`/`ShotTablePanel` 右键菜单复用全局 `ContextMenu`（Esc/失焦/边缘钳位，分镜表按 id 锚定行）、设置快捷键表补 `Delete`/`Ctrl+S`/`Ctrl+E`、分镜表单选列 + 批量条（入队/标跳过/删除，渲染中锁定）、对话 chip 改「重渲第X镜」+ `shared/quickCommands`（2 例单测）。四门全绿（1854 用例 / 119 文件） |

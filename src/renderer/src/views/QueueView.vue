@@ -153,47 +153,8 @@
     </el-table>
     </div>
 
-    <!-- 右键菜单 -->
-    <teleport to="body">
-      <div
-        v-if="contextMenu.visible"
-        class="context-menu"
-        :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }"
-        @click.stop
-      >
-        <div class="menu-item" v-if="contextMenu.row?.status === 'failed'" @click="retryShot(contextMenu.row!)">
-          <el-icon><RefreshLeft /></el-icon>重试
-        </div>
-        <div class="menu-item" v-if="contextMenu.row?.status === 'rendering'" @click="cancelShot(contextMenu.row!)">
-          <el-icon><CircleClose /></el-icon>取消
-        </div>
-        <div
-          class="menu-item"
-          v-if="contextMenu.row?.status === 'rendering' || contextMenu.row?.status === 'failed'"
-          @click="skipShot(contextMenu.row!)"
-        >
-          <el-icon><Remove /></el-icon>跳过此镜
-        </div>
-        <div class="menu-item" v-if="contextMenu.row?.status === 'done'" @click="previewShot(contextMenu.row!)">
-          <el-icon><VideoPlay /></el-icon>预览
-        </div>
-        <div class="menu-divider" v-if="contextMenu.row?.status !== 'pending'" />
-        <div class="menu-item" @click="resetShot(contextMenu.row!)">
-          <el-icon><Refresh /></el-icon>重置状态
-        </div>
-        <div class="menu-divider" />
-        <div class="menu-item" @click="viewDetails(contextMenu.row!)">
-          <el-icon><Document /></el-icon>查看详情
-        </div>
-        <div
-          class="menu-item"
-          @click="contextMenu.row?.segmentPath && openOutputFolder(contextMenu.row!)"
-          :class="{ disabled: !contextMenu.row?.segmentPath }"
-        >
-          <el-icon><FolderOpened /></el-icon>打开输出目录
-        </div>
-      </div>
-    </teleport>
+    <!-- 右键菜单（REQ-14：复用全局 ContextMenu，自带 Esc/失焦/边缘钳位） -->
+    <ContextMenu ref="menuRef" :items="menuItems" />
 
     <!-- 详情对话框 -->
     <el-dialog v-model="detailVisible" title="分镜详情" width="600px">
@@ -260,6 +221,7 @@ import { throttleTap } from '../utils/throttle'
 import { statusTagType as statusType, shotStatusText } from '../utils/status'
 import { confirmDanger, confirmAction } from '../utils/confirm'
 import { confirmUnreviewedRender } from '../utils/renderGate'
+import ContextMenu, { type CtxItem } from '../components/ContextMenu.vue'
 
 const { urlCache, ensureFileUrl, ensureFileUrls } = useFileUrl()
 
@@ -283,8 +245,38 @@ const clearing = ref(false)
 const cancellingAll = ref(false)
 const retryingId = ref<string | null>(null)
 
-// 右键菜单
-const contextMenu = ref({ visible: false, x: 0, y: 0, row: null as Shot | null })
+// 右键菜单（REQ-14：全局 ContextMenu 组件）
+const menuRef = ref<InstanceType<typeof ContextMenu> | null>(null)
+const menuRow = ref<Shot | null>(null)
+/** 菜单项随当前行状态动态生成；菜单项与层级与原自绘菜单保持一致 */
+const menuItems = computed<CtxItem[]>(() => {
+  const row = menuRow.value
+  if (!row) return []
+  const items: CtxItem[] = []
+  if (row.status === 'failed') {
+    items.push({ label: '重试', icon: RefreshLeft, action: (d) => void retryShot(d as Shot) })
+  }
+  if (row.status === 'rendering') {
+    items.push({ label: '取消', icon: CircleClose, action: (d) => void cancelShot(d as Shot) })
+  }
+  if (row.status === 'rendering' || row.status === 'failed') {
+    items.push({ label: '跳过此镜', icon: Remove, action: (d) => void skipShot(d as Shot) })
+  }
+  if (row.status === 'done') {
+    items.push({ label: '预览', icon: VideoPlay, action: (d) => void previewShot(d as Shot) })
+  }
+  if (row.status !== 'pending') items.push({ divider: true })
+  items.push({ label: '重置状态', icon: Refresh, action: (d) => void resetShot(d as Shot) })
+  items.push({ divider: true })
+  items.push({ label: '查看详情', icon: Document, action: (d) => viewDetails(d as Shot) })
+  items.push({
+    label: '打开输出目录',
+    icon: FolderOpened,
+    disabled: !row.segmentPath,
+    action: (d) => openOutputFolder(d as Shot)
+  })
+  return items
+})
 
 const shots = computed(() => project.value?.shots || [])
 /** 队列快照（REQ-01）：正渲哪镜/排队数/ETA，进页即可回答「还要等多久」 */
@@ -319,16 +311,12 @@ onMounted(async () => {
       }, 300)
     }
   })
-  document.addEventListener('click', closeContextMenu)
-  document.addEventListener('keydown', onMenuKeydown)
 })
 
 onUnmounted(() => {
   unsubscribe?.()
   taskBoard.unsubscribeAll()
   if (reloadTimer !== null) clearTimeout(reloadTimer)
-  document.removeEventListener('click', closeContextMenu)
-  document.removeEventListener('keydown', onMenuKeydown)
 })
 
 async function loadProject(id?: string) {
@@ -388,20 +376,17 @@ function getMessage(shot: Shot) {
 // 右键菜单
 function onRowContextMenu(row: Shot, column: unknown, event: MouseEvent) {
   event.preventDefault()
-  contextMenu.value = { visible: true, x: event.clientX, y: event.clientY, row }
+  menuRow.value = row
+  menuRef.value?.open(event, row)
 }
 
+/** 菜单关闭：ContextMenu 自身在点击项/外部点击/Esc 时会关闭，这里保留显式关闭给表格按钮路径复用 */
 function closeContextMenu() {
-  contextMenu.value.visible = false
-}
-
-/** Esc 关闭右键菜单（与资产页 ContextMenu 行为一致） */
-function onMenuKeydown(e: KeyboardEvent) {
-  if (e.key === 'Escape') closeContextMenu()
+  menuRef.value?.close()
 }
 
 async function retryShot(shot: Shot) {
-  contextMenu.value.visible = false
+  closeContextMenu()
   if (!throttleTap('queue-retry-' + shot.id, 1500)) return
   if (project.value && !(await confirmUnreviewedRender(project.value, [shot.id]))) return
   retryingId.value = shot.id
@@ -426,7 +411,7 @@ async function retryShot(shot: Shot) {
 }
 
 async function cancelShot(shot: Shot) {
-  contextMenu.value.visible = false
+  closeContextMenu()
   const ok = await confirmAction('确定取消此镜头的渲染吗？', {
     title: '取消渲染',
     confirmText: '取消渲染',
@@ -443,7 +428,7 @@ async function cancelShot(shot: Shot) {
 }
 
 async function skipShot(shot: Shot) {
-  contextMenu.value.visible = false
+  closeContextMenu()
   const ok = await confirmDanger(
     `跳过第 ${shot.index} 镜？将取消其渲染并标记「跳过」，拼接成片时不再包含该镜，队列继续后续镜头。`,
     { title: '跳过此镜', confirmText: '跳过', cancelText: '取消' }
@@ -488,11 +473,11 @@ function previewShot(shot: Shot) {
     previewUrl.value = urlCache[segPath]
     previewVisible.value = true
   })
-  contextMenu.value.visible = false
+  closeContextMenu()
 }
 
 async function resetShot(shot: Shot) {
-  contextMenu.value.visible = false
+  closeContextMenu()
   // 仅对已完成/失败的镜头需确认重置（pending 本身无需确认）
   if (shot.status === 'done' || shot.status === 'failed') {
     const ok = await confirmDanger(
@@ -531,7 +516,7 @@ function detailAssetPaths(shot: Shot): Array<{ label: string; path: string }> {
 async function viewDetails(shot: Shot) {
   detailShot.value = shot
   detailVisible.value = true
-  contextMenu.value.visible = false
+  closeContextMenu()
   await ensureFileUrls(detailAssetPaths(shot).map(a => a.path))
 }
 
@@ -543,14 +528,14 @@ async function openOutputFolder(shot: Shot) {
   } catch {
     ElMessage.warning('产物文件不存在')
   }
-  contextMenu.value.visible = false
+  closeContextMenu()
 }
 
 // 清除所有已完成镜头：重置状态 + 清理旧产物与成片，便于重新批量渲染
 async function clearCompleted() {
   if (!project.value) return
   const doneShots = project.value.shots.filter(s => s.status === 'done')
-  contextMenu.value.visible = false
+  closeContextMenu()
   if (doneShots.length === 0) {
     ElMessage.info('没有已完成的镜头')
     return

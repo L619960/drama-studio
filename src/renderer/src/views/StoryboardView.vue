@@ -40,6 +40,9 @@
       @insert="insertShot"
       @move="moveShot"
       @reset="resetShot"
+      @batch-render="renderShots"
+      @batch-skip="skipShots"
+      @batch-delete="deleteShots"
     />
 
     <!-- 分镜审核对话框（先分镜图后视频，逐镜核对踩坑点） -->
@@ -505,6 +508,50 @@ async function deleteShot(index: number) {
   project.value.shots.splice(index, 1)
   project.value.shots.forEach((s, i) => s.index = i + 1)
   if (await persistProject()) ElMessage.success('删除成功')
+}
+
+/** REQ-14 RA-20：批量删除（一次确认，逐镜作废旧产物） */
+async function deleteShots(rows: Shot[]) {
+  if (!project.value || rows.length === 0) return
+  const ok = await confirmDanger(
+    `确定删除选中的 ${rows.length} 个分镜吗？这些镜已生成的产物和整集成片将一并删除，此操作不可恢复。`,
+    { title: '批量删除分镜', confirmText: '删除', cancelText: '取消' }
+  )
+  if (!ok) return
+  const ids = new Set(rows.map(r => r.id))
+  for (const shot of rows) await invalidateArtifacts(shot)
+  project.value.shots = project.value.shots.filter(s => !ids.has(s.id))
+  project.value.shots.forEach((s, i) => s.index = i + 1)
+  if (await persistProject()) ElMessage.success(`已删除 ${rows.length} 个分镜`)
+}
+
+/** REQ-14 RA-20：批量加入渲染队列（沿用未审镜告警放行确认） */
+async function renderShots(rows: Shot[]) {
+  if (!project.value || rows.length === 0) return
+  if (!throttleTap('shot-render-batch', 1500)) return
+  const ids = rows.map(r => r.id)
+  if (!(await confirmUnreviewedRender(project.value, ids))) return
+  rendering.value = true
+  try {
+    const res = await window.api.render.start(projectId.value, ids, false)
+    if (res.warnedShots.length > 0) {
+      ElMessage.warning(`${res.warnedShots.length} 个未核对分镜图的镜头已按「告警放行」入队`)
+    } else {
+      ElMessage.success(`已入队 ${ids.length} 个镜头`)
+    }
+  } catch (e) {
+    ElMessage.error(`启动渲染失败：${e instanceof Error ? e.message : String(e)}`)
+  } finally {
+    rendering.value = false
+  }
+}
+
+/** REQ-14 RA-20：批量标已跳过（不参与成片合成，可再次取消） */
+async function skipShots(rows: Shot[]) {
+  if (!project.value || rows.length === 0) return
+  const ids = new Set(rows.map(r => r.id))
+  project.value.shots.forEach(s => { if (ids.has(s.id)) s.skipped = true })
+  if (await persistProject()) ElMessage.success(`已标记 ${rows.length} 镜为跳过（不参与成片）`)
 }
 
 async function renderSingle(shot: Shot) {

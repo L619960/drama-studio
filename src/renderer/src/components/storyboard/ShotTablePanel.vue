@@ -1,14 +1,26 @@
 <template>
   <div class="glass-panel table-shell">
+    <!-- REQ-14 RA-20：选中多镜后的批量操作条（渲染中全局锁定，与单镜操作约束一致） -->
+    <div v-if="selectedShots.length > 0" class="batch-bar">
+      <span class="batch-info">已选 {{ selectedShots.length }} 镜</span>
+      <el-button size="small" type="success" :disabled="isRendering" @click="onBatchRender">加入渲染队列</el-button>
+      <el-button size="small" :disabled="isRendering" @click="onBatchSkip">标记已跳过</el-button>
+      <el-button size="small" type="danger" :disabled="isRendering" @click="onBatchDelete">删除所选</el-button>
+      <el-button size="small" @click="clearSelection">取消选择</el-button>
+    </div>
     <el-table
+      ref="tableRef"
       :data="shots"
       style="width: 100%"
       highlight-current-row
+      row-key="id"
+      @selection-change="onSelectionChange"
       @row-contextmenu="onRowContextMenu"
       @current-change="(row: Shot | null) => emit('currentChange', row)"
       @dragover.prevent
       @drop="onDrop"
     >
+      <el-table-column type="selection" width="42" :selectable="() => !isRendering" />
       <el-table-column prop="index" label="#" width="60" align="center">
         <template #default="{ row, $index }">
           <span
@@ -118,63 +130,19 @@
       </el-table-column>
     </el-table>
 
-    <!-- 右键菜单 -->
-    <teleport to="body">
-      <div
-        v-if="contextMenu.visible"
-        class="context-menu"
-        :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }"
-        @click.stop
-      >
-        <div class="menu-item" @click="!isRendering && actRender()" :class="{ disabled: isRendering }">
-          <el-icon><VideoPlay /></el-icon>渲染此镜
-        </div>
-        <div class="menu-item" @click="actCopyPrompt()">
-          <el-icon><CopyDocument /></el-icon>复制提示词
-        </div>
-        <div class="menu-item" @click="!isRendering && actCopyShot()" :class="{ disabled: isRendering }">
-          <el-icon><DocumentCopy /></el-icon>复制分镜
-        </div>
-        <div class="menu-item" @click="!isRendering && hasClipboard && actPasteShot()" :class="{ disabled: !hasClipboard || isRendering }">
-          <el-icon><DocumentCopy /></el-icon>粘贴分镜
-        </div>
-        <div class="menu-divider" />
-        <div class="menu-item" @click="!isRendering && actInsert('above')" :class="{ disabled: isRendering }">
-          <el-icon><Top /></el-icon>上方插入
-        </div>
-        <div class="menu-item" @click="!isRendering && actInsert('below')" :class="{ disabled: isRendering }">
-          <el-icon><Bottom /></el-icon>下方插入
-        </div>
-        <div class="menu-divider" />
-        <div class="menu-item" @click="!isRendering && actMove(-1)" :class="{ disabled: contextMenu.index === 0 || isRendering }">
-          <el-icon><Top /></el-icon>上移
-        </div>
-        <div class="menu-item" @click="!isRendering && actMove(1)" :class="{ disabled: contextMenu.index === shots.length - 1 || isRendering }">
-          <el-icon><Bottom /></el-icon>下移
-        </div>
-        <div class="menu-divider" />
-        <div class="menu-item" @click="!isRendering && actEdit()" :class="{ disabled: isRendering }">
-          <el-icon><Edit /></el-icon>编辑
-        </div>
-        <div class="menu-item" @click="!isRendering && actReset()" :class="{ disabled: isRendering }">
-          <el-icon><RefreshLeft /></el-icon>重置状态
-        </div>
-        <div class="menu-divider" />
-        <div class="menu-item danger" @click="!isRendering && actDelete()" :class="{ disabled: isRendering }">
-          <el-icon><Delete /></el-icon>删除
-        </div>
-      </div>
-    </teleport>
+    <!-- 右键菜单（REQ-14：复用全局 ContextMenu，自带 Esc/失焦/边缘钳位） -->
+    <ContextMenu ref="menuRef" :items="menuItems" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed } from 'vue'
 import {
   VideoPlay, CopyDocument, DocumentCopy, Top, Bottom, Edit, RefreshLeft, Delete
 } from '@element-plus/icons-vue'
 import type { Character, SceneBoard, Shot } from '../../../../shared/ipcTypes'
 import { statusTagType as statusType, shotStatusText as statusText } from '../../utils/status'
+import ContextMenu, { type CtxItem } from '../ContextMenu.vue'
 
 const props = defineProps<{
   shots: Shot[]
@@ -198,6 +166,9 @@ const emit = defineEmits<{
   insert: [index: number, position: 'above' | 'below']
   move: [index: number, direction: number]
   reset: [shot: Shot]
+  batchRender: [shots: Shot[]]
+  batchSkip: [shots: Shot[]]
+  batchDelete: [shots: Shot[]]
 }>()
 
 function boardPlate(shot: Shot): string | undefined {
@@ -209,36 +180,85 @@ function getCharacterName(id: string) {
   return props.characters.find(c => c.id === id)?.name || '未知'
 }
 
-// 右键菜单
-const contextMenu = ref({ visible: false, x: 0, y: 0, row: null as Shot | null, index: -1 })
+// 右键菜单（REQ-14：全局 ContextMenu 组件）
+const menuRef = ref<InstanceType<typeof ContextMenu> | null>(null)
+/** 菜单作用于哪一行：打开时按 id 锚定，后台事件重排后仍能定位正确镜头 */
+const menuRowId = ref('')
+const menuIndex = computed(() => props.shots.findIndex(s => s.id === menuRowId.value))
+const menuRow = computed(() => menuIndex.value >= 0 ? props.shots[menuIndex.value] : null)
+
+const menuItems = computed<CtxItem[]>(() => {
+  if (!menuRow.value) return []
+  const index = menuIndex.value
+  return [
+    { label: '渲染此镜', icon: VideoPlay, disabled: props.isRendering, action: actRender },
+    { label: '复制提示词', icon: CopyDocument, action: actCopyPrompt },
+    { label: '复制分镜', icon: DocumentCopy, disabled: props.isRendering, action: actCopyShot },
+    { label: '粘贴分镜', icon: DocumentCopy, disabled: !props.hasClipboard || props.isRendering, action: actPasteShot },
+    { divider: true },
+    { label: '上方插入', icon: Top, disabled: props.isRendering, action: () => actInsert('above') },
+    { label: '下方插入', icon: Bottom, disabled: props.isRendering, action: () => actInsert('below') },
+    { divider: true },
+    { label: '上移', icon: Top, disabled: index === 0 || props.isRendering, action: () => actMove(-1) },
+    { label: '下移', icon: Bottom, disabled: index === props.shots.length - 1 || props.isRendering, action: () => actMove(1) },
+    { divider: true },
+    { label: '编辑', icon: Edit, disabled: props.isRendering, action: actEdit },
+    { label: '重置状态', icon: RefreshLeft, disabled: props.isRendering, action: actReset },
+    { divider: true },
+    { label: '删除', icon: Delete, danger: true, disabled: props.isRendering, action: actDelete }
+  ]
+})
 
 function onRowContextMenu(row: Shot, _column: unknown, event: MouseEvent) {
   event.preventDefault()
-  const index = props.shots.findIndex(s => s.id === row.id)
-  contextMenu.value = { visible: true, x: event.clientX, y: event.clientY, row, index }
+  menuRowId.value = row.id
+  menuRef.value?.open(event, row)
 }
 
-function closeContextMenu() {
-  contextMenu.value.visible = false
+// 菜单动作：ContextMenu 在点击项后自动关闭，这里直接上抛给父级处理数据
+function actRender() { const r = menuRow.value; if (r) emit('render', r) }
+function actCopyPrompt() { const r = menuRow.value; if (r) emit('copyPrompt', r) }
+function actCopyShot() { if (menuIndex.value >= 0) emit('copyShot', menuIndex.value) }
+function actPasteShot() { if (menuIndex.value >= 0) emit('pasteShot', menuIndex.value) }
+function actInsert(position: 'above' | 'below') { if (menuIndex.value >= 0) emit('insert', menuIndex.value, position) }
+function actMove(direction: number) { if (menuIndex.value >= 0) emit('move', menuIndex.value, direction) }
+function actEdit() { if (menuIndex.value >= 0) emit('edit', menuIndex.value) }
+function actReset() { const r = menuRow.value; if (r) emit('reset', r) }
+function actDelete() { if (menuIndex.value >= 0) emit('delete', menuIndex.value) }
+
+// REQ-14 RA-20：批量选择
+const tableRef = ref<{ clearSelection: () => void } | null>(null)
+const selectedShots = ref<Shot[]>([])
+
+function onSelectionChange(rows: Shot[]): void {
+  selectedShots.value = rows
 }
 
-onMounted(() => {
-  document.addEventListener('click', closeContextMenu)
-})
-onUnmounted(() => {
-  document.removeEventListener('click', closeContextMenu)
-})
+function clearSelection(): void {
+  tableRef.value?.clearSelection()
+  selectedShots.value = []
+}
 
-// 菜单动作：先关菜单（与原父级各 handler 末尾关菜单等价），再上抛给父级处理数据
-function actRender() { const r = contextMenu.value.row; if (!r) return; closeContextMenu(); emit('render', r) }
-function actCopyPrompt() { const r = contextMenu.value.row; if (!r) return; closeContextMenu(); emit('copyPrompt', r) }
-function actCopyShot() { closeContextMenu(); emit('copyShot', contextMenu.value.index) }
-function actPasteShot() { closeContextMenu(); emit('pasteShot', contextMenu.value.index) }
-function actInsert(position: 'above' | 'below') { closeContextMenu(); emit('insert', contextMenu.value.index, position) }
-function actMove(direction: number) { closeContextMenu(); emit('move', contextMenu.value.index, direction) }
-function actEdit() { closeContextMenu(); emit('edit', contextMenu.value.index) }
-function actReset() { const r = contextMenu.value.row; if (!r) return; closeContextMenu(); emit('reset', r) }
-function actDelete() { closeContextMenu(); emit('delete', contextMenu.value.index) }
+function onBatchRender(): void {
+  const rows = [...selectedShots.value]
+  if (rows.length === 0) return
+  emit('batchRender', rows)
+  clearSelection()
+}
+
+function onBatchSkip(): void {
+  const rows = [...selectedShots.value]
+  if (rows.length === 0) return
+  emit('batchSkip', rows)
+  clearSelection()
+}
+
+function onBatchDelete(): void {
+  const rows = [...selectedShots.value]
+  if (rows.length === 0) return
+  emit('batchDelete', rows)
+  clearSelection()
+}
 
 // 拖拽排序（R2：渲染中禁用——重排会改变镜头序号，与正在执行的队列/进度事件口径冲突）
 const dragIndex = ref(-1)
@@ -264,6 +284,15 @@ function onDrop(e: DragEvent) {
 
 <style scoped>
 .table-shell { padding: 8px 4px 4px; overflow: hidden; }
+
+.batch-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 6px 10px 10px;
+  flex-wrap: wrap;
+}
+.batch-info { font-size: var(--font-sm); color: var(--text-secondary); margin-right: var(--space-2); }
 
 .asset-thumbs { display: flex; align-items: center; justify-content: center; gap: 4px; }
 .asset-thumb {

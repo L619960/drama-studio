@@ -296,11 +296,22 @@ const hotkeyGroups = [
   },
   {
     scope: '分镜编辑',
-    items: [{ keys: ['Ctrl', 'N'], label: '新建分镜（渲染中不可用）' }]
+    items: [
+      { keys: ['Ctrl', 'N'], label: '新建分镜（渲染中不可用）' },
+      { keys: ['Delete'], label: '删除选中分镜（渲染中或弹窗打开时不可用）' }
+    ]
+  },
+  {
+    scope: '剧本',
+    items: [{ keys: ['Ctrl', 'S'], label: '保存剧本' }]
   },
   {
     scope: '渲染队列',
     items: [{ keys: ['F5'], label: '刷新队列状态' }]
+  },
+  {
+    scope: '成片预览',
+    items: [{ keys: ['Ctrl', 'E'], label: '导出成片' }]
   }
 ]
 
