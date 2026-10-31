@@ -18,9 +18,9 @@
     "lint": "eslint .",
     "format": "prettier --write \"src/**/*.{ts,vue}\"",
     "preview": "electron-vite preview",
-    "build:win": "electron-vite build && electron-builder --win",
-    "build:mac": "electron-vite build && electron-builder --mac",
-    "build:linux": "electron-vite build && electron-builder --linux",
+    "build:win": "electron-vite build && electron-builder --win --publish never",
+    "build:mac": "electron-vite build && electron-builder --mac --publish never",
+    "build:linux": "electron-vite build && electron-builder --linux --publish never",
     "postinstall": "node scripts/patch-element-plus.mjs",
     "prepare": "husky"
   },
