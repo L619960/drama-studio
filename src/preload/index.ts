@@ -153,6 +153,7 @@ const api: IpcApi = {
     getState: (projectId) => invoke(IpcChannels.directorGetState, projectId),
     clearState: (projectId) => invoke(IpcChannels.directorClearState, projectId),
     getLatestState: () => invoke(IpcChannels.directorLatestState),
+    exportLogs: (projectId, content) => invoke(IpcChannels.directorExportLogs, { projectId, content }),
     getActiveStates: () => invoke(IpcChannels.directorActiveStates),
     listInterrupted: () => invoke(IpcChannels.directorListInterrupted),
     enableGates: (projectId) => invoke(IpcChannels.directorEnableGates, projectId),

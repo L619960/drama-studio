@@ -342,6 +342,13 @@ export async function approveShots(rt: DirectorStageRuntime, projectId: string):
 
   // 未过审镜头换 seed 重渲一轮（最多一次自动重试）
   const retryIds = [...problems.keys()]
+  rt.log(projectId, 'render', 'warn',
+    `${retryIds.length} 镜未过审，换种子重渲中（${[...problems.values()][0]}）`, {
+      detail: JSON.stringify({
+        retryIds,
+        problems: [...problems.entries()].map(([shotId, reason]) => ({ shotId, reason }))
+      }, null, 2)
+    })
   rt.setStage(projectId, 'render', 'running',
     `${retryIds.length} 镜未过审（${[...problems.values()][0]}...），换种子重渲中...`, 92)
   const project = await rt.store.get(projectId)

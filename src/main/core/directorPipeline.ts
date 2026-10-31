@@ -7,7 +7,7 @@ import { ImageGenerateCancelled } from './imageService'
 import { clampShotList, shouldPauseAfterAudit } from '../../shared/pipelineGuards'
 import { lockPromptsAndWorkflow, type DirectorStageRuntime } from './directorStageAssets'
 import { resolveCreation } from '../../shared/creationSettings'
-import { isTransientError } from './errorClassify'
+import { classifyError, isTransientError } from './errorClassify'
 import type { DirectorAgent } from './directorAgent'
 import { STAGE_LABELS, stageIndexOf, HEAL_MAX } from './directorConstants'
 import { logImpl, setStageImpl, isCancelledImpl, maybeGateImpl, pauseUntilShotsReviewedImpl } from './directorStateMachine'
@@ -50,19 +50,42 @@ export async function selfHealStageImpl(
   if (!diag.canAutoFix) {
     state.heal = { stage, diagnosis: diag.diagnosis, suggestion: diag.suggestion }
     logImpl(agent, projectId, stage, 'warn',
-      `AI 诊断：${diag.diagnosis}。建议：${diag.suggestion}（需人工处理后重试）`)
+      `AI 诊断：${diag.diagnosis}。建议：${diag.suggestion}（需人工处理后重试）`, {
+        detail: JSON.stringify({
+          canAutoFix: false,
+          diagnosis: diag.diagnosis,
+          suggestion: diag.suggestion,
+          errors: errors.slice(0, 5)
+        }, null, 2)
+      })
     return false
   }
 
   agent.healBudget.set(projectId, used + 1)
   state.heal = { stage, diagnosis: diag.diagnosis, suggestion: '已自动重试（若再次失败请按建议人工处理）' }
   logImpl(agent, projectId, stage, 'warn',
-    `AI 自诊断：${diag.diagnosis}——判定可自动恢复，正在自动重试「${stageLabel}」（${used + 1}/${HEAL_MAX}）`)
+    `AI 自诊断：${diag.diagnosis}——判定可自动恢复，正在自动重试「${stageLabel}」（${used + 1}/${HEAL_MAX}）`, {
+      detail: JSON.stringify({
+        canAutoFix: true,
+        diagnosis: diag.diagnosis,
+        stageLabel,
+        attempt: used + 1,
+        maxAttempts: HEAL_MAX,
+        errors: errors.slice(0, 5)
+      }, null, 2)
+    })
   try {
     await retry()
     return true
   } catch (e) {
-    logImpl(agent, projectId, stage, 'error', `自动重试仍未成功: ${e instanceof Error ? e.message : String(e)}`)
+    logImpl(agent, projectId, stage, 'error', `自动重试仍未成功: ${e instanceof Error ? e.message : String(e)}`, {
+      errorKind: classifyError(e),
+      detail: JSON.stringify({
+        stageLabel,
+        attempt: used + 1,
+        error: e instanceof Error ? e.message : String(e)
+      }, null, 2)
+    })
     return false
   }
 }
@@ -309,6 +332,22 @@ export async function runPipelineImpl(
 
     // C 自愈
     if (state.failedShotIds.length > 0) {
+      // REQ-18：失败镜头逐条进日志（含 errorKind 与结构化明细），便于面板展开排查
+      for (const s of rendered.shots.filter(x => x.status === 'failed').slice(0, 5)) {
+        logImpl(agent, projectId, 'render', 'error',
+          `第${s.index}镜「${s.scene}」渲染失败：${s.error || '未知原因'}`, {
+            errorKind: s.errorKind,
+            detail: JSON.stringify({
+              shotId: s.id,
+              index: s.index,
+              scene: s.scene,
+              error: s.error,
+              errorKind: s.errorKind,
+              retryCount: s.retryCount,
+              retryBudget: s.retryBudget
+            }, null, 2)
+          })
+      }
       const failedErrors = [...new Set(
         rendered.shots.filter(s => s.status === 'failed').map(s => s.error || '未知原因')
       )]

@@ -592,6 +592,8 @@ export interface IpcApi {
     clearState(projectId: string): Promise<void>
     /** 最近活跃任务的状态（含影子渲染任务）：全局控制台未绑定项目时展示用 */
     getLatestState(): Promise<DirectorState | null>
+    /** 导出当前项目日志为 txt（写入项目目录），返回相对数据根的路径（REQ-18） */
+    exportLogs(projectId: string, content: string): Promise<string>
     /** 全部活跃任务状态（running/paused），供全局任务面板并行展示多项目 */
     getActiveStates(): Promise<DirectorState[]>
     /** 扫描磁盘上未跑完的任务（中断/残留 running），项目列表「一键继续」横幅用 */
@@ -1008,6 +1010,10 @@ export interface DirectorLogEntry {
   level: 'info' | 'success' | 'warn' | 'error'
   message: string
   timestamp: number
+  /** 结构化负载（JSON / 多行中文明细）：日志面板可展开查看（REQ-18） */
+  detail?: string
+  /** 失败分层分类：与队列失败行共用着色与文案（REQ-18） */
+  errorKind?: ErrorKind
 }
 
 /** 门禁待处理原因：分镜首帧审核 / 阶段确认点 / 成片复审 */
@@ -1388,6 +1394,7 @@ export const IpcChannels = {
   directorGetState: 'director:getState',
   directorClearState: 'director:clearState',
   directorLatestState: 'director:getLatestState',
+  directorExportLogs: 'director:exportLogs',
   directorActiveStates: 'director:listActiveStates',
   directorListInterrupted: 'director:listInterrupted',
   directorEnableGates: 'director:enableGates',

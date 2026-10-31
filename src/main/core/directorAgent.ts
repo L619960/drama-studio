@@ -8,7 +8,8 @@ import { ProjectStore } from './projectStore'
 import { SettingsStore } from './settingsStore'
 import type {
   DirectorState, DirectorStage, StageStatus, DirectorStartInput,
-  Shot, AnalyzeResult, SceneBoard, Character, Project, InterruptedTask
+  Shot, AnalyzeResult, SceneBoard, Character, Project, InterruptedTask,
+  DirectorLogEntry
 } from '../../shared/ipcTypes'
 import type { AuditCheckItem } from './skillLibrary'
 import { CandidatePickService } from './candidatePickService'
@@ -111,8 +112,14 @@ export class DirectorAgent extends EventEmitter {
   setStage(projectId: string, stage: DirectorStage, status: StageStatus, message: string, percent?: number) {
     return setStageImpl(this, projectId, stage, status, message, percent)
   }
-  log(projectId: string, stage: DirectorStage, level: 'info' | 'success' | 'warn' | 'error', message: string) {
-    return logImpl(this, projectId, stage, level, message)
+  log(
+    projectId: string,
+    stage: DirectorStage,
+    level: 'info' | 'success' | 'warn' | 'error',
+    message: string,
+    extra?: { detail?: string; errorKind?: DirectorLogEntry['errorKind'] }
+  ) {
+    return logImpl(this, projectId, stage, level, message, extra)
   }
   maybeGate(projectId: string, afterStage: DirectorStage) { return maybeGateImpl(this, projectId, afterStage) }
   pauseUntilShotsReviewed(projectId: string) { return pauseUntilShotsReviewedImpl(this, projectId) }

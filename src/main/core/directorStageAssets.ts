@@ -6,7 +6,7 @@ import { SubtitleService } from './subtitleService'
 import { ProjectStore } from './projectStore'
 import { SettingsStore } from './settingsStore'
 import type {
-  DirectorState, DirectorStage, StageStatus
+  DirectorState, DirectorStage, StageStatus, DirectorLogEntry
 } from '../../shared/ipcTypes'
 import {
   repairCastText, chooseRenderWorkflow, safeMotionFromAction
@@ -34,7 +34,13 @@ export interface DirectorStageRuntime {
   settings: SettingsStore
   skills: SkillLibrary
   isCancelled(projectId: string): boolean
-  log(projectId: string, stage: DirectorStage, level: 'info' | 'success' | 'warn' | 'error', message: string): void
+  log(
+    projectId: string,
+    stage: DirectorStage,
+    level: 'info' | 'success' | 'warn' | 'error',
+    message: string,
+    extra?: { detail?: string; errorKind?: DirectorLogEntry['errorKind'] }
+  ): void
   setStage(projectId: string, stage: DirectorStage, status: StageStatus, message?: string, percent?: number): void
   finish(projectId: string, doneMessage?: string): void
   maybeGate(projectId: string, afterStage: DirectorStage): Promise<void>

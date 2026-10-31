@@ -6,8 +6,8 @@
         <el-radio-button value="all">全部</el-radio-button>
         <el-radio-button value="warn">仅警告/错误</el-radio-button>
       </el-radio-group>
-      <el-button size="small" plain @click="exportLogs">导出</el-button>
-      <span class="log-hint">{{ logHover ? '已暂停滚动 · 移开鼠标恢复' : '已完成阶段自动折叠 · 新消息自动滚底' }}</span>
+      <el-button size="small" plain :loading="exporting" @click="exportLogs">导出</el-button>
+      <span class="log-hint">{{ logHover ? '已暂停滚动 · 移开鼠标恢复' : '警告默认收起 · 点击条目看明细' }}</span>
     </div>
     <div ref="logBoxRef" class="log-box" @mouseenter="logHover = true" @mouseleave="logHover = false">
       <el-collapse
@@ -53,10 +53,40 @@
               <el-icon><FolderOpened /></el-icon>&nbsp;打开成片所在目录
             </el-button>
           </div>
-          <div v-for="entry in group.entries" :key="entry.id" class="log-entry">
+          <!-- REQ-18：warn 默认折叠在阶段组内，点击展开；error 始终可见 -->
+          <div
+            v-if="warnCount(group) > 0"
+            class="log-warn-toggle"
+            role="button"
+            tabindex="0"
+            @click="toggleWarn(group.stage)"
+            @keydown.enter.prevent="toggleWarn(group.stage)"
+            @keydown.space.prevent="toggleWarn(group.stage)"
+          >
+            <el-icon>
+              <ArrowDown v-if="warnExpanded.has(group.stage)" />
+              <ArrowRight v-else />
+            </el-icon>
+            <span>{{ warnExpanded.has(group.stage) ? `收起 ${warnCount(group)} 条警告` : `展开 ${warnCount(group)} 条警告` }}</span>
+          </div>
+          <div
+            v-for="entry in visibleEntries(group)"
+            :key="entry.id"
+            class="log-entry"
+            :class="{ 'is-expandable': !!entry.detail, 'is-open': expandedIds.has(entry.id) }"
+            @click="toggleEntry(entry)"
+          >
             <span class="log-time">{{ formatTime(entry.timestamp) }}</span>
             <span class="log-level" :class="`lv-${entry.level}`">{{ levelText[entry.level] }}</span>
+            <span v-if="entry.errorKind" class="log-kind" :class="`ek-${entry.errorKind}`">
+              {{ ERROR_KIND_TEXT[entry.errorKind] }}
+            </span>
             <span class="log-msg" :class="{ 'msg-wrap': entry.level === 'error' }">{{ entry.message }}</span>
+            <el-icon v-if="entry.detail" class="log-toggle">
+              <ArrowDown v-if="expandedIds.has(entry.id)" />
+              <ArrowRight v-else />
+            </el-icon>
+            <pre v-if="entry.detail && expandedIds.has(entry.id)" class="log-detail">{{ entry.detail }}</pre>
           </div>
         </el-collapse-item>
       </el-collapse>
@@ -67,12 +97,16 @@
 
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
+import { ElMessage } from 'element-plus'
 import {
-  Loading, CircleCheckFilled, CircleCloseFilled, RemoveFilled, MoreFilled, FolderOpened
+  Loading, CircleCheckFilled, CircleCloseFilled, RemoveFilled, MoreFilled, FolderOpened,
+  ArrowRight, ArrowDown
 } from '@element-plus/icons-vue'
 import type {
   DirectorState, DirectorStage, DirectorLogEntry
 } from '../../../../shared/ipcTypes'
+import { buildLogText } from '../../../../shared/logExport'
+import { ERROR_KIND_TEXT } from '../../utils/errorGuide'
 import {
   STAGE_LABELS, LEVEL_TEXT, groupLogsByStage, groupHasError,
   groupDurationSec, formatDuration, formatTime
@@ -95,6 +129,11 @@ const levelText = LEVEL_TEXT
 const logHover = ref(false)
 const levelFilter = ref<'all' | 'warn'>('all')
 const logBoxRef = ref<HTMLElement | null>(null)
+/** REQ-18：已展开警告的阶段（默认收起） */
+const warnExpanded = ref<Set<DirectorStage>>(new Set())
+/** REQ-18：已展开明细的日志 id */
+const expandedIds = ref<Set<number>>(new Set())
+const exporting = ref(false)
 const logsByStage = computed(() => {
   const all = groupLogsByStage(props.localLogs)
   if (levelFilter.value !== 'warn') return all
@@ -104,21 +143,54 @@ const logsByStage = computed(() => {
     .filter(g => g.entries.length > 0)
 })
 
+function warnCount(group: { entries: DirectorLogEntry[] }): number {
+  return group.entries.filter(e => e.level === 'warn').length
+}
+
+/** 「仅警告/错误」过滤下不折叠；展开警告的阶段显示全部，其余阶段隐藏 warn */
+function visibleEntries(group: { stage: DirectorStage; entries: DirectorLogEntry[] }): DirectorLogEntry[] {
+  if (levelFilter.value === 'warn' || warnExpanded.value.has(group.stage)) {
+    return group.entries
+  }
+  return group.entries.filter(e => e.level !== 'warn')
+}
+
+function toggleWarn(stage: DirectorStage): void {
+  const next = new Set(warnExpanded.value)
+  if (next.has(stage)) next.delete(stage)
+  else next.add(stage)
+  warnExpanded.value = next
+}
+
+function toggleEntry(entry: DirectorLogEntry): void {
+  if (!entry.detail) return
+  const next = new Set(expandedIds.value)
+  if (next.has(entry.id)) next.delete(entry.id)
+  else next.add(entry.id)
+  expandedIds.value = next
+}
+
 // el-collapse v-model 在父子分离场景下用 :model-value + @update
 function onStagesUpdate(val: string | string[]): void {
   emit('update:expandedStages', Array.isArray(val) ? val as DirectorStage[] : [val as DirectorStage])
 }
 
-/** 导出日志为 txt */
-function exportLogs(): void {
-  const lines = props.localLogs.map(e => `[${e.timestamp ? new Date(e.timestamp).toISOString().slice(11,23) : ''}] [${e.level || 'info'}] ${e.stage || ''}: ${e.message || ''}`)
-  const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `drama-studio-logs-${new Date().toISOString().slice(0,10)}.txt`
-  a.click()
-  URL.revokeObjectURL(url)
+/** REQ-18：按当前项目导出日志为 txt，落盘到项目目录 */
+async function exportLogs(): Promise<void> {
+  const pid = props.state?.projectId
+  if (!pid) {
+    ElMessage.warning('当前未绑定项目，无法导出到项目目录')
+    return
+  }
+  exporting.value = true
+  try {
+    const rel = await window.api.director.exportLogs(pid, buildLogText(props.localLogs))
+    ElMessage.success(`日志已导出：${rel}`)
+  } catch (e) {
+    ElMessage.error(`导出失败：${e instanceof Error ? e.message : String(e)}`)
+  } finally {
+    exporting.value = false
+  }
 }
 
 // ===== 新日志自动滚底（悬停时完全暂停，移开后恢复） =====
@@ -192,11 +264,55 @@ watch(() => props.localLogs.length, async () => {
 }
 .log-entry {
   display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
   gap: 10px;
   font-size: 12px;
   line-height: 1.9;
   padding: 0 8px;
   border-bottom: 1px dashed var(--border-weak);
+}
+.log-entry.is-expandable { cursor: pointer; }
+.log-entry.is-expandable:hover { background: var(--bg-hover); }
+.log-warn-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px 4px;
+  font-size: 12px;
+  color: var(--warning, #e6a23c);
+  cursor: pointer;
+  width: fit-content;
+}
+.log-kind {
+  flex-shrink: 0;
+  align-self: center;
+  padding: 0 6px;
+  font-size: 11px;
+  line-height: 18px;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+}
+.ek-transient { color: var(--warning, #e6a23c); }
+.ek-oom, .ek-permanent { color: var(--danger, #f56c6c); }
+.ek-unknown { color: var(--text-muted); }
+.log-toggle {
+  margin-left: auto;
+  flex-shrink: 0;
+  align-self: center;
+  color: var(--text-muted);
+}
+.log-detail {
+  flex-basis: 100%;
+  margin: 0 0 6px;
+  padding: 8px 10px;
+  background: var(--bg-input);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 .log-time { color: var(--text-muted); font-variant-numeric: tabular-nums; flex-shrink: 0; }
 .log-level { flex-shrink: 0; width: 34px; font-weight: 600; }

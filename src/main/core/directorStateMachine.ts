@@ -83,19 +83,24 @@ export function setStageImpl(
   emitStateImpl(agent, projectId)
 }
 
-/** 追加一条中文执行日志并推送给面板 */
+/** 追加一条中文执行日志并推送给面板（可选结构化明细供面板展开，REQ-18） */
 export function logImpl(
   agent: DirectorAgent,
   projectId: string,
   stage: DirectorStage,
   level: 'info' | 'success' | 'warn' | 'error',
-  message: string
+  message: string,
+  extra?: { detail?: string; errorKind?: DirectorLogEntry['errorKind'] }
 ): void {
   const state = agent.states.get(projectId)
   if (!state || !message) return
   const seq = (agent.logSeq.get(projectId) || 0) + 1
   agent.logSeq.set(projectId, seq)
-  const entry: DirectorLogEntry = { id: seq, stage, level, message, timestamp: Date.now() }
+  const entry: DirectorLogEntry = {
+    id: seq, stage, level, message, timestamp: Date.now(),
+    ...(extra?.detail ? { detail: extra.detail } : {}),
+    ...(extra?.errorKind ? { errorKind: extra.errorKind } : {})
+  }
   state.logs.push(entry)
   if (state.logs.length > LOG_LIMIT) {
     state.logs.splice(0, state.logs.length - LOG_LIMIT)

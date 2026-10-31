@@ -2,12 +2,13 @@ import { IpcChannels, type DirectorStartInput, type DirectorStage } from '../../
 import { normalizeSceneKey } from '../../shared/ipcTypes'
 import { stripDialogueDirections } from '../../shared/imagePrompts'
 import { reviewedIsValid, clampShotList, renderTargetShots } from '../../shared/pipelineGuards'
-import { handleIpc } from './shared'
+import { handleIpc, resolveInsideRoot } from './shared'
 import type { ProjectStore } from '../core/projectStore'
 import type { SettingsStore } from '../core/settingsStore'
 import type { DirectorAgent } from '../core/directorAgent'
 import type { TaskQueue } from '../core/taskQueue'
 import type { LLMService } from '../core/llmService'
+import { writeFile } from 'node:fs/promises'
 
 export interface RenderIpcCtx {
   projectStore: ProjectStore
@@ -242,6 +243,15 @@ export function registerRenderIpc(ctx: RenderIpcCtx): void {
   handleIpc(IpcChannels.directorListInterrupted, () => ctx.directorAgent.listInterrupted())
   handleIpc(IpcChannels.directorEnableGates, (_, projectId: string) =>
     ctx.directorAgent.enableGates(projectId))
+  // REQ-18：导出当前项目日志到项目目录（.txt），返回相对数据根路径
+  handleIpc(IpcChannels.directorExportLogs, async (_, payload: { projectId: string; content: string }) => {
+    const project = await ctx.projectStore.get(payload.projectId)
+    if (!project) throw new Error('项目不存在')
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+    const rel = `projects/${payload.projectId}/logs-${stamp}.txt`
+    await writeFile(resolveInsideRoot(rel), payload.content, 'utf8')
+    return rel
+  })
 
   // 场景板：重出全景固定场景（2:1 全景 → 裁方位图 → 拼宫格看板），复用导演流水线同款链路
   handleIpc(IpcChannels.sceneRegeneratePano, async (_, input: { projectId: string; boardId: string }) => {
