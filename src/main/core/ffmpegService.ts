@@ -528,7 +528,9 @@ export class FFmpegService {
         outputPath
       )
     } catch {
-      // 回退：concat filter 重编码
+      // 回退：concat filter 重编码。
+      // 用独立的临时文件：上一条命令失败时其 error 处理器会异步 unlink tmpOut，
+      // 若两条命令复用同一个 tmp 路径，Linux 上清理可能晚于重编码写盘，把新文件删掉导致 rename ENOENT。
       const n = fittedPaths.length
       const labels = fittedPaths.map((_, i) => `[${i}:v][${i}:a]`).join('')
       const cmd = ffmpeg()
@@ -547,7 +549,7 @@ export class FFmpegService {
             '-ar 48000',
             '-movflags +faststart'
           ]),
-        tmpOut,
+        outputPath + '.reencode.part.mp4',
         outputPath
       )
     } finally {

@@ -50,7 +50,16 @@ describe('WorkflowLibrary.convertToApi 路径穿越防护', () => {
     expect(() => lib.convertToApi(absDecoy, {})).toThrow('工作流库路径越界')
   })
 
-  it('跨盘符绝对路径（Z:\\fake\\outside.json，文件不存在）→ 在 readFileSync 前即被越界校验拒绝', () => {
-    expect(() => lib.convertToApi('Z:\\fake\\outside.json', {})).toThrow('工作流库路径越界')
+  it('库外绝对路径（不存在）→ 在 readFileSync 前即被越界校验拒绝', () => {
+    // 用平台无关的绝对路径：Windows 盘符路径在 POSIX 上不是绝对路径，会走到 readFile 的 ENOENT
+    const outsideAbs = path.join(sandbox, '..', 'outside-workflow.json')
+    expect(() => lib.convertToApi(outsideAbs, {})).toThrow('工作流库路径越界')
   })
+
+  it.skipIf(process.platform !== 'win32')(
+    '跨盘符绝对路径（Z:\\fake\\outside.json，文件不存在）→ 在 readFileSync 前即被越界校验拒绝',
+    () => {
+      expect(() => lib.convertToApi('Z:\\fake\\outside.json', {})).toThrow('工作流库路径越界')
+    }
+  )
 })

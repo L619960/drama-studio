@@ -107,7 +107,8 @@ describe('postChatCompletion · 统一 POST 与 400/422 回退', () => {
 
 describe('LLM_DUMP_DIR 常量', () => {
   it('指向 drama-studio/tmp 目录（单重嵌套）', () => {
-    expect(LLM_DUMP_DIR.endsWith(path.join('drama-studio', 'tmp'))).toBe(true)
-    expect(LLM_DUMP_DIR).not.toContain(path.join('drama-studio', 'drama-studio'))
+    // 只校验紧邻的两级目录名：仓库/工作目录本身可能就叫 drama-studio（CI 路径为 .../drama-studio/drama-studio）
+    expect(path.basename(LLM_DUMP_DIR)).toBe('tmp')
+    expect(path.basename(path.dirname(LLM_DUMP_DIR))).toBe('drama-studio')
   })
 })

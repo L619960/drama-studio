@@ -58,7 +58,9 @@ describe('ipc/shared', () => {
   it('resolveInsideRoot：根内路径放行，越界/目录穿越拒绝', () => {
     expect(resolveInsideRoot('projects/p1')).toBe(path.join(DATA_ROOT, 'projects', 'p1'))
     expect(() => resolveInsideRoot('../../outside.txt')).toThrow(/数据根目录之外/)
-    expect(() => resolveInsideRoot('C:\\Windows\\system32\\x.dll')).toThrow(/数据根目录之外/)
+    // 绝对路径分支：用平台真实存在的系统路径（Windows 盘符路径在 POSIX 上是相对路径）
+    const outsideAbs = process.platform === 'win32' ? 'C:\\Windows\\system32\\x.dll' : '/etc/passwd'
+    expect(() => resolveInsideRoot(outsideAbs)).toThrow(/数据根目录之外/)
   })
 
   it('assertScope：只允许字母数字下划线短横线', () => {

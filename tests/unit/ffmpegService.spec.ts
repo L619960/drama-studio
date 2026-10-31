@@ -938,7 +938,8 @@ describe('burnSubtitles', () => {
     expect(ass).not.toContain('bad block')
     const vf = cmd().outputOpts.find(o => o.startsWith('-vf subtitles='))!
     expect(vf).toMatch(/^-vf subtitles='.*ds_sub_.*\.ass'$/)
-    expect(vf).toContain('\\:/')
+    // 盘符冒号转义只存在于 Windows 路径；POSIX 下临时路径不含冒号
+    if (process.platform === 'win32') expect(vf).toContain('\\:/')
     expect(state.fsCalls.some(c => c.fn === 'unlink' && String(c.args[0]).endsWith('.ass'))).toBe(true)
   })
 

@@ -1,4 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
+import * as nodePath from 'node:path'
+import * as nodeOs from 'node:os'
 
 // conversationToolsFile 直接 import electron + fs/promises
 vi.mock('electron', () => ({
@@ -62,7 +64,9 @@ describe('conversationToolsFile · tOpenFile（路径安全分支）', () => {
   })
 
   it('绝对路径外部文件 → ok=false', async () => {
-    const r = await tOpenFile({ baseDir: BASE_DIR } as any, { relative_path: 'D:/outside.txt' })
+    // 用平台真实的绝对路径：Windows 盘符路径在 POSIX 上会被当成相对路径，无法测到越界分支
+    const outside = nodePath.join(nodeOs.tmpdir(), 'drama-outside.txt')
+    const r = await tOpenFile({ baseDir: BASE_DIR } as any, { relative_path: outside })
     expect(r.ok).toBe(false)
     expect(r.text).toMatch(/数据目录内/)
   })
