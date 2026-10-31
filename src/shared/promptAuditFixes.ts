@@ -128,6 +128,35 @@ const COMMON_AVOID = [
 function shotFillGuides(isI2v: boolean, displacement: boolean): FieldFillGuide[] {
   const list: FieldFillGuide[] = [
     {
+      field: 'camera', label: '镜头机位/运镜（英文）', lang: 'en', range: [3, 18],
+      role: '本镜机位与运镜：机位高度（eye-level / low angle / high angle）+ 拍摄设备或运镜（static / Steadicam push-in / gimbal truck / arc shot，只写 1 条）+ 焦距与景深（85mm portrait lens, shallow depth of field / 24mm wide lens, deep depth of field）；禁止只写 static',
+      mustAvoid: [...COMMON_AVOID, '复合运镜与手持摇晃（whip-pan / crash zoom / handheld shake）']
+    },
+    {
+      field: 'lighting', label: '光线条件（英文）', lang: 'en', range: [3, 18],
+      role: '本镜光线：时刻/时段 + 主光方向（camera-left / camera-right / from above）+ 光源类型（moonlight / practical lamp / overcast daylight）+ 色温与阴影质量；同一场景的所有镜头必须写同一时刻与同一主光方向',
+      mustAvoid: [...COMMON_AVOID, '与同场景前序镜相反的时段（忽昼忽夜）或相反的左右主光方向']
+    },
+    {
+      field: 'emotion', label: '情绪短语（英文）', lang: 'en', range: [1, 10],
+      role: '本镜情绪：1~3 个形容词短语，如 guarded tension / restrained grief / cold fury；驱动表演与光影氛围',
+      mustAvoid: [...COMMON_AVOID, '情绪词堆叠（超过 3 个形容词并列）']
+    },
+    ...(isI2v
+      ? [
+        {
+          field: 'facing', label: '人物朝向与画面位置（英文）', lang: 'en' as const, range: [3, 18] as [number, number],
+          role: '本镜人物朝向与站位：面朝方向（facing camera / facing camera-left / three-quarter toward frame-right）+ 人物在画面中的左右站位（left third / right third / centered）；锁定跨镜位置防瞬移',
+          mustAvoid: [...COMMON_AVOID, '与 continuity 冲突的相反站位']
+        },
+        {
+          field: 'continuity', label: '动作起点承接（英文）', lang: 'en' as const, range: [3, 25] as [number, number],
+          role: '本镜开始时如何承接上一镜尾帧：写出具体姿态与站位（如 continues from the previous shot with both hands still on the counter / standing at the door, hand on the handle）；首镜写开场初始姿态',
+          mustAvoid: [...COMMON_AVOID, '与本镜 firstFrameEn 姿态矛盾的承接描述']
+        }
+      ]
+      : []),
+    {
       field: 'promptEn',
       label: isI2v ? '正向提示词（i2v 视频）' : '正向提示词（t2v 空镜视频）',
       lang: 'en',

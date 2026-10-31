@@ -14,6 +14,8 @@ export const AUDIT_CODE_LABELS: Record<string, string> = {
   'era-missing': '缺时代隔离约束（易穿帮）',
   'wardrobe-conflict': '正负向服装自相矛盾',
   'displacement-unexpected': '非位移镜多写尾帧/转场',
+  'frame-seconds': '时长不合规（3~6 秒）',
+  'scene-drift': '同场景光线/环境漂移',
   'taboo-nudity': '敏感·色情裸露',
   'taboo-violence': '敏感·血腥暴力',
   'taboo-drugs': '敏感·违禁毒品',

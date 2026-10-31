@@ -536,7 +536,7 @@ describe('analyzeOp · AI 导演剧本分析', () => {
     expect(r.shots[0]).toMatchObject({ shotSize: 'closeup', frameSeconds: 6, characters: ['林澈'], props: ['雨伞'], transition: 'dissolve', sceneEn: 'rooftop night', type: 'i2v' })
     expect(r.shots[1]).toMatchObject({ type: 't2v', shotSize: undefined, characterName: undefined, frameSeconds: 3 })
     expect(r.shots[2]).toMatchObject({ type: 'i2v', shotSize: 'wide' })
-    expect(r.shots[3]).toMatchObject({ shotSize: 'medium', transition: 'hard', frameSeconds: undefined })
+    expect(r.shots[3]).toMatchObject({ shotSize: 'medium', transition: 'hard', frameSeconds: 3 })
     expect(r.shots[4]).toMatchObject({ shotSize: 'medium', frameSeconds: 5 })
 
     expect(r.props).toHaveLength(2)
@@ -545,7 +545,8 @@ describe('analyzeOp · AI 导演剧本分析', () => {
     expect(r.props![1]).toMatchObject({ zh: '怀表', en: '怀表', description: undefined })
 
     expect(r.scenes).toEqual([{ name: '天台', en: 'rooftop' }])
-    expect(r.warnings).toBeUndefined()
+    // 拆镜提示词规范层会补齐缺字段并汇总一条告警（明细进审计页，不逐条刷屏）
+    expect(r.warnings).toEqual([expect.stringMatching(/^提示词规范化：\d+ 类字段/)])
 
     expect(fsMock.writeFileSync).toHaveBeenCalledWith(expect.stringContaining('analyze-last-ok.json'), expect.stringContaining('雨夜寻亲'), 'utf-8')
     expect(enforceMock).toHaveBeenCalledTimes(1)
@@ -618,11 +619,12 @@ describe('analyzeOp · AI 导演剧本分析', () => {
     await expect(analyzeOp(getSettings, TPLS, 's', 'ancient')).resolves.toMatchObject({ logline: undefined })
   })
 
-  it('叙事连续性返回警告 → 合并进 warnings', async () => {
+  it('叙事连续性返回警告 → 合并进 warnings（规范化备注汇总为一条）', async () => {
     chat.mockResolvedValueOnce(MIN_ANALYZE)
     narrativeMock.mockReturnValueOnce(['警告：台词与动作矛盾'])
     const r = await analyzeOp(getSettings, TPLS, 's', 'ancient')
-    expect(r.warnings).toEqual(['警告：台词与动作矛盾'])
+    expect(r.warnings).toContain('警告：台词与动作矛盾')
+    expect(r.warnings?.[0]).toMatch(/^提示词规范化：\d+ 类字段/)
   })
 
   // P1-2：长耗时分析支持取消 —— 显式传入的 AbortSignal 必须透传给 HTTP 层

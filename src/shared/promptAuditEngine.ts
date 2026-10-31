@@ -2,6 +2,7 @@ import type {
   Character, Project, PromptAuditField, PromptAuditIssue, PromptAuditReport,
   PromptAuditTask, PropAsset, SceneBoard, Shot
 } from './ipcTypes'
+import { normalizeSceneKey } from './ipcTypes'
 import {
   DISPLACEMENT_ACTION_RE, REALISM_NEGATIVE, mergeNegative,
   sceneNegativeFor, stripSoundCuesForImage
@@ -130,13 +131,60 @@ function shotSizeLabel(shot: Shot): string {
     default: return '景别未设'
   }
 }
+const LIGHT_TIME_CUE_RE = /\b(golden hour|night|midnight|moonlight|moonlit|daylight|sunset|sunrise|dawn|dusk|overcast|morning|evening)\b/
+const LIGHT_DIRECTION_CUE_RE = /\b(camera-left|camera-right|from above|overhead|top|backlight|back|front|left|right)\b/i
+
+/** 光线时段/主光方向特征：用于同场景跨镜比对（忽昼忽夜、主光左右反转的直接判据） */
+function primaryLightCue(text: string): string {
+  const low = (text || '').toLowerCase()
+  const time = (low.match(LIGHT_TIME_CUE_RE) || [])[0] || ''
+  const dir = (low.match(LIGHT_DIRECTION_CUE_RE) || [])[0] || ''
+  return `${time}|${dir}`
+}
+/** 取英文短语的前 N 个实义词（场景基底比对用） */
+function leadWords(text: string, n = 6): string[] {
+  return (text.toLowerCase().match(/[a-z]{2,}/g) || []).slice(0, n)
+}
+/** 同场景漂移基线：由全项目预计算一次，逐镜审计时只做比对 */
+export interface ShotDriftBaseline {
+  /** 场景键 → 该场景首镜的光线时段/方向特征 */
+  lighting: Map<string, string>
+  /** 场景键 → 场景板英文描述的前 6 个实义词 */
+  sceneBoard: Map<string, string[]>
+}
+export function buildShotDriftBaseline(shots: Shot[], project: Project): ShotDriftBaseline {
+  const lighting = new Map<string, string>()
+  for (const s of shots) {
+    const key = normalizeSceneKey(s.scene || '')
+    if (lighting.has(key)) continue
+    const cue = primaryLightCue(readStr(s, 'lighting'))
+    if (cue.replace('|', '')) lighting.set(key, cue)
+  }
+  const sceneBoard = new Map<string, string[]>()
+  for (const board of project.sceneBoards || []) {
+    const desc = readStr(board, 'description')
+    if (!desc) continue
+    sceneBoard.set(normalizeSceneKey(board.name || ''), leadWords(desc))
+  }
+  return { lighting, sceneBoard }
+}
 /** 镜头任务：i2v 人物镜（首帧 T2I + 视频）/ t2v 空镜（文生视频） */
-function auditShot(shot: Shot, project: Project): PromptAuditTask {
+function auditShot(shot: Shot, project: Project, baseline?: ShotDriftBaseline): PromptAuditTask {
   const isI2v = shot.type === 'i2v'
   // 时代锁定：本镜（或全剧题材）命中古装/年代线索才校验时代隔离，现代剧不误伤
   const period = hasPeriodCue(`${project.genre || ''} ${shot.scene || ''} ${shot.action || ''}`)
   const displacement = DISPLACEMENT_ACTION_RE.test(shot.action || '')
   const specs: FieldSpec[] = [
+    { field: 'action', label: '动作提示词（英文）', polarity: 'positive', lang: 'en', required: true, range: [10, 45] },
+    { field: 'camera', label: '镜头机位/运镜', polarity: 'positive', lang: 'en', required: true, range: [3, 18] },
+    { field: 'lighting', label: '光线条件', polarity: 'positive', lang: 'en', required: true, range: [3, 18] },
+    { field: 'emotion', label: '情绪短语', polarity: 'positive', lang: 'en', required: true, range: [1, 10] },
+    ...(isI2v
+      ? [
+        { field: 'facing', label: '人物朝向与画面位置', polarity: 'positive' as const, lang: 'en' as const, required: true, range: [3, 18] as [number, number] },
+        { field: 'continuity', label: '动作起点承接', polarity: 'positive' as const, lang: 'en' as const, required: true, range: [3, 25] as [number, number] }
+      ]
+      : []),
     {
       field: 'promptEn',
       label: isI2v ? '正向提示词（视频）' : '正向提示词（空镜视频）',
@@ -184,6 +232,47 @@ function auditShot(shot: Shot, project: Project): PromptAuditTask {
         `本镜非跨镜位移镜（action 无位移语义），按铁律不得写「${key[1]}」：首尾帧自由插值会让原地动作漂移，建议清空`,
         false
       ))
+    }
+  }
+
+  // 时长合规：3~6 秒短镜铁律（越界会被 H3/ffmpeg 定帧裁切或拖慢节奏）
+  const secs = shot.frameSeconds
+  if (!(typeof secs === 'number' && Number.isFinite(secs) && secs >= 3 && secs <= 6)) {
+    issues.push(makeIssue(
+      'frame-seconds', 'warn', 'frameSeconds', '本镜时长',
+      `本镜 frameSeconds = ${typeof secs === 'number' ? secs : '空'}，必须为 3~6 秒整数：越界会触发定帧裁切或台词被截断`,
+      false
+    ))
+  }
+
+  // 同场景漂移：同一物理地点必须同一时刻/同一主光方向，sceneEn 必须复用场景板基底
+  if (baseline) {
+    const sceneKey = normalizeSceneKey(shot.scene || '')
+    const canonLight = baseline.lighting.get(sceneKey)
+    const ownLight = primaryLightCue(read('lighting'))
+    if (canonLight && ownLight.replace('|', '')) {
+      const [canonTime, canonDir] = canonLight.split('|')
+      const [ownTime, ownDir] = ownLight.split('|')
+      if ((canonTime && ownTime && canonTime !== ownTime) || (canonDir && ownDir && canonDir !== ownDir)) {
+        issues.push(makeIssue(
+          'scene-drift', 'warn', 'lighting', '光线条件',
+          `同场景「${shot.scene}」光线与前序镜不一致（前序 ${canonLight.replace('|', ' / ')}，本镜 ${ownLight.replace('|', ' / ')}）：忽昼忽夜或主光左右反转会让画面光影断层，请统一为同一时刻与同一主光方向`,
+          false
+        ))
+      }
+    }
+    const boardWords = baseline.sceneBoard.get(sceneKey)
+    const sceneEn = read('sceneEn')
+    if (boardWords?.length && sceneEn) {
+      const own = leadWords(sceneEn)
+      const overlap = own.filter(w => boardWords.includes(w)).length
+      if (own.length && overlap / Math.max(own.length, boardWords.length) < 0.34) {
+        issues.push(makeIssue(
+          'scene-drift', 'warn', 'sceneEn', '环境短语',
+          `本镜 sceneEn 与场景板「${shot.scene}」的英文基底几乎不重合：同场景被逐镜改写会让背景与光线跳变，请复用场景板的场景基底`,
+          false
+        ))
+      }
     }
   }
 
@@ -322,6 +411,7 @@ function auditProp(prop: PropAsset): PromptAuditTask {
  */
 export function auditProjectPrompts(project: Project, opts?: { now?: number }): PromptAuditReport {
   const tasks: PromptAuditTask[] = []
+  const baseline = buildShotDriftBaseline(project.shots || [], project)
   const push = (build: () => PromptAuditTask): void => {
     try {
       const task = build()
@@ -331,7 +421,7 @@ export function auditProjectPrompts(project: Project, opts?: { now?: number }): 
     }
   }
 
-  for (const shot of project.shots || []) push(() => auditShot(shot, project))
+  for (const shot of project.shots || []) push(() => auditShot(shot, project, baseline))
   for (const character of project.characters || []) push(() => auditCharacter(character))
   for (const board of project.sceneBoards || []) push(() => auditSceneBoard(board))
   for (const prop of project.props || []) push(() => auditProp(prop))

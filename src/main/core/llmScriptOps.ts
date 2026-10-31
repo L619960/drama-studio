@@ -19,6 +19,7 @@ import { normalizeBindings as llmNormalizeBindings } from './llmParsers'
 import { httpChat, httpChatRaw } from './llmHttp'
 import { logLlmError, LLM_DUMP_DIR } from './llmRequest'
 import { enforcePromptLengths, backfillMissingProps } from './llmPostProcess'
+import { normalizeShotPrompts } from '../../shared/promptSchema'
 
 /** 批量 AI 补写字段时传给 LLM 的本镜上下文（防止串戏/脑补） */
 export interface FillPromptContext {
@@ -644,6 +645,25 @@ export async function analyzeOp(
   const normalized = llmNormalizeBindings(result)
   // 本地兜底：propList 中未写入任何镜头 action/props 的道具 → 自动注入相关镜头并记 warning
   backfillMissingProps(normalized)
+  // 拆镜提示词规范层（2026-10-31）：LLM 漏写/少写/夹中文/逐镜换场景的字段一律补成标准英文，
+  // 同场景 sceneEn 与 lighting 统一为同一物理地点与光源方向——后续出图/出视频不再自由发挥。
+  const schemaFixed = normalizeShotPrompts(normalized.shots, {
+    scenes: normalized.scenes,
+    genre,
+    lookOf: (s) => {
+      const name = (s.characterName || '').trim()
+      const c = normalized.characters.find(ch => ch.name === name || (ch.aliases || []).includes(name))
+      return c?.lookEn || ''
+    }
+  })
+  normalized.shots = schemaFixed.shots
+  if (schemaFixed.notes.length > 0) {
+    // 明细过多，只汇总一条进 warnings（逐字段明细由审计页展示），避免淹没真正的叙事告警
+    normalized.warnings = [
+      ...(normalized.warnings || []),
+      `提示词规范化：${schemaFixed.notes.length} 类字段已按标准英文补齐/同场景对齐`
+    ]
+  }
   const narrative = validateNarrativeContinuity(
     titleHint,
     normalized.logline,
