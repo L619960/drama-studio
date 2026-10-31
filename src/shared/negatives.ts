@@ -35,7 +35,7 @@ export function videoNegativeFor(action?: string): string {
 /** 写实锁：strong 时追加更强身份/美颜压制短语（负向仍用 REALISM_NEGATIVE / STRONG） */
 export function realismPositiveExtra(lock: 'standard' | 'strong' = 'standard'): string {
   if (lock !== 'strong') return ''
-  return 'ultra-strict identity plate, clean even skin tone, healthy natural complexion, zero beauty retouch, wardrobe locked'
+  return 'ultra-strict identity plate, natural skin micro-texture with visible fine pores, healthy natural complexion, zero beauty retouch, wardrobe locked'
 }
 
 export function realismNegativeFor(lock: 'standard' | 'strong' = 'standard'): string {
