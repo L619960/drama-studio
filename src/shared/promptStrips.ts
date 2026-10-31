@@ -36,7 +36,7 @@ export function sanitizeCinematicPrompt(prompt: string): string {
 }
 
 const SUMMON_RE =
-  /\b(?:old man|old woman|elderly(?:\s+(?:face|man|woman|person))?|white stubble|gr[ae]y stubble|weathered face|white beard|gr[ae]y beard|automobiles?|vehicles?|cars?|suv|motorcycle|neon)\b/gi
+  /\b(?:old man|old woman|elderly(?:\s+(?:face|man|woman|person))?|white stubble|gr[ae]y stubble|weathered face|white beard|gr[ae]y beard|automobiles?|vehicles?|cars?|suv|motorcycle)\b/gi
 
 /** 送进正向提示词前去掉会把概念召进画面的词。负向词只允许进有负向入口的工作流。 */
 export function scrubSummoningTerms(text: string): string {

@@ -68,8 +68,8 @@ describe('promptStrips · 文本净化域（2026-10-30 补覆盖率）', () => {
       expect(v).toContain('passes by')
     })
 
-    it('neon → 剥离', () => {
-      expect(scrubSummoningTerms('neon lights glow')).not.toMatch(/neon/)
+    it('neon → 保留（不再压制招牌/霓虹场景）', () => {
+      expect(scrubSummoningTerms('neon lights glow')).toContain('neon')
     })
 
     it('全无关文本 → 原样返回', () => {

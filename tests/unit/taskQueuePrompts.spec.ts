@@ -114,7 +114,7 @@ describe('sceneCueFor · sceneEn 兜底提取', () => {
     expect(sceneCueFor(mkShot({ action: '' }), 'convenience store interior')).toBe('convenience store interior')
   })
 
-  it('cleanedRaw 为空或中文 → 从 action 提取已知场景名词 → 生成 "xxx interior, no visible signage text"', () => {
+  it('cleanedRaw 为空或中文 → 从 action 提取已知场景名词 → 生成 "xxx interior"（不再叠加招牌文字禁令）', () => {
     expect(sceneCueFor(mkShot({ action: '周野走进 the convenience store' }), '')).toContain('convenience store')
     expect(sceneCueFor(mkShot({ action: '周野走进 the convenience store' }), '')).toContain('interior')
   })

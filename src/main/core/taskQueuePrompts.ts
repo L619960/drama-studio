@@ -77,7 +77,7 @@ export function sceneCueFor(shot: Pick<Shot, 'sceneEn' | 'action'>, cleanedRaw: 
   const sceneWord = (shot.action || '').match(
     /\b(?:convenience store|department store|supermarket|street market|market|shop|store|cafe|restaurant|noodle house|teahouse|counter|office|apartment|room|hall|temple|gate|mountain|forest|alley|street|riverbank|inn|pavilion)\w*\b/i
   )?.[0]
-  return sceneWord ? `${sceneWord.toLowerCase()} interior, no visible signage text` : ''
+  return sceneWord ? `${sceneWord.toLowerCase()} interior` : ''
 }
 export function propsConstraintBlock(shot: Shot): string {
   const combat = COMBAT_ACTION_RE.test(shot.action || '')

@@ -76,7 +76,7 @@ export function eraNegativeFor(genre: string | undefined): string {
     'no modern clothing, no jacket, no hoodie, no sweater, no cardigan, no jeans, no denim, no sneakers, no trainers, no suit, no tie, no necktie, no uniform, no raincoat, no work clothes, no trench coat, no leather jacket, no blazer, no overalls, no lab coat, no t-shirt, no trousers, no pants, no hat, no cap, no sunglasses, no backpack, no wristwatch, no earphone, no name tag, ' +
     'no tactical gear, no combat gear, no military uniform, no swat, no army, no body armor, no face mask, no balaclava, no ski mask, no respirator, no hood, no full-face covering, no face fully covered, no eyes-only mask, ' +
     'no ninja, no ninja outfit, no samurai, no japanese warrior, no katana, no gun, no pistol, no rifle, no firearm, no sci-fi weapon, ' +
-    'no modern street, no asphalt, no road, no sidewalk, no street lamp, no streetlight, no neon sign, no glass building, no skyscraper, no car, no vehicle, no motorcycle, no bicycle, no traffic, no billboard, no electronics, no smartphone, no camera, no sci-fi, no robot, no spaceship'
+    'no modern street, no asphalt, no road, no sidewalk, no street lamp, no streetlight, no glass building, no skyscraper, no car, no vehicle, no motorcycle, no bicycle, no traffic, no electronics, no smartphone, no camera, no sci-fi, no robot, no spaceship'
   )
 }
 

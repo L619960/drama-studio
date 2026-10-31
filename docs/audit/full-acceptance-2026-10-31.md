@@ -186,6 +186,7 @@ onMounted(() => {
 - 验证：默认路径（不传 `workflowName`）768×1152 实测 20.7 s、产物 768×1152（确认命中 Klein，而非 Qwen 的 1.5× 放大尺寸）；1024×1536 实测 32.3 s / 2.6 MB，即当前证据图。
 - 提示词层复验：同模型下「霓虹招牌夜景」会生成无意义招牌文字（强 AI 感来源），改为「阴天自然光小巷」后伪影消失——已把该结论写进验收说明；霓虹/文字类场景属于模型固有短板。
 - 定妆提示词去塑料化：`faceCastingPrompt` / `bodySheetPrompt` 原写「smooth supple skin、natural skin glow、perfectly clear skin surface、smooth flat forehead」，是定妆图「磨皮娃娃脸」的直接来源；改为「visible fine pores + subtle texture variation + matte non-glossy finish」，保留 `no acne / no scars / no pockmarks` 压制瑕疵（[scenePrompts.ts](file:///e:/drama-studio/src/shared/scenePrompts.ts#L97-L122)、[negatives.ts](file:///e:/drama-studio/src/shared/negatives.ts#L36-L39)）。
+- 移除「霓虹招牌」类硬规则（用户要求不限制模型发挥）：`eraLockBlock` / `periodLockFor` 去掉 `no neon signs / no billboards`，`eraNegativeFor` 去掉 `no neon sign / no billboard`，`sceneCueFor` 去掉 `no visible signage text`，`scrubSummoningTerms` 不再剥离 `neon`（[scenePrompts.ts](file:///e:/drama-studio/src/shared/scenePrompts.ts#L22-L40)、[negatives.ts](file:///e:/drama-studio/src/shared/negatives.ts#L73-L81)、[taskQueuePrompts.ts](file:///e:/drama-studio/src/main/core/taskQueuePrompts.ts#L74-L81)、[promptStrips.ts](file:///e:/drama-studio/src/shared/promptStrips.ts#L38-L48)）。
 - 剩余可继续调的方向：VAE 二次重绘（denoise 0.3）压蒸馏残留、或在设置里允许用户指定其他写实 checkpoint。
 
 ---
@@ -325,6 +326,7 @@ artifact 归档体积：windows 810.6 MB / macos 1306.1 MB / ubuntu 1578.9 MB（
 | `a6b01bb` | [qwen_t2i_hq.json](file:///e:/drama-studio/workflows/qwen_t2i_hq.json) | 移除未安装的 `ReservedVRAMSetter`，MODEL 直连 Checkpoint | 修复默认工作流 400（P1-02） |
 | `a967ef7` | [imageService.ts](file:///e:/drama-studio/src/main/core/imageService.ts) / [creationSettings.ts](file:///e:/drama-studio/src/shared/creationSettings.ts) / [promptConstants.ts](file:///e:/drama-studio/src/shared/promptConstants.ts) | 默认工作流改 `klein_t2i_clean`，回退 `qwen_t2i_hq → builtin_t2i` | 降低出图 AI 塑料感（P1-02） |
 | `b67bacf` | [scenePrompts.ts](file:///e:/drama-studio/src/shared/scenePrompts.ts) / [negatives.ts](file:///e:/drama-studio/src/shared/negatives.ts) | 定妆/三视图肤质描述改真实毛孔与微纹理，去掉「完美光滑/发光肌」 | 定妆图去塑料感（P1-02） |
+| 本轮提交 | [scenePrompts.ts](file:///e:/drama-studio/src/shared/scenePrompts.ts) / [negatives.ts](file:///e:/drama-studio/src/shared/negatives.ts) / [taskQueuePrompts.ts](file:///e:/drama-studio/src/main/core/taskQueuePrompts.ts) / [promptStrips.ts](file:///e:/drama-studio/src/shared/promptStrips.ts) + 2 个单测 | 删除 `no neon signs / no billboards / no neon sign / no visible signage text` 与 neon 剥离规则 | 解除对招牌/霓虹场景的限制 |
 | `a7ecf66` / 本报告提交 | [docs/audit/evidence/acceptance-2026-10-31](file:///e:/drama-studio/docs/audit/evidence/acceptance-2026-10-31) | 17 张截图 + `walkthrough.json` + `18-real-t2i.png` | 验收留证 |
 
 ---

@@ -23,7 +23,7 @@ describe('时代锁行为验证（本次修复冒烟）', () => {
   })
   it('eraLockBlock 古风分支含 no modern 负向强锁', () => {
     const block = eraLockBlock('古装')
-    expect(block.toLowerCase()).toMatch(/no modern clothing|no street lights|no asphalt|no neon/)
+    expect(block.toLowerCase()).toMatch(/no modern clothing|no street lights|no asphalt/)
   })
   it('eraLockBlock 现代分支不误锁现代剧', () => {
     const block = eraLockBlock('现代')

@@ -23,14 +23,14 @@ export function eraLockBlock(genre: string | undefined): string {
   const g = (genre || '').trim()
   if (/民国/.test(g)) {
     return 'period-accurate 1930s republican-era chinese setting: qipao, changshan, vintage decor, ' +
-      'no ancient hanfu, no modern street wear, no modern buildings, no cars, no neon signs'
+      'no ancient hanfu, no modern street wear, no modern buildings, no cars'
   }
   if (isPeriodGenre(g)) {
     return 'period-accurate ancient chinese costume drama, chinese wuxia martial-arts style ONLY, NOT Japanese, NOT modern: ' +
       'loose hanfu robe with cloth belt, classical chinese hairstyles with hairpins or topknots, ancient chinese architecture of wood and stone, lantern or torch lighting, ' +
       'weapons are chinese-style only: a single jian sword, dao blade, pudao, or spear — exactly ONE weapon in hand, no second weapon, no Japanese katana, no ninja weapons, ' +
       'facial covering if any is an ancient chinese cloth veil wrapped around the LOWER HALF of the face only, from nose down to chin, forehead, eyebrows, hairline and hair bun fully visible and unobstructed, never covering the upper face, never a full-face wrap, never only eyes visible, ' +
-      'no modern clothing, no uniforms, no street lights, no asphalt, no glass buildings, no cars, no electronics, no neon signs, no billboards, ' +
+      'no modern clothing, no uniforms, no street lights, no asphalt, no glass buildings, no cars, no electronics, ' +
       'no katana, no gun, no military uniform, no face mask, no tactical gear, no ninja, no samurai, no Japanese armor'
   }
   if (g) {
@@ -425,7 +425,7 @@ export function periodLockFor(genre: string | undefined): string {
     return 'period-accurate 1930s republican-era setting, only materials and objects of that era'
   }
   if (/古装|宫廷|仙侠|玄幻|武侠|穿越/.test(g)) {
-    return 'ancient chinese period setting, only stone, wood, bamboo, cloth, jade and metal of that era, hanfu or wuxia robes, lantern or torch light, no modern objects, no modern vehicles, no street lights, no asphalt, no glass buildings, no electronics, no neon signs'
+    return 'ancient chinese period setting, only stone, wood, bamboo, cloth, jade and metal of that era, hanfu or wuxia robes, lantern or torch light, no modern objects, no modern vehicles, no street lights, no asphalt, no glass buildings, no electronics'
   }
   return ''
 }
