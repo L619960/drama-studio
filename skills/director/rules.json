@@ -7,12 +7,12 @@
     "quality": [
       "8k filmic detail, photorealistic live-action chinese short-drama frame",
       "shot on ARRI Alexa Mini LF with Zeiss Supreme Prime 50mm T1.5",
-      "natural imperfect skin with visible pores and micro-texture, no beauty filter",
+      "natural imperfect skin with visible pores and micro-texture, matte unretouched complexion",
       "subtle Kodak Vision3 film grain, matte finish, documentary color science"
     ],
     "camera": [
-      "EXECUTE CAMERA MOVE per storyboard, smooth cinematic, continuous, no whip-pan, no crash zoom",
-      "slow push-in or slight pan preferred for dialogue, no teleport cut inside clip",
+      "EXECUTE CAMERA MOVE per storyboard, smooth cinematic continuous movement",
+      "slow push-in or slight pan preferred for dialogue, one unbroken take",
       "locked-off tripod stability for wide establishing shots"
     ],
     "lighting": [
@@ -21,12 +21,12 @@
       "consistent color temperature across adjacent shots of the same scene"
     ],
     "fx": [
-      "no CGI, no 3d render, no illustration, no beauty filter, no plastic specular",
-      "no reverse motion, no playing backwards, no car reversing, wheels rotate forward if moving"
+      "practical in-camera effects, photoreal live-action photography, natural specular highlights",
+      "forward-time motion, wheels rotate forward when moving"
     ],
     "scene": [
-      "LOCKED LOCATION: same physical set in every shot of the scene, no scene swap",
-      "key props must appear exactly as listed and persist across frames, no teleporting props"
+      "LOCKED LOCATION: same physical set in every shot of the scene",
+      "key props appear exactly as listed and persist across frames"
     ]
   },
 
